@@ -177,123 +177,13 @@ class _RekkyHomeState extends State<RekkyHome> {
   ).replaceAll('=', '');
 
   Future<void> _remember() async {
-    final subject = TextEditingController(), body = TextEditingController();
-    var visibility = 'friends', saving = false;
-    String? formIssue;
-    String? pendingPayload, pendingKey;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (context, update) => Padding(
-          padding: EdgeInsets.fromLTRB(
-            24,
-            8,
-            24,
-            MediaQuery.viewInsetsOf(context).bottom + 24,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'Keep something useful',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Save one thought for now. Voice and automatic organization are coming next.',
-                ),
-                const SizedBox(height: 20),
-                TextField(
-                  controller: subject,
-                  maxLength: 120,
-                  decoration: const InputDecoration(
-                    labelText: 'Who or what is this about?',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                TextField(
-                  controller: body,
-                  minLines: 3,
-                  maxLines: 7,
-                  maxLength: 20000,
-                  decoration: const InputDecoration(
-                    labelText: 'What should you remember?',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(visibility == 'private' ? 'Only me' : 'Friends'),
-                  subtitle: const Text(
-                    'Friends items will be visible to accepted friends when sharing launches.',
-                  ),
-                  value: visibility == 'private',
-                  onChanged: (value) =>
-                      update(() => visibility = value ? 'private' : 'friends'),
-                ),
-                if (formIssue != null)
-                  Text(
-                    formIssue!,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  ),
-                FilledButton(
-                  onPressed: saving
-                      ? null
-                      : () async {
-                          if (subject.text.trim().isEmpty ||
-                              body.text.trim().isEmpty) {
-                            update(
-                              () => formIssue = 'Add a subject and a thought.',
-                            );
-                            return;
-                          }
-                          update(() {
-                            saving = true;
-                            formIssue = null;
-                          });
-                          try {
-                            final payload = jsonEncode([
-                              subject.text.trim(),
-                              body.text.trim(),
-                              visibility,
-                            ]);
-                            if (pendingPayload != payload) {
-                              pendingPayload = payload;
-                              pendingKey = _newKey();
-                            }
-                            await api.save(
-                              subject.text.trim(),
-                              body.text.trim(),
-                              visibility,
-                              pendingKey!,
-                            );
-                            if (sheetContext.mounted) {
-                              Navigator.pop(sheetContext);
-                            }
-                            await _reload();
-                          } catch (error) {
-                            update(() {
-                              saving = false;
-                              formIssue = '$error';
-                            });
-                          }
-                        },
-                  child: Text(saving ? 'Saving…' : 'Save memory'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+      builder: (_) =>
+          _RememberSheet(api: api, newKey: _newKey, onSaved: _reload),
     );
-    subject.dispose();
-    body.dispose();
   }
 
   Future<void> _openItem(RekkyItem item) async {
@@ -421,6 +311,14 @@ class _RekkyHomeState extends State<RekkyHome> {
                       if (confirmed != true) return;
                       try {
                         await api.delete(item);
+                        if (mounted) {
+                          setState(() {
+                            library.removeWhere((saved) => saved.id == item.id);
+                            matches.removeWhere(
+                              (match) => match['item_id'] == item.id,
+                            );
+                          });
+                        }
                         if (sheetContext.mounted) Navigator.pop(sheetContext);
                         await _reload();
                       } catch (error) {
@@ -675,5 +573,129 @@ class _RekkyHomeState extends State<RekkyHome> {
               );
             },
           ),
+  );
+}
+
+class _RememberSheet extends StatefulWidget {
+  const _RememberSheet({
+    required this.api,
+    required this.newKey,
+    required this.onSaved,
+  });
+
+  final RekkyApi api;
+  final String Function() newKey;
+  final Future<void> Function() onSaved;
+
+  @override
+  State<_RememberSheet> createState() => _RememberSheetState();
+}
+
+class _RememberSheetState extends State<_RememberSheet> {
+  final subject = TextEditingController();
+  final body = TextEditingController();
+  String visibility = 'friends';
+  bool saving = false;
+  String? formIssue, pendingPayload, pendingKey;
+
+  @override
+  void dispose() {
+    subject.dispose();
+    body.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final title = subject.text.trim();
+    final thought = body.text.trim();
+    if (title.isEmpty || thought.isEmpty) {
+      setState(() => formIssue = 'Add a subject and a thought.');
+      return;
+    }
+    setState(() {
+      saving = true;
+      formIssue = null;
+    });
+    try {
+      final payload = jsonEncode([title, thought, visibility]);
+      if (pendingPayload != payload) {
+        pendingPayload = payload;
+        pendingKey = widget.newKey();
+      }
+      await widget.api.save(title, thought, visibility, pendingKey!);
+      if (mounted) Navigator.pop(context);
+      await widget.onSaved();
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          saving = false;
+          formIssue = '$error';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: EdgeInsets.fromLTRB(
+      24,
+      8,
+      24,
+      MediaQuery.viewInsetsOf(context).bottom + 24,
+    ),
+    child: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Keep something useful',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Save one thought for now. Voice and automatic organization are coming next.',
+          ),
+          const SizedBox(height: 20),
+          TextField(
+            controller: subject,
+            maxLength: 120,
+            decoration: const InputDecoration(
+              labelText: 'Who or what is this about?',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          TextField(
+            controller: body,
+            minLines: 3,
+            maxLines: 7,
+            maxLength: 20000,
+            decoration: const InputDecoration(
+              labelText: 'What should you remember?',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(visibility == 'private' ? 'Only me' : 'Friends'),
+            subtitle: const Text(
+              'Friends items will be visible to accepted friends when sharing launches.',
+            ),
+            value: visibility == 'private',
+            onChanged: (value) =>
+                setState(() => visibility = value ? 'private' : 'friends'),
+          ),
+          if (formIssue != null)
+            Text(
+              formIssue!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          FilledButton(
+            onPressed: saving ? null : _save,
+            child: Text(saving ? 'Saving…' : 'Save memory'),
+          ),
+        ],
+      ),
+    ),
   );
 }

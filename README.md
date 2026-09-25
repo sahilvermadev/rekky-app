@@ -19,7 +19,7 @@ The user chose a standalone repository and a Rust backend on 2026-09-25. Flutter
 
 ## Current status
 
-F-00.1 is in progress. The repository now contains a new Postgres schema and API, a Flutter signed-in shell, shared v1 wire examples, local database Compose configuration, and Android/macOS CI definitions. The current path is Google/Apple ID-token exchange → account disclosure → one manually authored text item → own-library search; provider OAuth setup and physical-device validation remain outstanding. Voice, transcription, offline sync and reciprocal-friend access are not implemented yet. No delivery phase has passed its full gate.
+F-00.1 is in progress. The repository now contains a new Rust/Postgres API, a Flutter signed-in shell, shared v1 wire examples, local database Compose configuration, and Android/macOS CI definitions. Google sign-in → account disclosure → manually authored text memory → own-library Ask → deletion has been exercised on a physical Android phone against the isolated local backend. Apple sign-in and iOS device behavior remain unverified. Voice, transcription, offline sync and reciprocal-friend access are not implemented yet. No delivery phase has passed its full gate.
 
 Continue F-00.1 native builds and contract states, then F-00.2 design review, F-00.3 recording/share feasibility, and F-00.5 early evaluation. The first full product outcome remains signed-in voice/text capture → private transcript → useful organized knowledge → own Ask, with prompt audio deletion and explicit source controls. Production text/URL share input arrives in early F-02; advanced capture polish remains F-06. Proposed limits and quality targets still require measurement.
 
