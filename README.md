@@ -6,7 +6,7 @@ A fresh Flutter mobile application and Express/TypeScript/Postgres backend.
 
 ## Source of truth
 
-Follow [the Rekky Flutter product and delivery plan](docs/REKKY_FLUTTER_PRODUCT_PLAN.md). It owns the product requirements, delivery sequence and acceptance gates. The app opens on Ask, Library is secondary, and Remember is an always-visible action.
+Follow [the Rekky Flutter product and delivery plan](docs/REKKY_FLUTTER_PRODUCT_PLAN.md). It owns the product requirements, delivery sequence and acceptance gates. After mandatory sign-in, the app opens on Ask, Library is secondary, and Remember is an always-visible action. Completed items default to Friends with a simple Private override. Audio is deleted after a usable transcript is durably saved; retained text transcripts stay owner-only. Turning off future AI processing preserves completed knowledge and transcripts.
 
 The user chose a standalone repository on 2026-09-25. That supersedes only the plan's earlier placement inside the legacy repository. Flutter and the new backend remain together here for coordinated API changes.
 
@@ -21,7 +21,7 @@ The user chose a standalone repository on 2026-09-25. That supersedes only the p
 
 Repository and documentation setup only. Application code, tooling, CI, contracts and infrastructure have not yet been scaffolded. F-00.1 remains in progress; no delivery gate is complete.
 
-Start with F-00.1 foundations and contract fixtures, F-00.2 native design exploration, and F-00.3 recording/share feasibility. The first live product outcome is voice/text capture → useful organized knowledge → own Ask, including bounded temporary-media recovery and deletion.
+Start with F-00.1 signed-in account/source/capture/visibility fixtures, time-boxed F-00.2 native design, F-00.3 recording/share feasibility and F-00.5 early capture-and-Ask evaluation. The first live outcome is signed-in voice/text capture → private transcript → useful organized knowledge → own Ask, with prompt audio deletion and explicit source controls. Production text/URL share input arrives in early F-02; advanced capture polish remains F-06. Proposed limits and quality targets still require measurement.
 
 ## Isolation and configuration
 
