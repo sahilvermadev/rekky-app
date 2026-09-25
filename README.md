@@ -1,6 +1,6 @@
 # Rekky
 
-A fresh Flutter mobile application and Express/TypeScript/Postgres backend.
+A fresh Flutter mobile application and Rust/Postgres backend.
 
 **Tell Rekky once. Find it when it matters. Pass it on effortlessly.**
 
@@ -8,7 +8,7 @@ A fresh Flutter mobile application and Express/TypeScript/Postgres backend.
 
 Follow [the Rekky Flutter product and delivery plan](docs/REKKY_FLUTTER_PRODUCT_PLAN.md). It owns the product requirements, delivery sequence and acceptance gates. After mandatory sign-in, the app opens on Ask, Library is secondary, and Remember is an always-visible action. Completed items default to Friends with a simple Private override. Audio is deleted after a usable transcript is durably saved; retained text transcripts stay owner-only. Turning off future AI processing preserves completed knowledge and transcripts.
 
-The user chose a standalone repository on 2026-09-25. That supersedes only the plan's earlier placement inside the legacy repository. Flutter and the new backend remain together here for coordinated API changes.
+The user chose a standalone repository and a Rust backend on 2026-09-25. Flutter and the new backend remain together here for coordinated API changes.
 
 ## Repository layout
 

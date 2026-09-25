@@ -20,6 +20,9 @@ coverage/
 *.tsbuildinfo
 *.log
 
+# Rust outputs
+target/
+
 # Flutter / Dart outputs
 .dart_tool/
 .flutter-plugins
