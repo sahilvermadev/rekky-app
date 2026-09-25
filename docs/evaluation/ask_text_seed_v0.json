@@ -1,0 +1,24 @@
+{
+  "version": 0,
+  "provenance": "Synthetic planning examples, not user data or human-labelled audio",
+  "scope": "Own-library lexical Ask baseline only; no transcription, extraction or answer generation is scored",
+  "items": [
+    { "key": "raju_plumber", "subject": "Raju the plumber", "body": "Raju fixed our kitchen tap in Indiranagar. Priya has his number. His current service area is unknown." },
+    { "key": "raju_tutor", "subject": "Raju the maths tutor", "body": "Raju teaches maths to my nephew online. This is a different Raju from the plumber." },
+    { "key": "kuuraku", "subject": "Kuuraku", "body": "Kuuraku in Gurugram had excellent ramen and friendly staff. The small tables were uncomfortable for our group of six. I rated it 4/5." },
+    { "key": "delhi_ramen", "subject": "Ramen House Delhi", "body": "Ramen House is in Delhi. I liked the spicy ramen, but the wait was long." },
+    { "key": "meera", "subject": "Meera's swimming class", "body": "Meera teaches swimming near our apartment. I have not tried her classes yet." }
+  ],
+  "questions": [
+    { "key": "tap_recall", "language": "en", "class": "personal_recall", "question": "Who fixed our kitchen tap?", "expected": ["raju_plumber"], "forbidden": ["raju_tutor"] },
+    { "key": "unknown_area", "language": "en", "class": "service_area_uncertain", "question": "Who can repair a tap in Whitefield?", "expected": ["raju_plumber"], "forbidden": ["raju_tutor"], "note": "A useful lead is allowed, but current Whitefield coverage is not established." },
+    { "key": "gurugram_ramen", "language": "en", "class": "place_city", "question": "Where should we get ramen in Gurugram?", "expected": ["kuuraku"], "forbidden": ["delhi_ramen"] },
+    { "key": "delhi_ramen", "language": "en", "class": "place_city", "question": "Ramen in Delhi", "expected": ["delhi_ramen"], "forbidden": ["kuuraku"] },
+    { "key": "swimming_untried", "language": "en", "class": "attribution", "question": "Who teaches swimming?", "expected": ["meera"], "forbidden": [], "note": "The untried caveat must remain visible." },
+    { "key": "hindi_tap", "language": "hi", "class": "personal_recall", "question": "हमारे रसोई का नल किसने ठीक किया?", "expected": ["raju_plumber"], "forbidden": ["raju_tutor"] },
+    { "key": "hinglish_tap", "language": "hinglish", "class": "personal_recall", "question": "tap kisne theek kiya", "expected": ["raju_plumber"], "forbidden": ["raju_tutor"] },
+    { "key": "warning", "language": "en", "class": "warning", "question": "Which place had small tables for big groups?", "expected": ["kuuraku"], "forbidden": [] },
+    { "key": "same_name_tutor", "language": "en", "class": "same_name", "question": "Who is the Raju who teaches maths?", "expected": ["raju_tutor"], "forbidden": ["raju_plumber"] },
+    { "key": "no_answer", "language": "en", "class": "no_answer", "question": "Do I have a dentist recommendation?", "expected": [], "forbidden": ["raju_plumber", "raju_tutor", "kuuraku", "delhi_ramen", "meera"] }
+  ]
+}

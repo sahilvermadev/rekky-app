@@ -122,10 +122,11 @@ class _RekkyHomeState extends State<RekkyHome> {
 
   Future<void> _signOut() async {
     setState(() => busy = true);
+    var remoteRevoked = true;
     try {
       await api.signOut();
     } catch (_) {
-      /* Local sign-out still locks this device. */
+      remoteRevoked = false;
     }
     await identity.clearToken();
     api.token = null;
@@ -136,7 +137,7 @@ class _RekkyHomeState extends State<RekkyHome> {
         library = [];
         matches = [];
         busy = false;
-        issue = null;
+        issue = remoteRevoked ? null : 'Signed out on this device. Server revocation could not be confirmed.';
       });
     }
   }

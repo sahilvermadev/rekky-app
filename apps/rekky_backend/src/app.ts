@@ -162,7 +162,7 @@ export function createApp(db: Database, verify: IdentityVerifier) {
   app.post('/v1/ask', async (req, res) => {
     const input = askInput.safeParse(req.body);
     if (!input.success) return error(res, 400, 'invalid_request', 'Invalid question');
-    const questionWords = new Set(['who', 'what', 'where', 'which', 'did', 'does', 'the', 'our', 'can', 'is', 'in', 'for', 'me', 'to', 'a', 'an']);
+    const questionWords = new Set(['who', 'what', 'where', 'which', 'did', 'does', 'do', 'have', 'has', 'any', 'the', 'our', 'my', 'your', 'can', 'is', 'in', 'for', 'me', 'to', 'a', 'an', 'recommendation', 'recommendations']);
     const terms = (input.data.question.toLowerCase().match(/[\p{L}\p{M}\p{N}]+/gu) ?? []).filter((term) => term.length >= 2 && !questionWords.has(term)).slice(0, 8);
     if (!terms.length) return res.json({ scope: 'own', results: [], answer: null, next_cursor: null });
     const queryHash = createHash('sha256').update(input.data.question).digest('hex');
