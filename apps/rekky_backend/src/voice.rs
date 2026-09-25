@@ -21,7 +21,7 @@ pub trait VoiceTranscriber: Send + Sync {
 
 pub struct OpenAiTranscriber {
     key: Option<String>,
-    audited: bool,
+    enabled: bool,
     client: reqwest::Client,
 }
 
@@ -31,7 +31,7 @@ impl OpenAiTranscriber {
             key: env::var("OPENAI_API_KEY")
                 .ok()
                 .filter(|value| !value.is_empty()),
-            audited: env::var("OPENAI_TRANSCRIPTION_AUDITED").as_deref() == Ok("true"),
+            enabled: env::var("OPENAI_TRANSCRIPTION_ENABLED").as_deref() == Ok("true"),
             client: reqwest::Client::builder()
                 .timeout(Duration::from_secs(75))
                 .build()
@@ -48,7 +48,7 @@ struct TranscriptResponse {
 #[async_trait]
 impl VoiceTranscriber for OpenAiTranscriber {
     fn available(&self) -> bool {
-        self.key.is_some() && self.audited
+        self.key.is_some() && self.enabled
     }
 
     async fn transcribe(&self, audio: Vec<u8>) -> Result<String, TranscriptionError> {
