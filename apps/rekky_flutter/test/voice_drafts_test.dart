@@ -39,21 +39,27 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   sqfliteFfiInit();
 
-  late Directory root, support, cache;
+  late Directory root, support, cache, protected;
   late _FakeRecorder recorder;
   late VoiceDraftStore store;
 
-  VoiceDraftStore createStore(_FakeRecorder recorder) => VoiceDraftStore(
+  VoiceDraftStore createStore(
+    _FakeRecorder recorder, {
+    Future<void> Function(String)? protectFile,
+  }) => VoiceDraftStore(
     recorder: recorder,
     factory: databaseFactoryFfi,
     supportDirectory: () async => support,
     cacheDirectory: () async => cache,
+    protectedDirectory: () async => protected,
+    protectFile: protectFile ?? (_) async {},
   );
 
   setUp(() async {
     root = await Directory.systemTemp.createTemp('rekky-voice-test-');
     support = await Directory('${root.path}/support').create();
     cache = await Directory('${root.path}/cache').create();
+    protected = await Directory('${root.path}/protected').create();
     recorder = _FakeRecorder();
     store = createStore(recorder);
   });
@@ -74,13 +80,16 @@ void main() {
       final ready = await store.finish('owner-a');
       expect(ready.status, 'ready');
       expect(ready.bytes, 4);
+      expect(await File(recorder.path!).exists(), isFalse);
+      final protectedFile = File('${protected.path}/${ready.id}.m4a');
+      expect(await protectedFile.readAsBytes(), [1, 2, 3, 4]);
       expect(await store.forOwner('owner-b'), isEmpty);
       expect((await store.forOwner('owner-a')).single.id, ready.id);
 
       await store.delete('owner-b', ready.id);
-      expect(await File(recorder.path!).exists(), isTrue);
+      expect(await protectedFile.exists(), isTrue);
       await store.delete('owner-a', ready.id);
-      expect(await File(recorder.path!).exists(), isFalse);
+      expect(await protectedFile.exists(), isFalse);
       expect(await store.forOwner('owner-a'), isEmpty);
     },
   );
@@ -99,10 +108,10 @@ void main() {
   test('missing, expired and orphaned audio are reconciled', () async {
     await store.start('owner-a');
     final ready = await store.finish('owner-a');
-    await File(recorder.path!).delete();
+    await File('${protected.path}/${ready.id}.m4a').delete();
     expect((await store.forOwner('owner-a')).single.status, 'missing');
 
-    final orphan = File('${recorder.path!}.m4a');
+    final orphan = File('${protected.path}/orphan.part');
     await orphan.writeAsBytes([1]);
     await store.forOwner('owner-a');
     expect(await orphan.exists(), isFalse);
@@ -142,5 +151,44 @@ void main() {
       isEmpty,
     );
     expect(await store.forOwner('owner-a'), isEmpty);
+  });
+
+  test('a cache-era ready draft is promoted on restart', () async {
+    await store.start('owner-a');
+    final ready = await store.finish('owner-a');
+    final protectedFile = File('${protected.path}/${ready.id}.m4a');
+    await protectedFile.copy(recorder.path!);
+    await protectedFile.delete();
+    final db = await databaseFactoryFfi.openDatabase(
+      '${support.path}/voice_drafts_v1.db',
+      options: OpenDatabaseOptions(singleInstance: false),
+    );
+    await db.update(
+      'voice_drafts',
+      {'path': recorder.path},
+      where: 'id = ?',
+      whereArgs: [ready.id],
+    );
+    await db.close();
+    await store.dispose();
+    store = createStore(_FakeRecorder());
+
+    expect((await store.forOwner('owner-a')).single.status, 'ready');
+    expect(await protectedFile.readAsBytes(), [1, 2, 3, 4]);
+    expect(await File(recorder.path!).exists(), isFalse);
+  });
+
+  test('failed protection never acknowledges a ready draft', () async {
+    await store.dispose();
+    store = createStore(
+      recorder,
+      protectFile: (_) async => throw StateError('Protection failed.'),
+    );
+    await store.start('owner-a');
+    await expectLater(store.finish('owner-a'), throwsStateError);
+    expect(await File(recorder.path!).exists(), isTrue);
+    final drafts = await store.forOwner('owner-a');
+    expect(drafts.single.status, 'interrupted');
+    expect(await protected.list().toList(), isEmpty);
   });
 }

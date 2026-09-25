@@ -6,6 +6,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:sqflite/sqflite.dart';
 
+import 'protected_voice_storage.dart';
+
 const voiceDraftLifetime = Duration(days: 7);
 
 abstract class VoiceRecorder {
@@ -74,20 +76,30 @@ class VoiceDraftStore {
     this.factory,
     Future<Directory> Function()? supportDirectory,
     Future<Directory> Function()? cacheDirectory,
+    Future<Directory> Function()? protectedDirectory,
+    Future<void> Function(String)? protectFile,
   }) : _recorder = recorder ?? DeviceVoiceRecorder(),
        _supportDirectory = supportDirectory ?? getApplicationSupportDirectory,
-       _cacheDirectory = cacheDirectory ?? getApplicationCacheDirectory;
+       _cacheDirectory = cacheDirectory ?? getApplicationCacheDirectory,
+       _protectedDirectory =
+           protectedDirectory ?? ProtectedVoiceStorage().directory,
+       _protectFile = protectFile ?? ProtectedVoiceStorage().protectFile;
 
   final VoiceRecorder _recorder;
   final DatabaseFactory? factory;
   final Future<Directory> Function() _supportDirectory, _cacheDirectory;
+  final Future<Directory> Function() _protectedDirectory;
+  final Future<void> Function(String) _protectFile;
   Future<Database>? _databaseFuture;
   Future<Directory>? _audioDirectoryFuture;
+  Future<Directory>? _protectedDirectoryFuture;
   String? _activeId;
 
   Future<Database> get _database => _databaseFuture ??= _openDatabase();
   Future<Directory> get _audioDirectory =>
       _audioDirectoryFuture ??= _openAudioDirectory();
+  Future<Directory> get _durableDirectory =>
+      _protectedDirectoryFuture ??= _protectedDirectory();
 
   Future<Database> _openDatabase() async {
     final support = await _supportDirectory();
@@ -115,8 +127,8 @@ class VoiceDraftStore {
   }
 
   Future<Directory> _openAudioDirectory() async {
-    // App cache is excluded from normal device backups. The OS may evict it;
-    // reconciliation reports that loss rather than claiming durable capture.
+    // Record into backup-excluded cache, then promote into protected ownership
+    // before acknowledging the draft. The OS may evict an unfinished capture.
     final cache = await _cacheDirectory();
     final directory = Directory('${cache.path}/rekky_voice_drafts_v1');
     await directory.create(recursive: true);
@@ -126,6 +138,28 @@ class VoiceDraftStore {
   String _newId() => base64UrlEncode(
     List<int>.generate(24, (_) => Random.secure().nextInt(256)),
   ).replaceAll('=', '');
+
+  Future<String> _promote(String id, String sourcePath) async {
+    final directory = await _durableDirectory;
+    final source = File(sourcePath);
+    final part = File('${directory.path}/$id.part');
+    final complete = File('${directory.path}/$id.m4a');
+    final output = await part.open(mode: FileMode.write);
+    try {
+      await for (final chunk in source.openRead()) {
+        await output.writeFrom(chunk);
+      }
+      await output.flush();
+    } finally {
+      await output.close();
+    }
+    if (await part.length() != await source.length()) {
+      throw StateError('Temporary audio copy was incomplete.');
+    }
+    await part.rename(complete.path);
+    await _protectFile(complete.path);
+    return complete.path;
+  }
 
   Future<void> start(String ownerId) async {
     if (_activeId != null) throw StateError('A recording is already active.');
@@ -193,12 +227,18 @@ class VoiceDraftStore {
         );
         throw StateError('The recording was empty or unavailable.');
       }
+      final protectedPath = await _promote(id, path);
       await db.update(
         'voice_drafts',
-        {'status': 'ready', 'bytes': bytes},
+        {'status': 'ready', 'bytes': bytes, 'path': protectedPath},
         where: 'id = ? AND owner_id = ?',
         whereArgs: [id, ownerId],
       );
+      try {
+        await file.delete();
+      } catch (_) {
+        // A staging orphan is retried during the next reconciliation.
+      }
       return VoiceDraft.fromRow({
         ...rows.single,
         'status': 'ready',
@@ -248,7 +288,8 @@ class VoiceDraftStore {
 
   Future<List<VoiceDraft>> forOwner(String ownerId) async {
     final db = await _database;
-    final directory = await _audioDirectory;
+    final stagingDirectory = await _audioDirectory;
+    final protectedDirectory = await _durableDirectory;
     final all = await db.query('voice_drafts');
     final knownPaths = <String>{};
     final cutoff = DateTime.now()
@@ -256,15 +297,31 @@ class VoiceDraftStore {
         .millisecondsSinceEpoch;
     for (final row in all) {
       final id = row['id'] as String;
-      final path = row['path'] as String;
+      var path = row['path'] as String;
       if ((row['created_at_ms'] as int) < cutoff && id != _activeId) {
         await _deleteRow(db, id, path);
         continue;
       }
-      knownPaths.add(path);
-      if (id == _activeId) continue;
+      if (id == _activeId) {
+        knownPaths.add(path);
+        continue;
+      }
       final exists = await File(path).exists();
       final status = row['status'] as String;
+      if (exists &&
+          status == 'ready' &&
+          path.startsWith('${stagingDirectory.path}/')) {
+        final protectedPath = await _promote(id, path);
+        await db.update(
+          'voice_drafts',
+          {'path': protectedPath},
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+        await File(path).delete();
+        path = protectedPath;
+      }
+      knownPaths.add(path);
       if (!exists && status != 'missing') {
         await db.update(
           'voice_drafts',
@@ -281,11 +338,11 @@ class VoiceDraftStore {
         );
       }
     }
-    await for (final entry in directory.list()) {
-      if (entry is File &&
-          entry.path.endsWith('.m4a') &&
-          !knownPaths.contains(entry.path)) {
-        await entry.delete();
+    for (final directory in [stagingDirectory, protectedDirectory]) {
+      await for (final entry in directory.list()) {
+        if (entry is File && !knownPaths.contains(entry.path)) {
+          await entry.delete();
+        }
       }
     }
     final rows = await db.query(
