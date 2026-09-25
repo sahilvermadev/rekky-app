@@ -191,4 +191,62 @@ void main() {
     expect(drafts.single.status, 'interrupted');
     expect(await protected.list().toList(), isEmpty);
   });
+
+  test(
+    'server acknowledgement deletes only the accepted local audio',
+    () async {
+      await store.start('owner-a');
+      final ready = await store.finish('owner-a');
+      final file = File('${protected.path}/${ready.id}.m4a');
+      expect(await file.exists(), isTrue);
+      await store.acknowledgeTranscript('owner-a', ready.id);
+      expect(await file.exists(), isFalse);
+      expect(await store.forOwner('owner-a'), isEmpty);
+    },
+  );
+
+  test('withdrawal deletes unprocessed drafts for that account', () async {
+    await store.start('owner-a');
+    final ready = await store.finish('owner-a');
+    await store.deleteAll('owner-b');
+    expect((await store.forOwner('owner-a')).single.id, ready.id);
+    await store.deleteAll('owner-a');
+    expect(await store.forOwner('owner-a'), isEmpty);
+    expect(await File('${protected.path}/${ready.id}.m4a').exists(), isFalse);
+  });
+
+  test('version-one local metadata survives the schema upgrade', () async {
+    final file = File('${protected.path}/old-draft.m4a');
+    await file.writeAsBytes([1, 2, 3]);
+    final legacy = await databaseFactoryFfi.openDatabase(
+      '${support.path}/voice_drafts_v1.db',
+      options: OpenDatabaseOptions(
+        version: 1,
+        onCreate: (db, _) async {
+          await db.execute('''
+            CREATE TABLE voice_drafts (
+              id TEXT PRIMARY KEY, owner_id TEXT NOT NULL,
+              status TEXT NOT NULL CHECK(status IN ('recording','ready','interrupted','missing')),
+              path TEXT NOT NULL, bytes INTEGER NOT NULL,
+              created_at_ms INTEGER NOT NULL
+            )
+          ''');
+          await db.execute(
+            'CREATE INDEX voice_drafts_owner_idx ON voice_drafts(owner_id, created_at_ms DESC)',
+          );
+        },
+      ),
+    );
+    await legacy.insert('voice_drafts', {
+      'id': 'old-draft',
+      'owner_id': 'owner-a',
+      'status': 'ready',
+      'path': file.path,
+      'bytes': 3,
+      'created_at_ms': DateTime.now().millisecondsSinceEpoch,
+    });
+    await legacy.close();
+    expect((await store.forOwner('owner-a')).single.id, 'old-draft');
+    expect(await file.exists(), isTrue);
+  });
 }

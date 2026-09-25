@@ -1,4 +1,4 @@
-use rekky_backend::{AppState, auth::OidcVerifier, migrate, router};
+use rekky_backend::{AppState, auth::OidcVerifier, migrate, router, voice::OpenAiTranscriber};
 use sqlx::postgres::PgPoolOptions;
 use std::{env, net::SocketAddr, sync::Arc};
 
@@ -18,12 +18,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let port: u16 = env::var("PORT").unwrap_or_else(|_| "3088".into()).parse()?;
     let address: SocketAddr = format!("{host}:{port}").parse()?;
     let verifier = Arc::new(OidcVerifier::from_env());
+    let transcriber = Arc::new(OpenAiTranscriber::from_env());
     let listener = tokio::net::TcpListener::bind(address).await?;
     println!("Rekky backend listening on {address}");
-    axum::serve(listener, router(AppState { pool, verifier }))
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
-        .await?;
+    axum::serve(
+        listener,
+        router(AppState {
+            pool,
+            verifier,
+            transcriber,
+        }),
+    )
+    .with_graceful_shutdown(async {
+        let _ = tokio::signal::ctrl_c().await;
+    })
+    .await?;
     Ok(())
 }

@@ -8,10 +8,12 @@ use rekky_backend::{
     AppState,
     auth::{IdentityVerifier, Provider, VerifyError, hash_token},
     migrate, router,
+    voice::{TranscriptionError, VoiceTranscriber},
 };
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::sync::Arc;
+use tokio::sync::Notify;
 use tower::ServiceExt;
 use uuid::Uuid;
 
@@ -27,6 +29,41 @@ impl IdentityVerifier for TestVerifier {
         Ok(format!("{}:{}:{token}", self.marker, provider.as_str()))
     }
 }
+struct TestTranscriber;
+#[async_trait]
+impl VoiceTranscriber for TestTranscriber {
+    fn available(&self) -> bool {
+        true
+    }
+    async fn transcribe(&self, _audio: Vec<u8>) -> Result<String, TranscriptionError> {
+        Ok("Ravi fixed the kitchen tap on Tuesday.".to_owned())
+    }
+}
+struct BlockingTranscriber {
+    started: Notify,
+    release: Notify,
+}
+struct FailingTranscriber;
+#[async_trait]
+impl VoiceTranscriber for FailingTranscriber {
+    fn available(&self) -> bool {
+        true
+    }
+    async fn transcribe(&self, _audio: Vec<u8>) -> Result<String, TranscriptionError> {
+        Err(TranscriptionError::Failed)
+    }
+}
+#[async_trait]
+impl VoiceTranscriber for BlockingTranscriber {
+    fn available(&self) -> bool {
+        true
+    }
+    async fn transcribe(&self, _audio: Vec<u8>) -> Result<String, TranscriptionError> {
+        self.started.notify_one();
+        self.release.notified().await;
+        Ok("Ravi fixed the kitchen tap on Tuesday.".to_owned())
+    }
+}
 struct TestApp {
     pool: PgPool,
     app: Router,
@@ -34,6 +71,9 @@ struct TestApp {
 }
 impl TestApp {
     async fn new() -> Option<Self> {
+        Self::new_with_transcriber(Arc::new(TestTranscriber)).await
+    }
+    async fn new_with_transcriber(transcriber: Arc<dyn VoiceTranscriber>) -> Option<Self> {
         let url = std::env::var("DATABASE_URL").ok()?;
         let pool = PgPool::connect(&url).await.unwrap();
         migrate::run(&pool).await.unwrap();
@@ -43,6 +83,7 @@ impl TestApp {
         let app = router(AppState {
             pool: pool.clone(),
             verifier,
+            transcriber,
         });
         Some(Self {
             pool,
@@ -80,6 +121,26 @@ impl TestApp {
             serde_json::from_slice(&bytes).unwrap()
         };
         (status, value)
+    }
+    async fn call_audio(
+        &self,
+        path: &str,
+        token: &str,
+        audio: Vec<u8>,
+        captured_ms: i64,
+    ) -> (StatusCode, Value) {
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri(path)
+            .header("authorization", format!("Bearer {token}"))
+            .header("content-type", "audio/mp4")
+            .header("x-captured-at-ms", captured_ms.to_string())
+            .body(Body::from(audio))
+            .unwrap();
+        let response = self.app.clone().oneshot(request).await.unwrap();
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        (status, serde_json::from_slice(&bytes).unwrap())
     }
     async fn sign_in(&mut self, provider: &str, id_token: &str) -> (Uuid, String) {
         let (status, body) = self
@@ -132,6 +193,10 @@ async fn wire_fixtures() {
         "source_deleted_item_retained",
         "idempotency_conflict",
         "processing_withdrawal_ack",
+        "voice_permission",
+        "voice_permission_ack",
+        "voice_transcript_ready",
+        "voice_permission_required",
     ] {
         assert!(names.contains(&name), "missing {name}");
     }
@@ -498,6 +563,353 @@ async fn signed_in_text_memory_privacy_and_non_resurrection() {
     assert_eq!(
         t.call(Method::GET, "/v1/me", Some(&a), None, &[]).await.0,
         StatusCode::UNAUTHORIZED
+    );
+    t.cleanup().await;
+}
+
+#[tokio::test]
+async fn voice_requires_separate_permission_and_retains_private_transcript() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    let (owner_id, token) = t.sign_in("google", "valid-a").await;
+    let (_, foreign_token) = t.sign_in("google", "valid-b").await;
+    assert_eq!(
+        t.call(
+            Method::POST,
+            "/v1/me/visibility-disclosure",
+            Some(&token),
+            Some(json!({"accept":true})),
+            &[]
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        t.call(
+            Method::POST,
+            "/v1/me/visibility-disclosure",
+            Some(&foreign_token),
+            Some(json!({"accept":true})),
+            &[]
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let mut audio = vec![0_u8; 230_698];
+    audio[4..8].copy_from_slice(b"ftyp");
+    let path = "/v1/voice-drafts/abcdefghijklmnopabcdefghijklmnop/transcribe";
+    let captured_ms = chrono::Utc::now().timestamp_millis();
+    assert_eq!(
+        t.call_audio(path, &token, audio.clone(), captured_ms)
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        t.call(
+            Method::POST,
+            "/v1/me/voice-transcription-permission",
+            Some(&token),
+            Some(json!({"enabled":true,"disclosure_version":99})),
+            &[]
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    let (status, permission) = t
+        .call(
+            Method::POST,
+            "/v1/me/voice-transcription-permission",
+            Some(&token),
+            Some(json!({"enabled":true,"disclosure_version":1})),
+            &[],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(permission["voice_transcription"]["generation"], 1);
+    let (status, saved) = t.call_audio(path, &token, audio.clone(), captured_ms).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(saved["capture"]["status"], "transcript_ready");
+    assert_eq!(saved["server_audio_retained"], false);
+    let capture_id = saved["capture"]["id"].as_str().unwrap();
+    let (status, repeated) = t.call_audio(path, &token, audio, captured_ms).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(repeated["capture"]["id"], capture_id);
+    assert_eq!(
+        t.call(
+            Method::GET,
+            "/v1/voice-captures",
+            Some(&foreign_token),
+            None,
+            &[]
+        )
+        .await
+        .1["voice_captures"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+    let (status, listed) = t
+        .call(Method::GET, "/v1/voice-captures", Some(&token), None, &[])
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(listed["voice_captures"][0]["id"], capture_id);
+    assert_eq!(
+        sqlx::query_scalar::<_, String>(
+            "SELECT desired_visibility FROM captures WHERE id=$1 AND owner_id=$2",
+        )
+        .bind(Uuid::parse_str(capture_id).unwrap())
+        .bind(owner_id)
+        .fetch_one(&t.pool)
+        .await
+        .unwrap(),
+        "private"
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM knowledge_items WHERE owner_id=$1")
+            .bind(owner_id)
+            .fetch_one(&t.pool)
+            .await
+            .unwrap(),
+        0
+    );
+    let (status, withdrawn) = t
+        .call(
+            Method::POST,
+            "/v1/me/voice-transcription-permission",
+            Some(&token),
+            Some(json!({"enabled":false})),
+            &[],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(withdrawn["voice_transcription"]["generation"], 2);
+    assert_eq!(
+        t.call(Method::GET, "/v1/voice-captures", Some(&token), None, &[])
+            .await
+            .1["voice_captures"][0]["id"],
+        capture_id
+    );
+    let source_path = format!("/v1/captures/{capture_id}/source");
+    assert_eq!(
+        t.call(
+            Method::DELETE,
+            &source_path,
+            Some(&foreign_token),
+            None,
+            &[("if-match", "1")],
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        t.call(
+            Method::DELETE,
+            &source_path,
+            Some(&token),
+            None,
+            &[("if-match", "1")],
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert!(
+        t.call(Method::GET, "/v1/voice-captures", Some(&token), None, &[])
+            .await
+            .1["voice_captures"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    t.cleanup().await;
+}
+
+#[tokio::test]
+async fn voice_withdrawal_fences_in_flight_result() {
+    let transcriber = Arc::new(BlockingTranscriber {
+        started: Notify::new(),
+        release: Notify::new(),
+    });
+    let Some(mut t) = TestApp::new_with_transcriber(transcriber.clone()).await else {
+        return;
+    };
+    let (_, token) = t.sign_in("google", "valid-a").await;
+    assert_eq!(
+        t.call(
+            Method::POST,
+            "/v1/me/visibility-disclosure",
+            Some(&token),
+            Some(json!({"accept":true})),
+            &[],
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        t.call(
+            Method::POST,
+            "/v1/me/voice-transcription-permission",
+            Some(&token),
+            Some(json!({"enabled":true,"disclosure_version":1})),
+            &[],
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let mut audio = vec![0_u8; 230_698];
+    audio[4..8].copy_from_slice(b"ftyp");
+    let path = "/v1/voice-drafts/fedcbafedcbafedcbafedcbafedcbafe/transcribe";
+    let captured_ms = chrono::Utc::now().timestamp_millis();
+    let started = transcriber.started.notified();
+    let upload = t.call_audio(path, &token, audio.clone(), captured_ms);
+    tokio::pin!(upload);
+    tokio::select! {
+        _ = started => {},
+        result = &mut upload => panic!("upload ended before provider wait: {result:?}"),
+    }
+    let (status, _) = t
+        .call(
+            Method::POST,
+            "/v1/me/voice-transcription-permission",
+            Some(&token),
+            Some(json!({"enabled":false})),
+            &[],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    transcriber.release.notify_one();
+    let (status, response) = upload.await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(response["error"]["code"], "voice_permission_changed");
+    assert_eq!(
+        t.call(Method::GET, "/v1/voice-captures", Some(&token), None, &[])
+            .await
+            .1["voice_captures"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+    t.call(
+        Method::POST,
+        "/v1/me/voice-transcription-permission",
+        Some(&token),
+        Some(json!({"enabled":true,"disclosure_version":1})),
+        &[],
+    )
+    .await;
+    assert_eq!(
+        t.call_audio(path, &token, audio, captured_ms).await.0,
+        StatusCode::CONFLICT
+    );
+    t.cleanup().await;
+}
+
+#[tokio::test]
+async fn voice_budget_blocks_new_jobs_but_allows_idempotent_receipt_recovery() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    let (_, token) = t.sign_in("google", "valid-a").await;
+    t.call(
+        Method::POST,
+        "/v1/me/visibility-disclosure",
+        Some(&token),
+        Some(json!({"accept":true})),
+        &[],
+    )
+    .await;
+    t.call(
+        Method::POST,
+        "/v1/me/voice-transcription-permission",
+        Some(&token),
+        Some(json!({"enabled":true,"disclosure_version":1})),
+        &[],
+    )
+    .await;
+    let mut audio = vec![0_u8; 256];
+    audio[4..8].copy_from_slice(b"ftyp");
+    let captured_ms = chrono::Utc::now().timestamp_millis();
+    for index in 0..12 {
+        let path = format!("/v1/voice-drafts/{index:032}/transcribe");
+        assert_eq!(
+            t.call_audio(&path, &token, audio.clone(), captured_ms)
+                .await
+                .0,
+            StatusCode::CREATED
+        );
+    }
+    assert_eq!(
+        t.call_audio(
+            "/v1/voice-drafts/99999999999999999999999999999999/transcribe",
+            &token,
+            audio.clone(),
+            captured_ms,
+        )
+        .await
+        .0,
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    assert_eq!(
+        t.call_audio(
+            "/v1/voice-drafts/00000000000000000000000000000000/transcribe",
+            &token,
+            audio,
+            captured_ms,
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    t.cleanup().await;
+}
+
+#[tokio::test]
+async fn voice_failed_draft_has_bounded_paid_retries() {
+    let Some(mut t) = TestApp::new_with_transcriber(Arc::new(FailingTranscriber)).await else {
+        return;
+    };
+    let (_, token) = t.sign_in("google", "valid-a").await;
+    t.call(
+        Method::POST,
+        "/v1/me/visibility-disclosure",
+        Some(&token),
+        Some(json!({"accept":true})),
+        &[],
+    )
+    .await;
+    t.call(
+        Method::POST,
+        "/v1/me/voice-transcription-permission",
+        Some(&token),
+        Some(json!({"enabled":true,"disclosure_version":1})),
+        &[],
+    )
+    .await;
+    let mut audio = vec![0_u8; 256];
+    audio[4..8].copy_from_slice(b"ftyp");
+    let path = "/v1/voice-drafts/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/transcribe";
+    let captured_ms = chrono::Utc::now().timestamp_millis();
+    for _ in 0..3 {
+        assert_eq!(
+            t.call_audio(path, &token, audio.clone(), captured_ms)
+                .await
+                .0,
+            StatusCode::BAD_GATEWAY
+        );
+    }
+    assert_eq!(
+        t.call_audio(path, &token, audio, captured_ms).await.0,
+        StatusCode::TOO_MANY_REQUESTS
     );
     t.cleanup().await;
 }

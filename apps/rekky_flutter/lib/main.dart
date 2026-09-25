@@ -204,10 +204,13 @@ class _RekkyHomeState extends State<RekkyHome> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      isDismissible: false,
+      enableDrag: false,
       showDragHandle: true,
       builder: (_) => VoiceDraftsSheet(
         ownerId: owner,
         store: voiceStore,
+        api: api,
         onChanged: _reloadVoiceDrafts,
       ),
     );
@@ -567,20 +570,18 @@ class _RekkyHomeState extends State<RekkyHome> {
         const Text(
           'Searching your own saved memories. Friend answers come later.',
         ),
-        if (voiceDrafts.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.mic_none),
-              title: Text(
-                '${voiceDrafts.length} voice draft${voiceDrafts.length == 1 ? '' : 's'} on this device',
-              ),
-              subtitle: const Text('Not transcribed or saved to Library yet'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: _openVoiceDrafts,
+        const SizedBox(height: 16),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.mic_none),
+            title: const Text('Voice drafts and private transcripts'),
+            subtitle: Text(
+              '${voiceDrafts.length} local draft${voiceDrafts.length == 1 ? '' : 's'}',
             ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: _openVoiceDrafts,
           ),
-        ],
+        ),
         const SizedBox(height: 20),
         if (searching) const LinearProgressIndicator(),
         Expanded(

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -50,6 +51,23 @@ class RekkySource {
   );
 }
 
+class VoiceCapture {
+  const VoiceCapture({
+    required this.id,
+    required this.transcript,
+    required this.sourceRevision,
+    required this.createdAt,
+  });
+  final String id, transcript, createdAt;
+  final int sourceRevision;
+  factory VoiceCapture.fromJson(Map<String, dynamic> json) => VoiceCapture(
+    id: json['id'] as String,
+    transcript: json['transcript'] as String,
+    sourceRevision: json['source_revision'] as int,
+    createdAt: json['created_at'] as String,
+  );
+}
+
 class RekkyApi {
   RekkyApi(this.baseUrl, {http.Client? client})
     : _client = client ?? http.Client();
@@ -57,12 +75,7 @@ class RekkyApi {
   final http.Client _client;
   String? token;
 
-  Future<Map<String, dynamic>> request(
-    String method,
-    String path, {
-    Object? body,
-    Map<String, String> headers = const {},
-  }) async {
+  Uri _uri(String path) {
     if (baseUrl.isEmpty) {
       throw const ApiFailure(
         'configuration',
@@ -81,7 +94,30 @@ class RekkyApi {
         0,
       );
     }
-    final request = http.Request(method, uri);
+    return uri;
+  }
+
+  Map<String, dynamic> _decode(http.Response response) {
+    if (response.statusCode == 204) return {};
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode >= 400) {
+      final error = decoded['error'] as Map<String, dynamic>? ?? {};
+      throw ApiFailure(
+        error['code'] as String? ?? 'request_failed',
+        error['message'] as String? ?? 'Request failed',
+        response.statusCode,
+      );
+    }
+    return decoded;
+  }
+
+  Future<Map<String, dynamic>> request(
+    String method,
+    String path, {
+    Object? body,
+    Map<String, String> headers = const {},
+  }) async {
+    final request = http.Request(method, _uri(path));
     request.headers.addAll({
       'accept': 'application/json',
       if (body != null) 'content-type': 'application/json',
@@ -94,17 +130,67 @@ class RekkyApi {
         .timeout(const Duration(seconds: 20));
     final response = await http.Response.fromStream(streamed)
         .timeout(const Duration(seconds: 20));
-    if (response.statusCode == 204) return {};
-    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
-    if (response.statusCode >= 400) {
-      final error = decoded['error'] as Map<String, dynamic>? ?? {};
-      throw ApiFailure(
-        error['code'] as String? ?? 'request_failed',
-        error['message'] as String? ?? 'Request failed',
-        response.statusCode,
+    return _decode(response);
+  }
+
+  Future<Map<String, dynamic>> voicePermission() =>
+      request('GET', '/v1/me/voice-transcription-permission');
+
+  Future<void> setVoicePermission(bool enabled) async {
+    await request(
+      'POST',
+      '/v1/me/voice-transcription-permission',
+      body: {'enabled': enabled, if (enabled) 'disclosure_version': 1},
+    );
+  }
+
+  Future<List<VoiceCapture>> voiceCaptures() async {
+    final response = await request('GET', '/v1/voice-captures');
+    return (response['voice_captures'] as List<dynamic>)
+        .map((value) => VoiceCapture.fromJson(value as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> transcribeVoice(
+    String draftId,
+    int capturedAtMs,
+    File audioFile,
+  ) async {
+    final request = http.Request(
+      'POST',
+      _uri('/v1/voice-drafts/$draftId/transcribe'),
+    );
+    request.headers.addAll({
+      'accept': 'application/json',
+      'content-type': 'audio/mp4',
+      'x-captured-at-ms': '$capturedAtMs',
+      if (token != null) 'authorization': 'Bearer $token',
+    });
+    request.bodyBytes = await audioFile.readAsBytes();
+    final streamed = await _client
+        .send(request)
+        .timeout(const Duration(seconds: 90));
+    final response = await http.Response.fromStream(streamed)
+        .timeout(const Duration(seconds: 90));
+    final result = _decode(response);
+    final capture = result['capture'] as Map<String, dynamic>?;
+    if (result['server_audio_retained'] != false ||
+        capture?['status'] != 'transcript_ready' ||
+        (capture?['transcript'] as String?)?.trim().isEmpty != false) {
+      throw const ApiFailure(
+        'invalid_response',
+        'Server did not confirm a usable private transcript.',
+        0,
       );
     }
-    return decoded;
+  }
+
+  Future<void> deleteVoiceTranscript(VoiceCapture capture) async {
+    await request(
+      'DELETE',
+      '/v1/captures/${capture.id}/source',
+      headers: {'if-match': '${capture.sourceRevision}'},
+    );
   }
 
   Future<Map<String, dynamic>> exchange(String provider, String idToken) =>

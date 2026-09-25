@@ -12,13 +12,18 @@
     { "name": "text_retained_audio_deleted", "status": 200, "body": { "capture": { "id": "33333333-3333-4333-8333-333333333333", "status": "completed", "revision": 1, "source": { "kind": "transcript", "text": "Raju fixed our kitchen tap.", "revision": 1 } } } },
     { "name": "source_deleted_item_retained", "status": 200, "body": { "capture": { "id": "33333333-3333-4333-8333-333333333333", "status": "completed", "revision": 1, "source": null } } },
     { "name": "idempotency_conflict", "status": 409, "body": { "error": { "code": "idempotency_conflict", "message": "This key was used for another request" } } },
-    { "name": "processing_withdrawal_ack", "status": 200, "body": { "processing": { "enabled": false, "generation": 2, "acknowledged": true } } }
+    { "name": "processing_withdrawal_ack", "status": 200, "body": { "processing": { "enabled": false, "generation": 2, "acknowledged": true } } },
+    { "name": "voice_permission", "status": 200, "body": { "voice_transcription": { "enabled": false, "generation": 0, "disclosure_version": null, "provider": "openai", "model": "gpt-transcribe", "provider_available": true } } },
+    { "name": "voice_permission_ack", "status": 200, "body": { "voice_transcription": { "enabled": true, "generation": 1, "disclosure_version": 1, "provider": "openai", "acknowledged": true } } },
+    { "name": "voice_transcript_ready", "status": 201, "body": { "capture": { "id": "44444444-4444-4444-8444-444444444444", "status": "transcript_ready", "transcript": "Raju fixed our kitchen tap." }, "server_audio_retained": false } },
+    { "name": "voice_permission_required", "status": 403, "body": { "error": { "code": "voice_permission_required", "message": "Allow voice transcription before uploading audio" } } }
   ],
   "rules": {
     "audience": ["friends", "private"],
     "source_kinds": ["typed", "transcript", "shared_text"],
     "capture_states": ["queued", "transcript_ready", "processing", "partial", "completed", "failed", "expired"],
     "offline_privacy": "A local pending change is not an acknowledgement. The server response revision and visibility are authoritative.",
-    "processing_withdrawal": "Withdrawing future processing does not delete a completed item or retained source text; source deletion is separate."
+    "processing_withdrawal": "Withdrawing future processing does not delete a completed item or retained source text; source deletion is separate.",
+    "voice_transcription": "The raw M4A upload requires independent permission generation and age checks. A usable owner-only transcript is committed before local audio deletion; no completed knowledge item is created by transcription alone."
   }
 }

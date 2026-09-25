@@ -106,13 +106,13 @@ class VoiceDraftStore {
     return (factory ?? databaseFactory).openDatabase(
       '${support.path}/voice_drafts_v1.db',
       options: OpenDatabaseOptions(
-        version: 1,
+        version: 2,
         onCreate: (db, _) async {
           await db.execute('''
           CREATE TABLE voice_drafts (
             id TEXT PRIMARY KEY,
             owner_id TEXT NOT NULL,
-            status TEXT NOT NULL CHECK(status IN ('recording','ready','interrupted','missing')),
+            status TEXT NOT NULL CHECK(status IN ('recording','ready','interrupted','missing','accepted','deleting')),
             path TEXT NOT NULL,
             bytes INTEGER NOT NULL DEFAULT 0,
             created_at_ms INTEGER NOT NULL
@@ -121,6 +121,31 @@ class VoiceDraftStore {
           await db.execute(
             'CREATE INDEX voice_drafts_owner_idx ON voice_drafts(owner_id, created_at_ms DESC)',
           );
+        },
+        onUpgrade: (db, oldVersion, _) async {
+          if (oldVersion < 2) {
+            await db.execute(
+              'ALTER TABLE voice_drafts RENAME TO voice_drafts_old',
+            );
+            await db.execute('''
+              CREATE TABLE voice_drafts (
+                id TEXT PRIMARY KEY,
+                owner_id TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('recording','ready','interrupted','missing','accepted','deleting')),
+                path TEXT NOT NULL,
+                bytes INTEGER NOT NULL DEFAULT 0,
+                created_at_ms INTEGER NOT NULL
+              )
+            ''');
+            await db.execute('''
+              INSERT INTO voice_drafts(id,owner_id,status,path,bytes,created_at_ms)
+              SELECT id,owner_id,status,path,bytes,created_at_ms FROM voice_drafts_old
+            ''');
+            await db.execute('DROP TABLE voice_drafts_old');
+            await db.execute(
+              'CREATE INDEX voice_drafts_owner_idx ON voice_drafts(owner_id, created_at_ms DESC)',
+            );
+          }
         },
       ),
     );
@@ -260,11 +285,10 @@ class VoiceDraftStore {
       whereArgs: [id, ownerId],
       limit: 1,
     );
+    if (rows.isEmpty) throw StateError('Recording owner changed.');
     await _recorder.cancel();
     _activeId = null;
-    if (rows.isNotEmpty) {
-      await _deleteRow(db, id, rows.single['path'] as String);
-    }
+    await _deleteRow(db, id, rows.single['path'] as String);
   }
 
   Future<void> _deleteRow(Database db, String id, String path) async {
@@ -286,8 +310,67 @@ class VoiceDraftStore {
     await _deleteRow(db, id, rows.single['path'] as String);
   }
 
+  Future<File> readyFile(String ownerId, VoiceDraft draft) async {
+    final db = await _database;
+    final rows = await db.query(
+      'voice_drafts',
+      where: 'id = ? AND owner_id = ? AND status = ?',
+      whereArgs: [draft.id, ownerId, 'ready'],
+      limit: 1,
+    );
+    if (rows.isEmpty) throw StateError('Voice draft is not ready.');
+    final row = rows.single;
+    if ((row['created_at_ms'] as int) <
+        DateTime.now().subtract(voiceDraftLifetime).millisecondsSinceEpoch) {
+      throw StateError('Voice draft has expired.');
+    }
+    final file = File(row['path'] as String);
+    if (!await file.exists() || await file.length() != row['bytes']) {
+      throw StateError('Voice draft audio is unavailable.');
+    }
+    return file;
+  }
+
+  Future<void> acknowledgeTranscript(String ownerId, String id) async {
+    final db = await _database;
+    await db.update(
+      'voice_drafts',
+      {'status': 'accepted'},
+      where: 'id = ? AND owner_id = ? AND status = ?',
+      whereArgs: [id, ownerId, 'ready'],
+    );
+    await _retryPendingDeletion(db);
+  }
+
+  Future<void> deleteAll(String ownerId) async {
+    if (_activeId != null) await cancel(ownerId);
+    final db = await _database;
+    await db.update(
+      'voice_drafts',
+      {'status': 'deleting'},
+      where: 'owner_id = ? AND status != ?',
+      whereArgs: [ownerId, 'accepted'],
+    );
+    await _retryPendingDeletion(db);
+  }
+
+  Future<void> _retryPendingDeletion(Database db) async {
+    final rows = await db.query(
+      'voice_drafts',
+      where: "status IN ('accepted','deleting')",
+    );
+    for (final row in rows) {
+      try {
+        await _deleteRow(db, row['id'] as String, row['path'] as String);
+      } catch (_) {
+        // Leave the durable cleanup marker for the next permitted execution.
+      }
+    }
+  }
+
   Future<List<VoiceDraft>> forOwner(String ownerId) async {
     final db = await _database;
+    await _retryPendingDeletion(db);
     final stagingDirectory = await _audioDirectory;
     final protectedDirectory = await _durableDirectory;
     final all = await db.query('voice_drafts');
@@ -298,6 +381,10 @@ class VoiceDraftStore {
     for (final row in all) {
       final id = row['id'] as String;
       var path = row['path'] as String;
+      if (row['status'] == 'accepted' || row['status'] == 'deleting') {
+        knownPaths.add(path);
+        continue;
+      }
       if ((row['created_at_ms'] as int) < cutoff && id != _activeId) {
         await _deleteRow(db, id, path);
         continue;
@@ -348,7 +435,7 @@ class VoiceDraftStore {
     final rows = await db.query(
       'voice_drafts',
       columns: ['id', 'owner_id', 'status', 'bytes', 'created_at_ms'],
-      where: 'owner_id = ?',
+      where: "owner_id = ? AND status NOT IN ('accepted','deleting')",
       whereArgs: [ownerId],
       orderBy: 'created_at_ms DESC',
     );

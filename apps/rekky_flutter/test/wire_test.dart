@@ -62,6 +62,11 @@ void main() {
           as Map<String, dynamic>)['body']['capture']['source'],
       null,
     );
+    expect(
+      (examples['voice_transcript_ready']
+          as Map<String, dynamic>)['body']['server_audio_retained'],
+      false,
+    );
   });
 
   test('the API client accepts saved-item and error wire examples', () async {
@@ -121,5 +126,37 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Continue with Google'), findsOneWidget);
     expect(find.byType(NavigationBar), findsNothing);
+  });
+
+  test('voice upload uses binary M4A and waits for a transcript acknowledgement', () async {
+    final root = await Directory.systemTemp.createTemp('rekky-api-voice-');
+    try {
+      final file = File('${root.path}/voice.m4a');
+      final audio = List<int>.filled(256, 0)..setRange(4, 8, 'ftyp'.codeUnits);
+      await file.writeAsBytes(audio);
+      final client = MockClient((request) async {
+        expect(request.url.path, '/v1/voice-drafts/draft-1234567890123456/transcribe');
+        expect(request.headers['authorization'], 'Bearer session-token');
+        expect(request.headers['content-type'], 'audio/mp4');
+        expect(request.headers['x-captured-at-ms'], '1234');
+        expect(request.bodyBytes, audio);
+        return http.Response(
+          jsonEncode({
+            'capture': {
+              'id': '44444444-4444-4444-8444-444444444444',
+              'status': 'transcript_ready',
+              'transcript': 'Ravi fixed the kitchen tap.',
+            },
+            'server_audio_retained': false,
+          }),
+          201,
+        );
+      });
+      final api = RekkyApi('https://api.example.test', client: client)
+        ..token = 'session-token';
+      await api.transcribeVoice('draft-1234567890123456', 1234, file);
+    } finally {
+      await root.delete(recursive: true);
+    }
   });
 }

@@ -1,6 +1,6 @@
 # Local voice-draft spike (F-00.3)
 
-This checkpoint proves the app can prepare account-scoped temporary audio without sending it to a processor. It is **not** the product's voice-to-memory journey: there is no upload, transcription, accepted-transcript acknowledgement or server audio deletion yet. A draft is never shown as a saved Library item.
+This checkpoint established account-scoped temporary audio before provider processing existed. The later [transcription bridge](./VOICE_TRANSCRIPTION_SLICE.md) adds an opt-in upload and private transcript, but not automatic knowledge organization. A draft is never shown as a saved Library item.
 
 ## Current flow
 
@@ -16,4 +16,4 @@ The recorder uses the [record package](https://pub.dev/packages/record) with AAC
 
 Flutter lifecycle tests cover row-before-record, owner isolation, protected-copy/deletion, cache-era migration, interrupted restart, missing files, orphan cleanup, expiry and permission denial. Flutter analysis and an Android debug build pass. The earlier build was installed on a physical Android phone and its signed-in Remember sheet was inspected; the microphone was not activated during that checkpoint. Physical-device recording, permission denial, app kill/restart with real media, backup inspection, full-storage behavior and iOS recording still need to be tested. Android and iOS CI builds check compilation, not microphone behavior.
 
-The current app also needs the local backend to restore a session on launch. Offline capture after a prior sign-in, source-text acknowledgement, processing permission, transcription, and post-transcription deletion belong to the next integrated slice. Before any audio upload, audit and disclose the selected provider's actual retention/training settings, record independent transcription consent on the backend, and test withdrawal fencing. This draft spike grants no processing permission.
+The current app also needs the local backend to restore a session on launch. Offline capture after a prior sign-in and the remaining physical-device checks are still open. The subsequent bridge records independent transcription permission on the backend, fences withdrawal, and deletes local audio after a private transcript acknowledgement; actual provider-account settings, live transcription quality and physical-device audio deletion still require verification. This recording spike alone grants no processing permission.

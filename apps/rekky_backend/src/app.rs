@@ -1,6 +1,7 @@
 use crate::auth::{
     IdentityVerifier, Provider, VerifyError, account_for_token, exchange_identity, hash_token,
 };
+use crate::voice::{VOICE_DISCLOSURE_VERSION, VOICE_MODEL, VOICE_PROVIDER, VoiceTranscriber};
 use axum::{
     Json, Router,
     body::Bytes,
@@ -26,6 +27,7 @@ use uuid::Uuid;
 pub struct AppState {
     pub pool: PgPool,
     pub verifier: Arc<dyn IdentityVerifier>,
+    pub transcriber: Arc<dyn VoiceTranscriber>,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -36,6 +38,15 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/me", get(me))
         .route("/v1/me/visibility-disclosure", post(accept_disclosure))
         .route("/v1/me/processing-withdrawal", post(withdraw_processing))
+        .route(
+            "/v1/me/voice-transcription-permission",
+            get(voice_permission).post(set_voice_permission),
+        )
+        .route("/v1/voice-captures", get(list_voice_captures))
+        .route(
+            "/v1/voice-drafts/{id}/transcribe",
+            post(transcribe_voice).layer(DefaultBodyLimit::max(5 * 1024 * 1024)),
+        )
         .route("/v1/items", post(save_item).get(list_items))
         .route(
             "/v1/items/{id}",
@@ -269,6 +280,362 @@ async fn withdraw_processing(
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct EmptyInput {}
+
+async fn voice_permission(State(state): State<AppState>, headers: HeaderMap) -> ApiResult {
+    let id = owner(&state, &headers, true).await?;
+    let row = sqlx::query(
+        "SELECT enabled,generation,disclosure_version FROM voice_transcription_permissions WHERE account_id=$1",
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?;
+    Ok(ok(json!({"voice_transcription":{
+        "enabled":row.as_ref().map(|r| r.get::<bool,_>("enabled")).unwrap_or(false),
+        "generation":row.as_ref().map(|r| r.get::<i64,_>("generation")).unwrap_or(0),
+        "disclosure_version":row.as_ref().and_then(|r| r.get::<Option<i32>,_>("disclosure_version")),
+        "provider":VOICE_PROVIDER,
+        "model":VOICE_MODEL,
+        "provider_available":state.transcriber.available()
+    }})))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VoicePermissionInput {
+    enabled: bool,
+    disclosure_version: Option<i32>,
+}
+
+async fn set_voice_permission(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> ApiResult {
+    let id = owner(&state, &headers, true).await?;
+    let input: VoicePermissionInput = parse(&body)?;
+    if input.enabled && input.disclosure_version != Some(VOICE_DISCLOSURE_VERSION) {
+        return Err(ApiError::bad(
+            "Current voice-processing disclosure is required",
+        ));
+    }
+    if input.enabled && !state.transcriber.available() {
+        return Err(ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "voice_unavailable",
+            "Voice transcription is not configured",
+        ));
+    }
+    let mut tx = state.pool.begin().await?;
+    let disclosure_version = if input.enabled {
+        Some(VOICE_DISCLOSURE_VERSION)
+    } else {
+        None
+    };
+    let row = sqlx::query(
+        "INSERT INTO voice_transcription_permissions(account_id,enabled,generation,provider_id,disclosure_version) \
+         VALUES ($1,$2,1,'openai',$3) \
+         ON CONFLICT (account_id) DO UPDATE SET \
+         generation=CASE WHEN voice_transcription_permissions.enabled IS DISTINCT FROM EXCLUDED.enabled \
+           OR (EXCLUDED.enabled AND voice_transcription_permissions.disclosure_version IS DISTINCT FROM EXCLUDED.disclosure_version) \
+           THEN voice_transcription_permissions.generation+1 ELSE voice_transcription_permissions.generation END, \
+         enabled=EXCLUDED.enabled, \
+         disclosure_version=CASE WHEN EXCLUDED.enabled THEN EXCLUDED.disclosure_version ELSE voice_transcription_permissions.disclosure_version END, \
+         updated_at=now() RETURNING generation",
+    )
+    .bind(id)
+    .bind(input.enabled)
+    .bind(disclosure_version)
+    .fetch_one(&mut *tx)
+    .await?;
+    if !input.enabled {
+        sqlx::query("UPDATE voice_transcription_jobs SET status='cancelled',updated_at=now() WHERE account_id=$1 AND status='processing'")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+    }
+    let generation: i64 = row.try_get("generation")?;
+    tx.commit().await?;
+    Ok(ok(json!({"voice_transcription":{
+        "enabled":input.enabled,
+        "generation":generation,
+        "disclosure_version":if input.enabled {Some(VOICE_DISCLOSURE_VERSION)} else {None},
+        "provider":VOICE_PROVIDER,
+        "acknowledged":true
+    }})))
+}
+
+async fn list_voice_captures(State(state): State<AppState>, headers: HeaderMap) -> ApiResult {
+    let id = owner(&state, &headers, true).await?;
+    let rows = sqlx::query(
+        "SELECT c.id,c.created_at,s.content,s.revision FROM captures c JOIN source_texts s \
+         ON s.capture_id=c.id AND s.owner_id=c.owner_id \
+         WHERE c.owner_id=$1 AND c.kind='voice' AND s.kind='transcript' \
+         ORDER BY c.created_at DESC,c.id DESC LIMIT 50",
+    )
+    .bind(id)
+    .fetch_all(&state.pool)
+    .await?;
+    let captures: Vec<Value> = rows
+        .into_iter()
+        .map(|row| {
+            json!({
+                "id":row.get::<Uuid,_>("id"),
+                "created_at":iso(row.get::<DateTime<Utc>,_>("created_at")),
+                "transcript":row.get::<String,_>("content"),
+                "source_revision":row.get::<i32,_>("revision")
+            })
+        })
+        .collect();
+    Ok(ok(json!({"voice_captures":captures})))
+}
+
+async fn voice_result(pool: &PgPool, owner_id: Uuid, capture_id: Uuid) -> ApiResult {
+    let row = sqlx::query(
+        "SELECT s.content FROM source_texts s JOIN captures c ON c.id=s.capture_id \
+         WHERE c.id=$1 AND c.owner_id=$2 AND c.kind='voice' AND s.owner_id=$2 AND s.kind='transcript'",
+    )
+    .bind(capture_id)
+    .bind(owner_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| ApiError::not_found("Transcript was deleted"))?;
+    Ok(ok(json!({"capture":{
+        "id":capture_id,
+        "status":"transcript_ready",
+        "transcript":row.get::<String,_>("content")
+    },"server_audio_retained":false})))
+}
+
+async fn fail_voice_attempt(pool: &PgPool, owner_id: Uuid, draft_id: &str, attempt_id: Uuid) {
+    let _ = sqlx::query(
+        "UPDATE voice_transcription_jobs SET status='failed',updated_at=now() \
+         WHERE account_id=$1 AND draft_id=$2 AND attempt_id=$3 AND status='processing'",
+    )
+    .bind(owner_id)
+    .bind(draft_id)
+    .bind(attempt_id)
+    .execute(pool)
+    .await;
+}
+
+async fn transcribe_voice(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(draft_id): Path<String>,
+    audio: Bytes,
+) -> ApiResult {
+    let owner_id = owner(&state, &headers, true).await?;
+    if !(16..=64).contains(&draft_id.len())
+        || !draft_id
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+    {
+        return Err(ApiError::bad("Invalid voice draft ID"));
+    }
+    let captured_ms = header(&headers, "x-captured-at-ms")
+        .and_then(|value| value.parse::<i64>().ok())
+        .ok_or_else(|| ApiError::bad("Capture timestamp is required"))?;
+    let now_ms = Utc::now().timestamp_millis();
+    if captured_ms > now_ms + 5 * 60 * 1000 || captured_ms <= 0 {
+        return Err(ApiError::bad("Invalid capture timestamp"));
+    }
+    if captured_ms < now_ms - 7 * 24 * 60 * 60 * 1000 {
+        return Err(ApiError::new(
+            StatusCode::GONE,
+            "voice_expired",
+            "Voice draft is no longer eligible for transcription",
+        ));
+    }
+    if header(&headers, "content-type").and_then(|value| value.split(';').next())
+        != Some("audio/mp4")
+        || !(128..=5 * 1024 * 1024).contains(&audio.len())
+        || audio.get(4..8) != Some(b"ftyp".as_slice())
+    {
+        return Err(ApiError::bad("A valid M4A recording is required"));
+    }
+    if !state.transcriber.available() {
+        return Err(ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "voice_unavailable",
+            "Voice transcription is not configured",
+        ));
+    }
+    let audio_hash = hex::encode(Sha256::digest(&audio));
+    let attempt_id = Uuid::new_v4();
+    let mut tx = state.pool.begin().await?;
+    let permission = sqlx::query(
+        "SELECT enabled,generation FROM voice_transcription_permissions WHERE account_id=$1 FOR UPDATE",
+    )
+    .bind(owner_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let generation = permission
+        .as_ref()
+        .filter(|row| row.get::<bool, _>("enabled"))
+        .map(|row| row.get::<i64, _>("generation"))
+        .ok_or_else(|| {
+            ApiError::new(
+                StatusCode::FORBIDDEN,
+                "voice_permission_required",
+                "Allow voice transcription before uploading audio",
+            )
+        })?;
+    let existing =
+        sqlx::query("SELECT 1 FROM voice_transcription_jobs WHERE account_id=$1 AND draft_id=$2")
+            .bind(owner_id)
+            .bind(&draft_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .is_some();
+    if !existing {
+        // Reserve a bounded pilot budget before any paid provider dispatch.
+        sqlx::query("SELECT pg_advisory_xact_lock(732782)")
+            .execute(&mut *tx)
+            .await?;
+        let account_count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM voice_transcription_jobs WHERE account_id=$1 AND created_at>now()-interval '24 hours'",
+        )
+        .bind(owner_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        let global_count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM voice_transcription_jobs WHERE created_at>now()-interval '24 hours'",
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        if account_count >= 12 || global_count >= 100 {
+            return Err(ApiError::new(
+                StatusCode::TOO_MANY_REQUESTS,
+                "voice_budget_reached",
+                "Voice processing limit reached; keep this draft and try later",
+            ));
+        }
+    }
+    sqlx::query(
+        "INSERT INTO voice_transcription_jobs(account_id,draft_id,audio_sha256,permission_generation,attempt_id,status,lease_until) \
+         VALUES ($1,$2,$3,$4,$5,'processing',now()+interval '3 minutes') ON CONFLICT DO NOTHING",
+    )
+    .bind(owner_id)
+    .bind(&draft_id)
+    .bind(&audio_hash)
+    .bind(generation)
+    .bind(attempt_id)
+    .execute(&mut *tx)
+    .await?;
+    let job = sqlx::query(
+        "SELECT audio_sha256,status,lease_until,capture_id,attempt_id,attempts FROM voice_transcription_jobs \
+         WHERE account_id=$1 AND draft_id=$2 FOR UPDATE",
+    )
+    .bind(owner_id)
+    .bind(&draft_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if job.get::<String, _>("audio_sha256") != audio_hash {
+        return Err(ApiError::conflict("Draft ID belongs to different audio"));
+    }
+    let status: String = job.try_get("status")?;
+    if status == "completed" {
+        let capture_id: Uuid = job
+            .try_get::<Option<Uuid>, _>("capture_id")?
+            .ok_or_else(|| {
+                ApiError::new(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "server_error",
+                    "Capture is missing",
+                )
+            })?;
+        tx.commit().await?;
+        return voice_result(&state.pool, owner_id, capture_id).await;
+    }
+    if status == "cancelled" {
+        return Err(ApiError::conflict("Withdrawn draft cannot be retried"));
+    }
+    if job.get::<Uuid, _>("attempt_id") != attempt_id {
+        if job.get::<i32, _>("attempts") >= 3 {
+            return Err(ApiError::new(
+                StatusCode::TOO_MANY_REQUESTS,
+                "voice_retry_limit",
+                "Voice retry limit reached; keep or delete this draft",
+            ));
+        }
+        if status == "processing" && job.get::<DateTime<Utc>, _>("lease_until") > Utc::now() {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "voice_busy",
+                "This draft is already being transcribed",
+            ));
+        }
+        sqlx::query(
+            "UPDATE voice_transcription_jobs SET status='processing',attempt_id=$3,permission_generation=$4,attempts=attempts+1, \
+             lease_until=now()+interval '3 minutes',updated_at=now() WHERE account_id=$1 AND draft_id=$2",
+        )
+        .bind(owner_id)
+        .bind(&draft_id)
+        .bind(attempt_id)
+        .bind(generation)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+
+    let transcript = match state.transcriber.transcribe(audio.to_vec()).await {
+        Ok(text) => text.trim().to_owned(),
+        Err(_) => {
+            fail_voice_attempt(&state.pool, owner_id, &draft_id, attempt_id).await;
+            return Err(ApiError::new(
+                StatusCode::BAD_GATEWAY,
+                "transcription_failed",
+                "Transcription failed; your audio remains on this device",
+            ));
+        }
+    };
+    if transcript.chars().count() > 20_000 || !transcript.chars().any(char::is_alphabetic) {
+        fail_voice_attempt(&state.pool, owner_id, &draft_id, attempt_id).await;
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "unusable_transcript",
+            "No usable transcript was returned; your audio remains on this device",
+        ));
+    }
+
+    let mut tx = state.pool.begin().await?;
+    let permission = sqlx::query(
+        "SELECT enabled,generation FROM voice_transcription_permissions WHERE account_id=$1 FOR UPDATE",
+    )
+    .bind(owner_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    let job = sqlx::query(
+        "SELECT status,attempt_id FROM voice_transcription_jobs WHERE account_id=$1 AND draft_id=$2 FOR UPDATE",
+    )
+    .bind(owner_id)
+    .bind(&draft_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if !permission.get::<bool, _>("enabled")
+        || permission.get::<i64, _>("generation") != generation
+        || job.get::<String, _>("status") != "processing"
+        || job.get::<Uuid, _>("attempt_id") != attempt_id
+    {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            "voice_permission_changed",
+            "Voice permission changed before transcription could be saved",
+        ));
+    }
+    let capture_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO captures(id,owner_id,kind,status,desired_visibility) VALUES ($1,$2,'voice','transcript_ready','private')")
+        .bind(capture_id).bind(owner_id).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO source_texts(id,capture_id,owner_id,kind,content) VALUES ($1,$2,$3,'transcript',$4)")
+        .bind(Uuid::new_v4()).bind(capture_id).bind(owner_id).bind(&transcript)
+        .execute(&mut *tx).await?;
+    sqlx::query("UPDATE voice_transcription_jobs SET status='completed',capture_id=$3,updated_at=now() WHERE account_id=$1 AND draft_id=$2")
+        .bind(owner_id).bind(&draft_id).bind(capture_id).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(created(json!({"capture":{
+        "id":capture_id,"status":"transcript_ready","transcript":transcript
+    },"server_audio_retained":false})))
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
