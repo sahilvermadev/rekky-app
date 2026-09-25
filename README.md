@@ -19,9 +19,9 @@ The user chose a standalone repository on 2026-09-25. That supersedes only the p
 
 ## Current status
 
-Repository and documentation setup only. Application code, tooling, CI, contracts and infrastructure have not yet been scaffolded. F-00.1 remains in progress; no delivery gate is complete.
+F-00.1 is in progress. The repository now contains a new Postgres schema and API, a Flutter signed-in shell, shared v1 wire examples, local database Compose configuration, and Android/macOS CI definitions. The current path is Google/Apple ID-token exchange → account disclosure → one manually authored text item → own-library search; provider OAuth setup and physical-device validation remain outstanding. Voice, transcription, offline sync and reciprocal-friend access are not implemented yet. No delivery phase has passed its full gate.
 
-Start with F-00.1 signed-in account/source/capture/visibility fixtures, time-boxed F-00.2 native design, F-00.3 recording/share feasibility and F-00.5 early capture-and-Ask evaluation. The first live outcome is signed-in voice/text capture → private transcript → useful organized knowledge → own Ask, with prompt audio deletion and explicit source controls. Production text/URL share input arrives in early F-02; advanced capture polish remains F-06. Proposed limits and quality targets still require measurement.
+Continue F-00.1 native builds and contract states, then F-00.2 design review, F-00.3 recording/share feasibility, and F-00.5 early evaluation. The first full product outcome remains signed-in voice/text capture → private transcript → useful organized knowledge → own Ask, with prompt audio deletion and explicit source controls. Production text/URL share input arrives in early F-02; advanced capture polish remains F-06. Proposed limits and quality targets still require measurement.
 
 ## Isolation and configuration
 

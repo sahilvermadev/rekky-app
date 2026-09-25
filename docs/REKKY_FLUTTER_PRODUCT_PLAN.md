@@ -1,6 +1,6 @@
 # Rekky: Flutter product and delivery plan
 
-Updated: 2026-09-25. Status: product decisions revised after review; repository established; application implementation and validation have not started. F-00 resolves the remaining setup choices and measures the proposed quality/performance gates.
+Updated: 2026-09-25. Status: product decisions revised after review; repository established; F-00.1 implementation has begun. The first backend, Flutter shell and shared fixtures exist, but no delivery phase has passed its full gate. F-00 resolves the remaining setup choices and measures the proposed quality/performance gates.
 
 This is the active product and implementation reference. It supersedes the previous experience, capture, voice and completion plans wherever they differ. Legacy documents and code are technical references only: no consent, deletion, retention, guest, audience or delivery rule is inherited implicitly. This document defines those policies for the new product. The existing browser prototype is an interaction inventory, not the approved design; see [legacy reference and provenance](./LEGACY_REFERENCE.md).
 
@@ -538,7 +538,9 @@ Use coding agents for **bounded, independently checkable assignments**, not sepa
 
 ## 10. Delivery tracker
 
-Repository/document setup is complete. Application tasks and acceptance gates below are **not complete**; F-00.1 has only its repository portion established. Update each checkpoint with changed files, automated checks, physical-device/usability evidence, deployment status and remaining limitations. Do not mark a whole phase complete because its UI preview works. Dependencies are explicit; estimates are made after the native/toolchain spike, not inferred from phase numbers.
+Repository/document setup is complete. Application tasks and acceptance gates below are **not complete**; F-00.1 has a working local text foundation but still needs native, voice lifecycle and consent fixture evidence. Update each checkpoint with changed files, automated checks, physical-device/usability evidence, deployment status and remaining limitations. Do not mark a whole phase complete because its UI preview works. Dependencies are explicit; estimates are made after the native/toolchain spike, not inferred from phase numbers.
+
+**F-00.1 implementation checkpoint, 2026-09-25:** Added independent `apps/rekky_backend/` schema/API/session verification and local Postgres Compose, `apps/rekky_flutter/` signed-in Ask/Library/Remember shell, `contracts/rekky/v1/fixtures/wire.json`, and Android/macOS CI. Backend integration tests use the isolated local database and cover signed-out rejection, owner-only source and Ask, disclosure, Friends→Private acknowledgement with revision conflict, separate source/item deletion, processing-withdrawal acknowledgement that preserves saved content, and idempotency non-resurrection. Dart parses the same fixture set; Flutter widget testing confirms the signed-out gate. A local Android debug APK built successfully; iOS must run on the macOS CI runner. Neither OAuth provider is configured for this new app yet, so real sign-in/device interaction is unverified. The manual text item path is one explicitly authored memory; automatic multi-item understanding, voice upload/transcription/audio deletion, offline privacy acknowledgements, processing-job fencing, and reciprocal-friend retrieval remain future work. The audio-deleted/text-retained fixture describes the required future state; it is not a live voice-path test. No production deployment or usability/physical-device validation has occurred.
 
 | Phase | Concrete deliverable | Acceptance gate |
 | --- | --- | --- |
