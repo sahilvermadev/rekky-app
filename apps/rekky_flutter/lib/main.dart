@@ -1,10 +1,13 @@
 import 'dart:convert';
 import 'dart:math';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 
 import 'identity.dart';
 import 'rekky_api.dart';
+import 'voice_capture_sheet.dart';
+import 'voice_drafts.dart';
 
 const apiBaseUrl = String.fromEnvironment('API_BASE_URL');
 void main() => runApp(const RekkyApp());
@@ -35,12 +38,15 @@ class RekkyHome extends StatefulWidget {
 class _RekkyHomeState extends State<RekkyHome> {
   final api = RekkyApi(apiBaseUrl);
   final identity = IdentityService();
+  final voiceStore = VoiceDraftStore();
   final question = TextEditingController();
   bool busy = true, signedIn = false, disclosed = false, searching = false;
   int destination = 0;
   String? issue;
   List<RekkyItem> library = [];
   List<Map<String, dynamic>> matches = [];
+  List<VoiceDraft> voiceDrafts = [];
+  String? accountId;
 
   @override
   void initState() {
@@ -51,6 +57,7 @@ class _RekkyHomeState extends State<RekkyHome> {
   @override
   void dispose() {
     question.dispose();
+    unawaited(voiceStore.dispose());
     super.dispose();
   }
 
@@ -59,12 +66,14 @@ class _RekkyHomeState extends State<RekkyHome> {
       api.token = await identity.storedToken();
       if (api.token != null) {
         final me = await api.me();
+        accountId = (me['account'] as Map<String, dynamic>)['id'] as String;
         signedIn = true;
         disclosed =
             (me['account']
                     as Map<String, dynamic>)['visibility_disclosure_accepted']
                 as bool;
         if (disclosed) library = await api.items();
+        voiceDrafts = await voiceStore.forOwner(accountId!);
       }
     } on ApiFailure catch (failure) {
       if (failure.status == 401) {
@@ -93,12 +102,14 @@ class _RekkyHomeState extends State<RekkyHome> {
           (response['session'] as Map<String, dynamic>)['token'] as String;
       await identity.storeToken(api.token!);
       final me = await api.me();
+      accountId = (me['account'] as Map<String, dynamic>)['id'] as String;
       signedIn = true;
       disclosed =
           (me['account']
                   as Map<String, dynamic>)['visibility_disclosure_accepted']
               as bool;
       if (disclosed) library = await api.items();
+      voiceDrafts = await voiceStore.forOwner(accountId!);
     } catch (error) {
       issue = '$error';
     }
@@ -136,6 +147,8 @@ class _RekkyHomeState extends State<RekkyHome> {
         disclosed = false;
         library = [];
         matches = [];
+        voiceDrafts = [];
+        accountId = null;
         busy = false;
         issue = remoteRevoked ? null : 'Signed out on this device. Server revocation could not be confirmed.';
       });
@@ -154,6 +167,50 @@ class _RekkyHomeState extends State<RekkyHome> {
     } catch (error) {
       if (mounted) setState(() => issue = '$error');
     }
+  }
+
+  Future<void> _reloadVoiceDrafts() async {
+    final owner = accountId;
+    if (owner == null) return;
+    try {
+      final drafts = await voiceStore.forOwner(owner);
+      if (mounted && accountId == owner) setState(() => voiceDrafts = drafts);
+    } catch (error) {
+      if (mounted) setState(() => issue = '$error');
+    }
+  }
+
+  Future<bool> _recordVoiceDraft() async {
+    final owner = accountId;
+    if (owner == null) return false;
+    return await showModalBottomSheet<bool>(
+          context: context,
+          isScrollControlled: true,
+          isDismissible: false,
+          enableDrag: false,
+          showDragHandle: true,
+          builder: (_) => VoiceCaptureSheet(
+            ownerId: owner,
+            store: voiceStore,
+            onChanged: _reloadVoiceDrafts,
+          ),
+        ) ??
+        false;
+  }
+
+  Future<void> _openVoiceDrafts() async {
+    final owner = accountId;
+    if (owner == null) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => VoiceDraftsSheet(
+        ownerId: owner,
+        store: voiceStore,
+        onChanged: _reloadVoiceDrafts,
+      ),
+    );
   }
 
   Future<void> _ask() async {
@@ -181,8 +238,12 @@ class _RekkyHomeState extends State<RekkyHome> {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (_) =>
-          _RememberSheet(api: api, newKey: _newKey, onSaved: _reload),
+      builder: (_) => _RememberSheet(
+        api: api,
+        newKey: _newKey,
+        onSaved: _reload,
+        onRecord: _recordVoiceDraft,
+      ),
     );
   }
 
@@ -506,6 +567,20 @@ class _RekkyHomeState extends State<RekkyHome> {
         const Text(
           'Searching your own saved memories. Friend answers come later.',
         ),
+        if (voiceDrafts.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.mic_none),
+              title: Text(
+                '${voiceDrafts.length} voice draft${voiceDrafts.length == 1 ? '' : 's'} on this device',
+              ),
+              subtitle: const Text('Not transcribed or saved to Library yet'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _openVoiceDrafts,
+            ),
+          ),
+        ],
         const SizedBox(height: 20),
         if (searching) const LinearProgressIndicator(),
         Expanded(
@@ -581,11 +656,13 @@ class _RememberSheet extends StatefulWidget {
     required this.api,
     required this.newKey,
     required this.onSaved,
+    required this.onRecord,
   });
 
   final RekkyApi api;
   final String Function() newKey;
   final Future<void> Function() onSaved;
+  final Future<bool> Function() onRecord;
 
   @override
   State<_RememberSheet> createState() => _RememberSheetState();
@@ -654,7 +731,16 @@ class _RememberSheetState extends State<_RememberSheet> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Save one thought for now. Voice and automatic organization are coming next.',
+            'Type a thought, or record a local voice draft. Transcription and organization are coming next.',
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: () async {
+              final saved = await widget.onRecord();
+              if (saved && mounted) Navigator.pop(this.context);
+            },
+            icon: const Icon(Icons.mic_none),
+            label: const Text('Record voice draft'),
           ),
           const SizedBox(height: 20),
           TextField(
