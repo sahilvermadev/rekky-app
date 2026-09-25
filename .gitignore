@@ -1,0 +1,46 @@
+# Local credentials and environment files
+.env
+.env.*
+!.env.example
+!**/.env.example
+*.pem
+*.key
+*.p12
+*.p8
+*.jks
+*.keystore
+**/key.properties
+**/google-services.json
+**/GoogleService-Info.plist
+
+# Node / TypeScript outputs
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+*.log
+
+# Flutter / Dart outputs
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+build/
+**/android/.gradle/
+**/android/local.properties
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/ephemeral/
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/flutter_export_environment.sh
+
+# Local data and working files
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
+work/
+.DS_Store
+.idea/
