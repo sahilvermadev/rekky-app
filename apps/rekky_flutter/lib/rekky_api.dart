@@ -89,8 +89,11 @@ class RekkyApi {
       ...headers,
     });
     if (body != null) request.body = jsonEncode(body);
-    final streamed = await _client.send(request);
-    final response = await http.Response.fromStream(streamed);
+    final streamed = await _client
+        .send(request)
+        .timeout(const Duration(seconds: 20));
+    final response = await http.Response.fromStream(streamed)
+        .timeout(const Duration(seconds: 20));
     if (response.statusCode == 204) return {};
     final decoded = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode >= 400) {

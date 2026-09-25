@@ -180,6 +180,7 @@ class _RekkyHomeState extends State<RekkyHome> {
     final subject = TextEditingController(), body = TextEditingController();
     var visibility = 'friends', saving = false;
     String? formIssue;
+    String? pendingPayload, pendingKey;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -257,11 +258,20 @@ class _RekkyHomeState extends State<RekkyHome> {
                             formIssue = null;
                           });
                           try {
+                            final payload = jsonEncode([
+                              subject.text.trim(),
+                              body.text.trim(),
+                              visibility,
+                            ]);
+                            if (pendingPayload != payload) {
+                              pendingPayload = payload;
+                              pendingKey = _newKey();
+                            }
                             await api.save(
                               subject.text.trim(),
                               body.text.trim(),
                               visibility,
-                              _newKey(),
+                              pendingKey!,
                             );
                             if (sheetContext.mounted) {
                               Navigator.pop(sheetContext);
@@ -315,7 +325,9 @@ class _RekkyHomeState extends State<RekkyHome> {
               Text(item.body),
               const SizedBox(height: 16),
               Text(
-                'Source text · only you can see this',
+                source?.kind == 'transcript'
+                    ? 'Machine transcript · only you can see this'
+                    : 'Source text · only you can see this',
                 style: Theme.of(sheetContext).textTheme.labelLarge,
               ),
               const SizedBox(height: 4),
