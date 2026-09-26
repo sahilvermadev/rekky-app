@@ -146,6 +146,10 @@ class RecommendationView extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(recommendation.categoryLabel, style: secondary),
+        if (recommendation.rating case final rating?) ...[
+          const SizedBox(height: 8),
+          _RatingView(rating: rating),
+        ],
         if (place != null || recommendation.primaryLocation != null) ...[
           const SizedBox(height: 6),
           Row(
@@ -198,6 +202,50 @@ class RecommendationView extends StatelessWidget {
         for (final group in groups.entries)
           _ReadingSection(title: group.key, lines: group.value),
       ],
+    );
+  }
+}
+
+class _RatingView extends StatelessWidget {
+  const _RatingView({required this.rating});
+  final RecommendationRating rating;
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final explanation = rating.estimated
+        ? 'AI estimate of the author’s opinion in the note. Can be changed in Edit.'
+        : rating.origin == 'spoken'
+        ? rating.spokenScale == 5
+              ? 'The author gave ${rating.spokenValue}/5 in the note, shown out of 10.'
+              : 'The author’s rating from the note.'
+        : 'Rating set by the author.';
+    return Tooltip(
+      message: explanation,
+      child: Semantics(
+        label:
+            '${rating.estimated ? 'Estimated rating' : 'Author rating'}: ${rating.label} out of 10. $explanation',
+        child: ExcludeSemantics(
+          child: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            children: [
+              Icon(
+                Icons.star_rounded,
+                size: 20,
+                color: theme.colorScheme.primary,
+              ),
+              Text('${rating.label}/10', style: theme.textTheme.titleSmall),
+              if (rating.estimated)
+                Text(
+                  'Estimated',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

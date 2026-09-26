@@ -36,7 +36,7 @@ A separate refinement ledger preserves the old extraction receipt and attempt hi
 
 ## What remains planned
 
-Grouped shelf navigation, richer typed rating facts, persistent person/referrer identity, transcript correction, general multi-item reprocessing that preserves edits, independent completion/follow-up orchestration, external place/contact matching, semantic retrieval and friend access remain open. Prose and source support preserve supplied ratings/attribution now, without claiming a complete typed domain model or verified identity.
+Grouped shelf navigation, broader spoken-rating language/scale support, persistent person/referrer identity, transcript correction, general multi-item reprocessing that preserves edits, independent completion/follow-up orchestration, external place/contact matching, semantic retrieval and friend access remain open. Personal ten-point ratings now have optional typed values and explicit origin under the [ratings pilot](RATINGS.md); other scales remain prose. This does not establish a complete typed domain model or verified identity.
 
 The initial four-case synthetic live probe is a failure-finding check, not the plan's 60-scenario labelled corpus or a held-out evaluation. It covers venue specifics, mixed subjects/negative experiences/untried advice, Hinglish conditions and personal professional experience. Prompt iterations on these same examples do not establish generalization.
 
@@ -82,3 +82,7 @@ Validation: 44 Rust tests pass (17 database/API, ten understanding, nine taxonom
 This supersedes the earlier on-demand source/praise disclosures: all recommendation details and the owner’s quotation appear directly. Remove “Your experience,” “More from your note,” “Original note,” “Private · only you,” and standalone source deletion. Preserve meaningful secondhand/untried labels, explicit attribution, review signals, raw-transcript access and whole-item deletion. Sources remain private by API authorization. A source fetch failure stays local to the quote and never blocks saved content.
 
 The [public venue address pilot](PLACE_LOOKUP.md) now looks up eligible businesses separately from the saved experience and displays a matched Google address/direct place-ID link. It falls back to the spoken locality/search action if the provider or matching checks cannot resolve it. No transcript reprocessing or recommendation mutation occurs. This is a narrow user-requested pilot, not completion of general enrichment or the identity-matching gate.
+
+## Personal ratings, 2026-09-27
+
+The existing understanding call now proposes an optional overall score. Spoken, estimated and owner-set ratings remain distinct; estimated values display a compact marker in the reading sheet. Owners can keep, set or remove ratings through the existing atomic editor. See [rubric, safeguards, contract and evaluation limits](RATINGS.md).

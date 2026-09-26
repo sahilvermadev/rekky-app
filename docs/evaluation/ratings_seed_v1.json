@@ -1,0 +1,122 @@
+[
+  {
+    "id": "enthusiastic",
+    "transcript": "I visited Lantern Cafe. It is my absolute favourite cafe; I loved every visit.",
+    "expected": {
+      "Lantern Cafe": [
+        9,
+        10
+      ]
+    }
+  },
+  {
+    "id": "ordinary_praise",
+    "transcript": "I tried Cedar Cafe. The coffee was good and I would recommend it.",
+    "expected": {
+      "Cedar Cafe": [
+        7,
+        8
+      ]
+    }
+  },
+  {
+    "id": "mixed",
+    "transcript": "I tried Willow Cafe. The food was good but the service was terrible. Overall it was just okay.",
+    "expected": {
+      "Willow Cafe": [
+        5,
+        6
+      ]
+    }
+  },
+  {
+    "id": "negative",
+    "transcript": "I used Tide Cleaner. I was disappointed overall and would not recommend them.",
+    "expected": {
+      "Tide Cleaner": [
+        3,
+        4
+      ]
+    }
+  },
+  {
+    "id": "very_negative",
+    "transcript": "I tried Kite Cleaner. It was an awful experience and I strongly advise avoiding them.",
+    "expected": {
+      "Kite Cleaner": [
+        1,
+        2
+      ]
+    }
+  },
+  {
+    "id": "spoken",
+    "transcript": "I visited Amber Cafe. Overall I give it four out of five. The coffee was excellent.",
+    "expected": {
+      "Amber Cafe": [
+        8
+      ]
+    }
+  },
+  {
+    "id": "hearsay_interest",
+    "transcript": "Nisha says Fern Cafe is amazing. I have not tried it.",
+    "expected": {
+      "Fern Cafe": null
+    }
+  },
+  {
+    "id": "neutral",
+    "transcript": "Copper Cafe is in Pune. It opens near my office.",
+    "expected": {
+      "Copper Cafe": null
+    }
+  },
+  {
+    "id": "separate_subjects",
+    "transcript": "I visited Birch Cafe and absolutely loved it; it is my favourite. I also tried Ash Cafe and was disappointed overall.",
+    "expected": {
+      "Birch Cafe": [
+        9,
+        10
+      ],
+      "Ash Cafe": [
+        3,
+        4
+      ]
+    }
+  },
+  {
+    "id": "hinglish",
+    "transcript": "Maine Nila Cafe try kiya. Coffee achhi thi, main recommend karunga.",
+    "expected": {
+      "Nila Cafe": [
+        7,
+        8
+      ]
+    }
+  },
+  {
+    "id": "negated_score",
+    "transcript": "I tried Reed Cafe. I would not give it five out of five. I am not sure what score to give it.",
+    "expected": {
+      "Reed Cafe": null
+    }
+  },
+  {
+    "id": "aspect_score",
+    "transcript": "I visited Elm Cafe. The food was four out of five, but I cannot give an overall rating yet.",
+    "expected": {
+      "Elm Cafe": null
+    }
+  },
+  {
+    "id": "spoken_ten",
+    "transcript": "I tried Cedar Cafe. Overall I give it seven and a half out of ten. I liked the coffee.",
+    "expected": {
+      "Cedar Cafe": [
+        7.5
+      ]
+    }
+  }
+]

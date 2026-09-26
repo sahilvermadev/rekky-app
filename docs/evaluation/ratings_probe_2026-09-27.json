@@ -1,0 +1,1373 @@
+{
+  "synthetic_only": true,
+  "model": "gpt-4.1-mini",
+  "scale": 10,
+  "rubric_version": 1,
+  "initial_run": [
+    {
+      "elapsed_ms": 3152,
+      "id": "enthusiastic",
+      "output": {
+        "items": [
+          {
+            "proposed_classification": {
+              "descriptors": [
+                {
+                  "evidence": [
+                    1,
+                    2
+                  ],
+                  "text": "absolute favourite cafe"
+                }
+              ],
+              "facets": [],
+              "types": [
+                {
+                  "concept_id": "place.cafe",
+                  "evidence": [
+                    1,
+                    2
+                  ],
+                  "source_phrase": "cafe"
+                }
+              ]
+            },
+            "proposed_rating": {
+              "evidence": [
+                2
+              ],
+              "mode": "inferred",
+              "source_phrase": "I loved every visit",
+              "spoken_value": null,
+              "stance": "exceptional"
+            },
+            "recommendation": {
+              "classification": {
+                "descriptors": [
+                  "absolute favourite cafe"
+                ],
+                "display_label": "Café",
+                "facets": [],
+                "origin": "extracted",
+                "search_ids": [
+                  "place.cafe"
+                ],
+                "search_terms": "Café absolute favourite cafe cafe cafes café cafés coffee shop coffee shops कैफ़े कैफे",
+                "types": [
+                  {
+                    "dimension": "type",
+                    "dimension_label": "Type",
+                    "id": "place.cafe",
+                    "label": "Café"
+                  }
+                ],
+                "vocabulary_version": 1
+              },
+              "entity_kind": "place",
+              "experience": "firsthand",
+              "locations": [],
+              "observations": [
+                {
+                  "kind": "praise",
+                  "text": "Loved every visit."
+                }
+              ],
+              "rating": {
+                "origin": "inferred",
+                "rubric_version": 1,
+                "scale": 10,
+                "value": 10.0
+              },
+              "shelf": "Places",
+              "summary": "A personal absolute favourite cafe, loved every visit.",
+              "use_cases": [],
+              "version": 2
+            },
+            "subject": "Lantern Cafe"
+          }
+        ],
+        "partial": false,
+        "proposed_readable_source": [
+          {
+            "corrections": [],
+            "paragraph_start": true,
+            "unit_id": 1
+          },
+          {
+            "corrections": [],
+            "paragraph_start": false,
+            "unit_id": 2
+          }
+        ],
+        "readable_source": null,
+        "status": "valid"
+      }
+    },
+    {
+      "elapsed_ms": 2874,
+      "id": "ordinary_praise",
+      "output": {
+        "items": [
+          {
+            "proposed_classification": {
+              "descriptors": [
+                {
+                  "evidence": [
+                    1,
+                    2
+                  ],
+                  "text": "coffee was good"
+                }
+              ],
+              "facets": [],
+              "types": [
+                {
+                  "concept_id": "place.cafe",
+                  "evidence": [
+                    1,
+                    2
+                  ],
+                  "source_phrase": "Cedar Cafe"
+                }
+              ]
+            },
+            "proposed_rating": {
+              "evidence": [
+                2
+              ],
+              "mode": "inferred",
+              "source_phrase": "I would recommend it.",
+              "spoken_value": null,
+              "stance": "good"
+            },
+            "recommendation": {
+              "classification": {
+                "descriptors": [
+                  "coffee was good"
+                ],
+                "display_label": null,
+                "facets": [],
+                "origin": "extracted",
+                "search_ids": [],
+                "search_terms": "coffee was good",
+                "types": [],
+                "vocabulary_version": 1
+              },
+              "entity_kind": "place",
+              "experience": "firsthand",
+              "locations": [],
+              "observations": [
+                {
+                  "kind": "praise",
+                  "text": "The coffee was good."
+                },
+                {
+                  "kind": "suggestion",
+                  "text": "I would recommend it."
+                }
+              ],
+              "rating": {
+                "origin": "inferred",
+                "rubric_version": 1,
+                "scale": 10,
+                "value": 7.0
+              },
+              "shelf": "Places",
+              "summary": "Cedar Cafe offers good coffee that I would recommend.",
+              "use_cases": [],
+              "version": 2
+            },
+            "subject": "Cedar Cafe"
+          }
+        ],
+        "partial": false,
+        "proposed_readable_source": [
+          {
+            "corrections": [],
+            "paragraph_start": true,
+            "unit_id": 1
+          },
+          {
+            "corrections": [],
+            "paragraph_start": false,
+            "unit_id": 2
+          }
+        ],
+        "readable_source": null,
+        "status": "valid"
+      }
+    },
+    {
+      "elapsed_ms": 3982,
+      "id": "mixed",
+      "output": {
+        "items": [
+          {
+            "proposed_classification": {
+              "descriptors": [
+                {
+                  "evidence": [
+                    1,
+                    2,
+                    3
+                  ],
+                  "text": "willow cafe"
+                }
+              ],
+              "facets": [],
+              "types": [
+                {
+                  "concept_id": "place.cafe",
+                  "evidence": [
+                    1,
+                    2,
+                    3
+                  ],
+                  "source_phrase": "Willow Cafe"
+                }
+              ]
+            },
+            "proposed_rating": {
+              "evidence": [
+                3
+              ],
+              "mode": "inferred",
+              "source_phrase": "Overall it was just okay.",
+              "spoken_value": null,
+              "stance": "okay"
+            },
+            "recommendation": {
+              "classification": {
+                "descriptors": [
+                  "willow cafe"
+                ],
+                "display_label": null,
+                "facets": [],
+                "origin": "extracted",
+                "search_ids": [],
+                "search_terms": "willow cafe",
+                "types": [],
+                "vocabulary_version": 1
+              },
+              "entity_kind": "place",
+              "experience": "firsthand",
+              "locations": [],
+              "observations": [
+                {
+                  "kind": "praise",
+                  "text": "The food was good."
+                },
+                {
+                  "kind": "caution",
+                  "text": "The service was terrible."
+                },
+                {
+                  "kind": "suitability",
+                  "text": "Overall it was just okay."
+                }
+              ],
+              "rating": {
+                "origin": "inferred",
+                "rubric_version": 1,
+                "scale": 10,
+                "value": 6.0
+              },
+              "shelf": "Places",
+              "summary": "Willow Cafe had good food but terrible service, resulting in an overall just okay experience.",
+              "use_cases": [],
+              "version": 2
+            },
+            "subject": "Willow Cafe"
+          }
+        ],
+        "partial": false,
+        "proposed_readable_source": [
+          {
+            "corrections": [],
+            "paragraph_start": true,
+            "unit_id": 1
+          },
+          {
+            "corrections": [],
+            "paragraph_start": false,
+            "unit_id": 2
+          },
+          {
+            "corrections": [],
+            "paragraph_start": false,
+            "unit_id": 3
+          }
+        ],
+        "readable_source": null,
+        "status": "valid"
+      }
+    },
+    {
+      "elapsed_ms": 3894,
+      "id": "negative",
+      "output": {
+        "items": [
+          {
+            "proposed_classification": {
+              "descriptors": [
+                {
+                  "evidence": [
+                    1,
+                    2
+                  ],
+                  "text": "cleaner"
+                }
+              ],
+              "facets": [],
+              "types": [
+                {
+                  "concept_id": "service.cleaner",
+                  "evidence": [
+                    1,
+                    2
+                  ],
+                  "source_phrase": "Tide Cleaner"
+                }
+              ]
+            },
+            "proposed_rating": {
+              "evidence": [
+                2
+              ],
+              "mode": "inferred",
+              "source_phrase": "I was disappointed overall and would not recommend them.",
+              "spoken_value": null,
+              "stance": "bad"
+            },
+            "recommendation": {
+              "classification": {
+                "descriptors": [
+                  "cleaner"
+                ],
+                "display_label": null,
+                "facets": [],
+                "origin": "extracted",
+                "search_ids": [],
+                "search_terms": "cleaner",
+                "types": [],
+                "vocabulary_version": 1
+              },
+              "entity_kind": "person_service",
+              "experience": "firsthand",
+              "locations": [],
+              "observations": [
+                {
+                  "kind": "praise",
+                  "text": "None, was disappointed overall."
+                },
+                {
+                  "kind": "caution",
+                  "text": "Would not recommend them."
+                }
+              ],
+              "rating": {
+                "origin": "inferred",
+                "rubric_version": 1,
+                "scale": 10,
+                "value": 3.0
+              },
+              "shelf": "People & services",
+              "summary": "Tried Tide Cleaner and was disappointed overall; would not recommend.",
+              "use_cases": [],
+              "version": 2
+            },
+            "subject": "Tide Cleaner"
+          }
+        ],
+        "partial": false,
+        "proposed_readable_source": [
+          {
+            "corrections": [],
+            "paragraph_start": true,
+            "unit_id": 1
+          },
+          {
+            "corrections": [],
+            "paragraph_start": true,
+            "unit_id": 2
+          }
+        ],
+        "readable_source": "I used Tide Cleaner.\n\nI was disappointed overall and would not recommend them.",
+        "status": "valid"
+      }
+    },
+    {
+      "elapsed_ms": 2900,
+      "id": "very_negative",
+      "output": {
+        "items": [
+          {
+            "proposed_classification": {
+              "descriptors": [],
+              "facets": [],
+              "types": [
+                {
+                  "concept_id": "service.cleaner",
+                  "evidence": [
+                    1
+                  ],
+                  "source_phrase": "Kite Cleaner"
+                }
+              ]
+            },
+            "proposed_rating": {
+              "evidence": [
+                2
+              ],
+              "mode": "inferred",
+              "source_phrase": "It was an awful experience and I strongly advise avoiding them.",
+              "spoken_value": null,
+              "stance": "awful"
+            },
+            "recommendation": {
+              "classification": {
+                "descriptors": [],
+                "display_label": null,
+                "facets": [],
+                "origin": "extracted",
+                "search_ids": [],
+                "search_terms": "",
+                "types": [],
+                "vocabulary_version": 1
+              },
+              "entity_kind": "person_service",
+              "experience": "firsthand",
+              "locations": [],
+              "observations": [
+                {
+                  "kind": "caution",
+                  "text": "The service was an awful experience and is strongly advised to be avoided."
+                }
+              ],
+              "rating": {
+                "origin": "inferred",
+                "rubric_version": 1,
+                "scale": 10,
+                "value": 1.0
+              },
+              "shelf": "People & services",
+              "summary": "Using Kite Cleaner was an awful experience, and the user strongly advises avoiding them.",
+              "use_cases": [],
+              "version": 2
+            },
+            "subject": "Kite Cleaner"
+          }
+        ],
+        "partial": false,
+        "proposed_readable_source": [
+          {
+            "corrections": [],
+            "paragraph_start": true,
+            "unit_id": 1
+          },
+          {
+            "corrections": [],
+            "paragraph_start": false,
+            "unit_id": 2
+          }
+        ],
+        "readable_source": null,
+        "status": "valid"
+      }
+    },
+    {
+      "elapsed_ms": 3013,
+      "id": "spoken",
+      "output": {
+        "items": [
+          {
+            "proposed_classification": {
+              "descriptors": [],
+              "facets": [],
+              "types": [
+                {
+                  "concept_id": "place.cafe",
+                  "evidence": [
+                    1,
+                    3
+                  ],
+                  "source_phrase": "Amber Cafe"
+                }
+              ]
+            },
+            "proposed_rating": {
+              "evidence": [
+                2
+              ],
+              "mode": "spoken",
+              "source_phrase": "Overall I give it four out of five.",
+              "spoken_value": 4,
+              "stance": "good"
+            },
+            "recommendation": {
+              "classification": {
+                "descriptors": [],
+                "display_label": null,
+                "facets": [],
+                "origin": "extracted",
+                "search_ids": [],
+                "search_terms": "",
+                "types": [],
+                "vocabulary_version": 1
+              },
+              "entity_kind": "place",
+              "experience": "firsthand",
+              "locations": [],
+              "observations": [
+                {
+                  "kind": "praise",
+                  "text": "The coffee was excellent."
+                }
+              ],
+              "rating": {
+                "origin": "spoken",
+                "rubric_version": 1,
+                "scale": 10,
+                "spoken": {
+                  "scale": 5.0,
+                  "value": 4.0
+                },
+                "value": 8.0
+              },
+              "shelf": "Places",
+              "summary": "Amber Cafe is a cafe where the coffee was excellent.",
+              "use_cases": [],
+              "version": 2
+            },
+            "subject": "Amber Cafe"
+          }
+        ],
+        "partial": false,
+        "proposed_readable_source": [
+          {
+            "corrections": [],
+            "paragraph_start": true,
+            "unit_id": 1
+          },
+          {
+            "corrections": [],
+            "paragraph_start": false,
+            "unit_id": 2
+          },
+          {
+            "corrections": [],
+            "paragraph_start": false,
+            "unit_id": 3
+          }
+        ],
+        "readable_source": null,
+        "status": "valid"
+      }
+    },
+    {
+      "elapsed_ms": 2991,
+      "id": "hearsay_interest",
+      "output": {
+        "items": [
+          {
+            "proposed_classification": {
+              "descriptors": [
+                {
+                  "evidence": [
+                    1
+                  ],
+                  "text": "Fern Cafe"
+                }
+              ],
+              "facets": [],
+              "types": [
+                {
+                  "concept_id": "place.cafe",
+                  "evidence": [
+                    1
+                  ],
+                  "source_phrase": "Fern Cafe"
+                }
+              ]
+            },
+            "proposed_rating": {
+              "evidence": [],
+              "mode": "none",
+              "source_phrase": "",
+              "spoken_value": null,
+              "stance": "none"
+            },
+            "recommendation": {
+              "classification": {
+                "descriptors": [
+                  "Fern Cafe"
+                ],
+                "display_label": null,
+                "facets": [],
+                "origin": "extracted",
+                "search_ids": [],
+                "search_terms": "Fern Cafe",
+                "types": [],
+                "vocabulary_version": 1
+              },
+              "entity_kind": "place",
+              "experience": "interest",
+              "locations": [],
+              "observations": [
+                {
+                  "kind": "praise",
+                  "text": "Fern Cafe is amazing according to Nisha."
+                },
+                {
+                  "kind": "caution",
+                  "text": "I have not tried it yet."
+                }
+              ],
+              "rating": null,
+              "shelf": "Places",
+              "summary": "Fern Cafe is highly recommended by Nisha, but I have not tried it myself yet.",
+              "use_cases": [],
+              "version": 2
+            },
+            "subject": "Fern Cafe"
+          }
+        ],
+        "partial": false,
+        "proposed_readable_source": [
+          {
+            "corrections": [],
+            "paragraph_start": true,
+            "unit_id": 1
+          },
+          {
+            "corrections": [],
+            "paragraph_start": false,
+            "unit_id": 2
+          }
+        ],
+        "readable_source": null,
+        "status": "valid"
+      }
+    },
+    {
+      "elapsed_ms": 2927,
+      "id": "neutral",
+      "output": {
+        "items": [
+          {
+            "proposed_classification": {
+              "descriptors": [
+                {
+                  "evidence": [
+                    1,
+                    2
+                  ],
+                  "text": "near my office"
+                }
+              ],
+              "facets": [],
+              "types": [
+                {
+                  "concept_id": "place.cafe",
+                  "evidence": [
+                    1,
+                    2
+                  ],
+                  "source_phrase": "Copper Cafe"
+                }
+              ]
+            },
+            "proposed_rating": {
+              "evidence": [],
+              "mode": "none",
+              "source_phrase": "",
+              "spoken_value": null,
+              "stance": "none"
+            },
+            "recommendation": {
+              "classification": {
+                "descriptors": [
+                  "near my office"
+                ],
+                "display_label": null,
+                "facets": [],
+                "origin": "extracted",
+                "search_ids": [],
+                "search_terms": "near my office",
+                "types": [],
+                "vocabulary_version": 1
+              },
+              "entity_kind": "place",
+              "experience": "unspecified",
+              "locations": [
+                {
+                  "role": "venue",
+                  "text": "Pune"
+                }
+              ],
+              "observations": [
+                {
+                  "kind": "context",
+                  "text": "Opens near the speaker's office"
+                }
+              ],
+              "rating": null,
+              "shelf": "Places",
+              "summary": "Copper Cafe is a café located in Pune, opening near the speaker's office.",
+              "use_cases": [],
+              "version": 2
+            },
+            "subject": "Copper Cafe"
+          }
+        ],
+        "partial": false,
+        "proposed_readable_source": [
+          {
+            "corrections": [],
+            "paragraph_start": true,
+            "unit_id": 1
+          },
+          {
+            "corrections": [],
+            "paragraph_start": false,
+            "unit_id": 2
+          }
+        ],
+        "readable_source": null,
+        "status": "valid"
+      }
+    },
+    {
+      "elapsed_ms": 4101,
+      "id": "separate_subjects",
+      "output": {
+        "items": [
+          {
+            "proposed_classification": {
+              "descriptors": [],
+              "facets": [],
+              "types": [
+                {
+                  "concept_id": "place.cafe",
+                  "evidence": [
+                    1
+                  ],
+                  "source_phrase": "Birch Cafe"
+                }
+              ]
+            },
+            "proposed_rating": {
+              "evidence": [
+                1
+              ],
+              "mode": "inferred",
+              "source_phrase": "I visited Birch Cafe and absolutely loved it; it is my favourite.",
+              "spoken_value": null,
+              "stance": "exceptional"
+            },
+            "recommendation": {
+              "classification": {
+                "descriptors": [],
+                "display_label": null,
+                "facets": [],
+                "origin": "extracted",
+                "search_ids": [],
+                "search_terms": "",
+                "types": [],
+                "vocabulary_version": 1
+              },
+              "entity_kind": "place",
+              "experience": "firsthand",
+              "locations": [
+                {
+                  "role": "venue",
+                  "text": "Birch Cafe"
+                }
+              ],
+              "observations": [
+                {
+                  "kind": "praise",
+                  "text": "Absolutely loved it"
+                }
+              ],
+              "rating": {
+                "origin": "inferred",
+                "rubric_version": 1,
+                "scale": 10,
+                "value": 10.0
+              },
+              "shelf": "Places",
+              "summary": "Birch Cafe is a personal favourite and was absolutely loved on this visit.",
+              "use_cases": [],
+              "version": 2
+            },
+            "subject": "Birch Cafe"
+          },
+          {
+            "proposed_classification": {
+              "descriptors": [],
+              "facets": [],
+              "types": [
+                {
+                  "concept_id": "place.cafe",
+                  "evidence": [
+                    2
+                  ],
+                  "source_phrase": "Ash Cafe"
+                }
+              ]
+            },
+            "proposed_rating": {
+              "evidence": [
+                2
+              ],
+              "mode": "inferred",
+              "source_phrase": "I also tried Ash Cafe and was disappointed overall.",
+              "spoken_value": null,
+              "stance": "disappointing"
+            },
+            "recommendation": {
+              "classification": {
+                "descriptors": [],
+                "display_label": null,
+                "facets": [],
+                "origin": "extracted",
+                "search_ids": [],
+                "search_terms": "",
+                "types": [],
+                "vocabulary_version": 1
+              },
+              "entity_kind": "place",
+              "experience": "firsthand",
+              "locations": [
+                {
+                  "role": "venue",
+                  "text": "Ash Cafe"
+                }
+              ],
+              "observations": [
+                {
+                  "kind": "caution",
+                  "text": "Tried it but was disappointed overall"
+                }
+              ],
+              "rating": {
+                "origin": "inferred",
+                "rubric_version": 1,
+                "scale": 10,
+                "value": 4.0
+              },
+              "shelf": "Places",
+              "summary": "Ash Cafe was tried but the overall experience was disappointing.",
+              "use_cases": [],
+              "version": 2
+            },
+            "subject": "Ash Cafe"
+          }
+        ],
+        "partial": false,
+        "proposed_readable_source": [
+          {
+            "corrections": [],
+            "paragraph_start": true,
+            "unit_id": 1
+          },
+          {
+            "corrections": [],
+            "paragraph_start": true,
+            "unit_id": 2
+          }
+        ],
+        "readable_source": "I visited Birch Cafe and absolutely loved it; it is my favourite.\n\nI also tried Ash Cafe and was disappointed overall.",
+        "status": "valid"
+      }
+    },
+    {
+      "elapsed_ms": 3232,
+      "id": "hinglish",
+      "output": {
+        "items": [
+          {
+            "proposed_classification": {
+              "descriptors": [
+                {
+                  "evidence": [
+                    1,
+                    2
+                  ],
+                  "text": "Cafe"
+                },
+                {
+                  "evidence": [
+                    1,
+                    2
+                  ],
+                  "text": "Coffee"
+                }
+              ],
+              "facets": [],
+              "types": [
+                {
+                  "concept_id": "place.cafe",
+                  "evidence": [
+                    1,
+                    2
+                  ],
+                  "source_phrase": "Cafe"
+                }
+              ]
+            },
+            "proposed_rating": {
+              "evidence": [
+                2
+              ],
+              "mode": "inferred",
+              "source_phrase": "main recommend karunga",
+              "spoken_value": null,
+              "stance": "very_good"
+            },
+            "recommendation": {
+              "classification": {
+                "descriptors": [
+                  "Coffee"
+                ],
+                "display_label": "Café",
+                "facets": [],
+                "origin": "extracted",
+                "search_ids": [
+                  "place.cafe"
+                ],
+                "search_terms": "Café Coffee cafe cafes café cafés coffee shop coffee shops कैफ़े कैफे",
+                "types": [
+                  {
+                    "dimension": "type",
+                    "dimension_label": "Type",
+                    "id": "place.cafe",
+                    "label": "Café"
+                  }
+                ],
+                "vocabulary_version": 1
+              },
+              "entity_kind": "place",
+              "experience": "firsthand",
+              "locations": [],
+              "observations": [
+                {
+                  "kind": "praise",
+                  "text": "Coffee achhi thi"
+                }
+              ],
+              "rating": {
+                "origin": "inferred",
+                "rubric_version": 1,
+                "scale": 10,
+                "value": 8.0
+              },
+              "shelf": "Places",
+              "summary": "Coffee achhi thi, maine Nila Cafe try kiya aur main recommend karunga.",
+              "use_cases": [],
+              "version": 2
+            },
+            "subject": "Nila Cafe"
+          }
+        ],
+        "partial": false,
+        "proposed_readable_source": [
+          {
+            "corrections": [],
+            "paragraph_start": true,
+            "unit_id": 1
+          },
+          {
+            "corrections": [],
+            "paragraph_start": false,
+            "unit_id": 2
+          }
+        ],
+        "readable_source": null,
+        "status": "valid"
+      }
+    },
+    {
+      "elapsed_ms": 2737,
+      "id": "negated_score",
+      "output": {
+        "status": "validation_failed",
+        "synthetic_proposal": {
+          "ignored_unit_ids": [],
+          "items": [
+            {
+              "classification": {
+                "descriptors": [
+                  {
+                    "evidence": [
+                      1
+                    ],
+                    "text": "Reed Cafe"
+                  }
+                ],
+                "facets": [],
+                "types": [
+                  {
+                    "concept_id": "place.cafe",
+                    "evidence": [
+                      1
+                    ],
+                    "source_phrase": "Cafe"
+                  }
+                ]
+              },
+              "entity_kind": "place",
+              "experience": "firsthand",
+              "locations": [],
+              "observations": [
+                {
+                  "evidence": [
+                    2
+                  ],
+                  "kind": "caution",
+                  "text": "Did not feel it deserved a perfect 5 out of 5 rating."
+                },
+                {
+                  "evidence": [
+                    3
+                  ],
+                  "kind": "caution",
+                  "text": "Uncertain about the exact score to give."
+                }
+              ],
+              "rating": {
+                "evidence": [
+                  2,
+                  3
+                ],
+                "mode": "inferred",
+                "source_phrase": "I would not give it five out of five.",
+                "spoken_value": null,
+                "stance": "none"
+              },
+              "subject": "Reed Cafe",
+              "subject_evidence": [
+                1
+              ],
+              "summary": {
+                "evidence": [
+                  1,
+                  2,
+                  3
+                ],
+                "text": "Tried Reed Cafe but was unsure about the exact rating and did not consider it a perfect experience."
+              },
+              "use_cases": []
+            }
+          ],
+          "readable_source": [
+            {
+              "corrections": [],
+              "paragraph_start": true,
+              "unit_id": 1
+            },
+            {
+              "corrections": [],
+              "paragraph_start": false,
+              "unit_id": 2
+            },
+            {
+              "corrections": [],
+              "paragraph_start": false,
+              "unit_id": 3
+            }
+          ],
+          "unresolved_unit_ids": []
+        }
+      }
+    },
+    {
+      "elapsed_ms": 3086,
+      "id": "aspect_score",
+      "output": {
+        "items": [
+          {
+            "proposed_classification": {
+              "descriptors": [
+                {
+                  "evidence": [
+                    1,
+                    2
+                  ],
+                  "text": "cafe"
+                }
+              ],
+              "facets": [],
+              "types": [
+                {
+                  "concept_id": "place.cafe",
+                  "evidence": [
+                    1
+                  ],
+                  "source_phrase": "Elm Cafe"
+                }
+              ]
+            },
+            "proposed_rating": {
+              "evidence": [
+                2
+              ],
+              "mode": "spoken",
+              "source_phrase": "The food was four out of five, but I cannot give an overall rating yet.",
+              "spoken_value": 4,
+              "stance": "none"
+            },
+            "recommendation": {
+              "classification": {
+                "descriptors": [
+                  "cafe"
+                ],
+                "display_label": null,
+                "facets": [],
+                "origin": "extracted",
+                "search_ids": [],
+                "search_terms": "cafe",
+                "types": [],
+                "vocabulary_version": 1
+              },
+              "entity_kind": "place",
+              "experience": "firsthand",
+              "locations": [
+                {
+                  "role": "venue",
+                  "text": "Elm Cafe"
+                }
+              ],
+              "observations": [
+                {
+                  "kind": "praise",
+                  "text": "The food was four out of five"
+                },
+                {
+                  "kind": "caution",
+                  "text": "Cannot give an overall rating yet"
+                }
+              ],
+              "rating": null,
+              "shelf": "Places",
+              "summary": "Food rated four out of five, but no overall rating provided yet.",
+              "use_cases": [],
+              "version": 2
+            },
+            "subject": "Elm Cafe"
+          }
+        ],
+        "partial": false,
+        "proposed_readable_source": [
+          {
+            "corrections": [],
+            "paragraph_start": true,
+            "unit_id": 1
+          },
+          {
+            "corrections": [],
+            "paragraph_start": true,
+            "unit_id": 2
+          }
+        ],
+        "readable_source": "I visited Elm Cafe.\n\nThe food was four out of five, but I cannot give an overall rating yet.",
+        "status": "valid"
+      }
+    },
+    {
+      "elapsed_ms": 4207,
+      "id": "spoken_ten",
+      "output": {
+        "items": [
+          {
+            "proposed_classification": {
+              "descriptors": [
+                {
+                  "evidence": [
+                    1,
+                    2,
+                    3
+                  ],
+                  "text": "Cafe"
+                }
+              ],
+              "facets": [],
+              "types": [
+                {
+                  "concept_id": "place.cafe",
+                  "evidence": [
+                    1
+                  ],
+                  "source_phrase": "Cedar Cafe"
+                }
+              ]
+            },
+            "proposed_rating": {
+              "evidence": [
+                2
+              ],
+              "mode": "spoken",
+              "source_phrase": "Overall I give it seven and a half out of ten.",
+              "spoken_value": 7.5,
+              "stance": "good"
+            },
+            "recommendation": {
+              "classification": {
+                "descriptors": [
+                  "Cafe"
+                ],
+                "display_label": null,
+                "facets": [],
+                "origin": "extracted",
+                "search_ids": [],
+                "search_terms": "Cafe",
+                "types": [],
+                "vocabulary_version": 1
+              },
+              "entity_kind": "place",
+              "experience": "firsthand",
+              "locations": [],
+              "observations": [
+                {
+                  "kind": "praise",
+                  "text": "Liked the coffee."
+                }
+              ],
+              "rating": {
+                "origin": "spoken",
+                "rubric_version": 1,
+                "scale": 10,
+                "spoken": {
+                  "scale": 10.0,
+                  "value": 7.5
+                },
+                "value": 7.5
+              },
+              "shelf": "Places",
+              "summary": "Cedar Cafe coffee was liked and overall rating was seven and a half out of ten.",
+              "use_cases": [],
+              "version": 2
+            },
+            "subject": "Cedar Cafe"
+          }
+        ],
+        "partial": false,
+        "proposed_readable_source": [
+          {
+            "corrections": [],
+            "paragraph_start": true,
+            "unit_id": 1
+          },
+          {
+            "corrections": [],
+            "paragraph_start": false,
+            "unit_id": 2
+          },
+          {
+            "corrections": [],
+            "paragraph_start": false,
+            "unit_id": 3
+          }
+        ],
+        "readable_source": null,
+        "status": "valid"
+      }
+    }
+  ],
+  "targeted_recheck": [
+    {
+      "elapsed_ms": 3579,
+      "id": "negated_score",
+      "output": {
+        "items": [
+          {
+            "proposed_classification": {
+              "descriptors": [
+                {
+                  "evidence": [
+                    1
+                  ],
+                  "text": "Reed Cafe"
+                }
+              ],
+              "facets": [],
+              "types": [
+                {
+                  "concept_id": "place.cafe",
+                  "evidence": [
+                    1
+                  ],
+                  "source_phrase": "Reed Cafe"
+                }
+              ]
+            },
+            "proposed_rating": {
+              "evidence": [
+                2,
+                3
+              ],
+              "mode": "spoken",
+              "source_phrase": "I would not give it five out of five.",
+              "spoken_value": 5,
+              "stance": "none"
+            },
+            "recommendation": {
+              "classification": {
+                "descriptors": [
+                  "Reed Cafe"
+                ],
+                "display_label": null,
+                "facets": [],
+                "origin": "extracted",
+                "search_ids": [],
+                "search_terms": "Reed Cafe",
+                "types": [],
+                "vocabulary_version": 1
+              },
+              "entity_kind": "place",
+              "experience": "firsthand",
+              "locations": [],
+              "observations": [
+                {
+                  "kind": "caution",
+                  "text": "The speaker did not give a perfect score to Reed Cafe."
+                },
+                {
+                  "kind": "context",
+                  "text": "The speaker is unsure about the appropriate score to give Reed Cafe."
+                }
+              ],
+              "rating": null,
+              "shelf": "Places",
+              "summary": "Tried Reed Cafe but the speaker did not give it a perfect rating and remains unsure about the exact score.",
+              "use_cases": [],
+              "version": 2
+            },
+            "subject": "Reed Cafe"
+          }
+        ],
+        "partial": false,
+        "proposed_readable_source": [
+          {
+            "corrections": [],
+            "paragraph_start": true,
+            "unit_id": 1
+          },
+          {
+            "corrections": [],
+            "paragraph_start": false,
+            "unit_id": 2
+          },
+          {
+            "corrections": [],
+            "paragraph_start": false,
+            "unit_id": 3
+          }
+        ],
+        "readable_source": null,
+        "status": "valid"
+      }
+    }
+  ]
+}

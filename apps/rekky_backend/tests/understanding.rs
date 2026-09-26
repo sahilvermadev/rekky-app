@@ -126,3 +126,22 @@ fn unsupported_optional_use_cases_do_not_become_indexed_claims() {
     assert_eq!(items[0].recommendation["use_cases"], json!([]));
     assert!(!items[0].body.contains("Top-rated"));
 }
+
+#[test]
+fn ratings_are_optional_and_cannot_claim_coverage_or_leak_private_quotes() {
+    let (source, mut p) = sample();
+    p["items"][0]["rating"] = json!({"mode":"inferred","stance":"good","spoken_value":null,"source_phrase":"I loved the noodles.","evidence":[2,3]});
+    let (items, partial) = validate(decode(p.clone()), &source).unwrap();
+    assert!(!partial);
+    assert_eq!(items[0].recommendation["rating"]["origin"], "inferred");
+    assert!(
+        !items[0]
+            .recommendation
+            .to_string()
+            .contains("source_phrase")
+    );
+    p["items"][0]["rating"]["evidence"] = json!([99]);
+    let (items, partial) = validate(decode(p), &source).unwrap();
+    assert!(!partial);
+    assert!(items[0].recommendation["rating"].is_null());
+}

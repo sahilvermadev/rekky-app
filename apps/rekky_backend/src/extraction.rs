@@ -47,6 +47,8 @@ pub struct ProposedItem {
     pub use_cases: Vec<Claim>,
     #[serde(default)]
     pub classification: Value,
+    #[serde(default)]
+    pub rating: Value,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -171,6 +173,12 @@ pub fn schema() -> Value {
             "entity_kind":choice(&["place","person_service","thing","activity_event","idea_tip"]),
             "experience":choice(&["firsthand","secondhand","interest","unspecified"]),
             "summary":claim,
+            "rating":object(json!({
+                "mode":choice(&["none","spoken","inferred"]),
+                "stance":choice(&["none","awful","very_bad","bad","disappointing","mixed","okay","good","very_good","excellent","exceptional"]),
+                "spoken_value":{"type":["number","null"]},
+                "source_phrase":text_schema(),"evidence":evidence_schema()
+            })),
             "observations":array(object(json!({"kind":choice(&["praise","suggestion","suitability","caution","price","context"]),"text":text_schema(),"evidence":evidence_schema()}))),
             "locations":array(object(json!({"role":choice(&["venue","practice","service_area","past_experience","context"]),"text":text_schema(),"evidence":evidence_schema()}))),
             "use_cases":array(claim.clone()),
@@ -455,6 +463,7 @@ pub fn validate(
             .collect();
         let (classification, classification_support) =
             crate::taxonomy::validate(&classification_proposal, &item.entity_kind, &item_units);
+        let rating = crate::ratings::validate(&item.rating, &item.experience, &item_units);
         let evidence = json!({"pipeline_version":UNDERSTANDING_VERSION,"proposal":item,
             "units":item_units,"classification":classification_support});
         let recommendation = json!({
@@ -463,7 +472,7 @@ pub fn validate(
             "observations":item.observations.iter().map(|o|json!({"kind":o.kind,"text":o.text})).collect::<Vec<_>>(),
             "locations":item.locations.iter().map(|l|json!({"role":l.role,"text":l.text})).collect::<Vec<_>>(),
             "use_cases":item.use_cases.iter().map(|c|c.text.clone()).collect::<Vec<_>>(),
-            "classification":classification
+            "classification":classification,"rating":rating
         });
         items.push(ValidatedItem {
             subject: item.subject.trim().to_owned(),

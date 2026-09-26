@@ -1,0 +1,24 @@
+{
+  "inferred": {
+    "value": 7.0,
+    "scale": 10,
+    "origin": "inferred",
+    "rubric_version": 1
+  },
+  "spoken": {
+    "value": 9.0,
+    "scale": 10,
+    "origin": "spoken",
+    "rubric_version": 1,
+    "spoken": {
+      "value": 4.5,
+      "scale": 5.0
+    }
+  },
+  "user": {
+    "value": 0,
+    "scale": 10,
+    "origin": "user"
+  },
+  "unrated": null
+}

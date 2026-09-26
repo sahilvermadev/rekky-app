@@ -4,6 +4,7 @@ pub mod editing;
 pub mod extraction;
 pub mod migrate;
 pub mod places;
+pub mod ratings;
 pub mod readable_source;
 pub mod taxonomy;
 pub mod voice;

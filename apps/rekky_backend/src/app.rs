@@ -1816,7 +1816,7 @@ async fn edit_content(
     let expected = revision(&headers)?;
     let input: crate::editing::EditInput = parse(&body)?;
     let input = input.normalized().map_err(ApiError::bad)?;
-    let (recommendation, body) = input.build().map_err(ApiError::bad)?;
+    let (mut recommendation, body) = input.build().map_err(ApiError::bad)?;
     let mut tx = state.pool.begin().await?;
     let previous = sqlx::query("SELECT subject,recommendation,revision FROM knowledge_items WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL FOR UPDATE")
         .bind(id).bind(owner_id).fetch_optional(&mut *tx).await?
@@ -1836,6 +1836,14 @@ async fn edit_content(
             "The name or location changed. Confirm or remove the existing link.",
         ));
     }
+    input.rating.apply(
+        &previous.get::<String, _>("subject"),
+        &input.subject,
+        &previous
+            .get::<Option<Value>, _>("recommendation")
+            .unwrap_or(Value::Null),
+        &mut recommendation,
+    );
     let updated: ItemRow = sqlx::query_as("UPDATE knowledge_items SET subject=$1,body=$2,visibility=$3,recommendation=$4,revision=revision+1 WHERE id=$5 RETURNING id,capture_id,subject,body,visibility,revision,created_at,recommendation,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review")
         .bind(input.subject).bind(body).bind(input.visibility).bind(recommendation).bind(id).fetch_one(&mut *tx).await?;
     // Keep original evidence for recovery, but never describe it as support for

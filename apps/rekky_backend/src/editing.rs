@@ -19,6 +19,8 @@ pub struct EditInput {
     pub descriptors: Vec<String>,
     pub destination: Destination,
     #[serde(default)]
+    pub rating: crate::ratings::Edit,
+    #[serde(default)]
     pub destination_confirmed: bool,
 }
 #[derive(Debug, Deserialize, Serialize)]
@@ -50,6 +52,7 @@ fn clean(value: &mut String, min: usize, max: usize) -> Result<(), &'static str>
 }
 impl EditInput {
     pub fn normalized(mut self) -> Result<Self, &'static str> {
+        self.rating.check()?;
         clean(&mut self.subject, 1, 120)?;
         clean(&mut self.summary, 1, 20000)?;
         clean(&mut self.attribution, 0, 300)?;

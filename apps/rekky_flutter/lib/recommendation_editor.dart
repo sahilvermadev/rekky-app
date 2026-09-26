@@ -40,6 +40,7 @@ class _RecommendationEditorState extends State<RecommendationEditor> {
       confirmingExit = false,
       linkConfirmed = false;
   bool categoriesLoading = false;
+  String ratingChoice = 'keep';
 
   static const kinds = {
     'place': 'Place',
@@ -118,8 +119,42 @@ class _RecommendationEditorState extends State<RecommendationEditor> {
       'label': linkMode == 'custom' ? linkLabel : '',
     },
     'destination_confirmed': linkConfirmed,
+    'rating': ratingChoice == 'keep' || ratingChoice == 'none'
+        ? {'mode': ratingChoice}
+        : {'mode': 'set', 'value': double.parse(ratingChoice)},
   };
   bool get dirty => baseline != jsonEncode(payload());
+  bool get ratingWillClear {
+    final r = widget.item.recommendation;
+    if (ratingChoice != 'keep' || r?.rating == null) return false;
+    return subject.trim() != widget.item.subject ||
+        kind != r!.entityKind ||
+        experience != r.experience ||
+        (r.rating!.origin != 'user' &&
+            (summary.trim() != r.summary ||
+                attribution.trim() != r.attribution ||
+                jsonEncode(
+                      observations.map((o) => [o.kind, o.text.trim()]).toList(),
+                    ) !=
+                    jsonEncode(
+                      r.observations.map((o) => [o.kind, o.text]).toList(),
+                    )));
+  }
+
+  Map<String, String> get ratingOptions {
+    final rating = widget.item.recommendation?.rating;
+    return {
+      'keep': rating == null
+          ? 'No rating'
+          : ratingWillClear
+          ? 'Clear previous rating'
+          : 'Keep ${rating.label}/10${rating.estimated ? ' · estimated' : ''}',
+      if (rating != null) 'none': 'Remove rating',
+      for (var half = 0; half <= 20; half++)
+        (half / 2).toString(): '${half.isEven ? half ~/ 2 : half / 2}/10',
+    };
+  }
+
   bool get linkNeedsCheck {
     final r = widget.item.recommendation;
     return linkMode == 'custom' &&
@@ -491,6 +526,19 @@ class _RecommendationEditorState extends State<RecommendationEditor> {
                         'private': 'Only me',
                         'friends': 'Friends',
                       }, (v) => visibility = v),
+                      choice(
+                        'Rating',
+                        ratingChoice,
+                        ratingOptions,
+                        (v) => ratingChoice = v,
+                      ),
+                      if (ratingWillClear)
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 16),
+                          child: Text(
+                            'This edit changes the experience. Choose a score above to keep a rating.',
+                          ),
+                        ),
                       section('Experience & source', [
                         choice(
                           'Experience',

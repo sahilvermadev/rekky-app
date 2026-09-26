@@ -101,6 +101,43 @@ class RekkyClassification {
       );
 }
 
+class RecommendationRating {
+  const RecommendationRating(
+    this.value,
+    this.origin, {
+    this.spokenValue,
+    this.spokenScale,
+  });
+  final double value;
+  final double? spokenValue, spokenScale;
+  final String origin;
+  bool get estimated => origin == 'inferred';
+  String get label => value == value.roundToDouble()
+      ? value.toInt().toString()
+      : value.toString();
+  static RecommendationRating? parse(dynamic json) {
+    if (json is! Map ||
+        json['value'] is! num ||
+        json['scale'] != 10 ||
+        !['inferred', 'spoken', 'user'].contains(json['origin'])) {
+      return null;
+    }
+    final value = (json['value'] as num).toDouble();
+    if (!value.isFinite || value < 0 || value > 10) return null;
+    final spoken = json['spoken'];
+    return RecommendationRating(
+      value,
+      json['origin'] as String,
+      spokenValue: spoken is Map && spoken['value'] is num
+          ? (spoken['value'] as num).toDouble()
+          : null,
+      spokenScale: spoken is Map && spoken['scale'] is num
+          ? (spoken['scale'] as num).toDouble()
+          : null,
+    );
+  }
+}
+
 class RekkyRecommendation {
   const RekkyRecommendation({
     required this.summary,
@@ -116,7 +153,9 @@ class RekkyRecommendation {
     this.destinationMode = 'auto',
     this.destinationUrl = '',
     this.destinationLabel = '',
+    this.rating,
   });
+  final RecommendationRating? rating;
   final String summary, shelf, experience, entityKind;
   final String attribution,
       origin,
@@ -145,6 +184,7 @@ class RekkyRecommendation {
   factory RekkyRecommendation.fromJson(
     Map<String, dynamic> json,
   ) => RekkyRecommendation(
+    rating: RecommendationRating.parse(json['rating']),
     summary: json['summary'] as String,
     shelf: json['shelf'] as String,
     experience: json['experience'] as String,

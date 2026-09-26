@@ -2022,10 +2022,11 @@ async fn full_edits_are_atomic_searchable_owner_fenced_and_preserve_sources() {
             .await
             .unwrap();
     let path = format!("/v1/items/{item}/content");
-    let input: Value = serde_json::from_str(include_str!(
+    let mut input: Value = serde_json::from_str(include_str!(
         "../../../contracts/rekky/v1/fixtures/recommendation_edit.json"
     ))
     .unwrap();
+    input["rating"] = json!({"mode":"set","value":4.5});
     let (_, other) = t.sign_in("google", "valid-b").await;
     t.call(
         Method::POST,
@@ -2072,6 +2073,10 @@ async fn full_edits_are_atomic_searchable_owner_fenced_and_preserve_sources() {
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{edited}");
+    assert_eq!(
+        edited["item"]["recommendation"]["rating"],
+        json!({"value":4.5,"scale":10,"origin":"user"})
+    );
     assert_eq!(edited["item"]["revision"], 2);
     assert_eq!(edited["item"]["visibility"], "private");
     assert_eq!(edited["item"]["subject"], "Lantern Cafe");
