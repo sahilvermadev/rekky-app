@@ -182,12 +182,14 @@ class VoiceDraftsSheet extends StatefulWidget {
     required this.store,
     required this.api,
     required this.onChanged,
+    required this.onOpenLibrary,
   });
 
   final String ownerId;
   final VoiceDraftStore store;
   final RekkyApi api;
   final Future<void> Function() onChanged;
+  final VoidCallback onOpenLibrary;
 
   @override
   State<VoiceDraftsSheet> createState() => _VoiceDraftsSheetState();
@@ -197,6 +199,8 @@ class _VoiceDraftsSheetState extends State<VoiceDraftsSheet> {
   List<VoiceDraft> drafts = [];
   List<VoiceCapture> captures = [];
   bool working = false, permissionEnabled = false, providerAvailable = false;
+  bool extractionEnabled = false, extractionAvailable = false;
+  bool showLibraryAction = false;
   String? issue;
   String? receipt;
 
@@ -211,13 +215,18 @@ class _VoiceDraftsSheetState extends State<VoiceDraftsSheet> {
       final loaded = await widget.store.forOwner(widget.ownerId);
       if (mounted) setState(() => drafts = loaded);
       final permission = await widget.api.voicePermission();
+      final extraction = await widget.api.extractionPermission();
       final remoteCaptures = await widget.api.voiceCaptures();
       final data = permission['voice_transcription'] as Map<String, dynamic>;
+      final extractionData =
+          extraction['transcript_extraction'] as Map<String, dynamic>;
       if (mounted) {
         setState(() {
           captures = remoteCaptures;
           permissionEnabled = data['enabled'] as bool;
           providerAvailable = data['provider_available'] as bool;
+          extractionEnabled = extractionData['enabled'] as bool;
+          extractionAvailable = extractionData['provider_available'] as bool;
           issue = null;
         });
       }
@@ -250,12 +259,88 @@ class _VoiceDraftsSheetState extends State<VoiceDraftsSheet> {
       ) ??
       false;
 
+  Future<bool> _confirmTranscriptProcessing() async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Save recommendations from transcripts?'),
+          content: const SingleChildScrollView(
+            child: Text(
+              'Rekky will send your private machine transcript text to OpenAI’s gpt-4.1-mini service to identify recommendations and their supporting words. OpenAI says API data is not used to train models by default unless the API account opts in. Its default abuse-monitoring logs may include content for up to 30 days, or longer when required by law or to protect services. Rekky saves grounded recommendations as Only me for now; the transcript stays private. You can turn off future transcript processing here. Saved recommendations remain until you delete them.',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Not now'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Allow and save'),
+            ),
+          ],
+        ),
+      ) ??
+      false;
+
+  Future<bool> _ensureExtractionPermission() async {
+    final permission = await widget.api.extractionPermission();
+    final data = permission['transcript_extraction'] as Map<String, dynamic>;
+    if (data['provider_available'] != true) {
+      throw StateError(
+        'Transcript processing is not configured on this backend.',
+      );
+    }
+    if (data['enabled'] == true) return true;
+    if (!await _confirmTranscriptProcessing()) return false;
+    await widget.api.setExtractionPermission(true);
+    return true;
+  }
+
+  Future<void> _extractCapture(String captureId) async {
+    if (!await _ensureExtractionPermission()) return;
+    final result = await widget.api.extractVoiceCapture(captureId);
+    final items = result['items'] as List<dynamic>;
+    await widget.onChanged();
+    await _load();
+    if (mounted) {
+      setState(() {
+        showLibraryAction = items.isNotEmpty;
+        receipt = items.isEmpty
+            ? 'No saved recommendations remain for this transcript.'
+            : '${items.length} private recommendation${items.length == 1 ? '' : 's'} saved. You can find ${items.length == 1 ? 'it' : 'them'} in Library and Ask.';
+        if (result['partial'] == true) {
+          receipt =
+              '${receipt!} Some transcript details may still need review.';
+        }
+      });
+    }
+  }
+
+  Future<void> _saveTranscript(VoiceCapture capture) async {
+    if (working) return;
+    setState(() {
+      working = true;
+      issue = null;
+      receipt = null;
+      showLibraryAction = false;
+    });
+    try {
+      await _extractCapture(capture.id);
+    } catch (error) {
+      if (mounted) setState(() => issue = '$error');
+    } finally {
+      if (mounted) setState(() => working = false);
+    }
+  }
+
   Future<void> _transcribe(VoiceDraft draft) async {
     if (working) return;
     setState(() {
       working = true;
       issue = null;
       receipt = null;
+      showLibraryAction = false;
     });
     try {
       final permission = await widget.api.voicePermission();
@@ -270,15 +355,20 @@ class _VoiceDraftsSheetState extends State<VoiceDraftsSheet> {
         await widget.api.setVoicePermission(true);
       }
       final file = await widget.store.readyFile(widget.ownerId, draft);
-      await widget.api.transcribeVoice(draft.id, draft.createdAtMs, file);
+      final captureId = await widget.api.transcribeVoice(
+        draft.id,
+        draft.createdAtMs,
+        file,
+      );
       await widget.store.acknowledgeTranscript(widget.ownerId, draft.id);
       await widget.onChanged();
       await _load();
       if (mounted) {
         setState(
-          () => receipt = 'Private transcript saved. The local audio was queued for deletion. It is not a Library item yet.',
+          () => receipt = 'Private transcript saved; local audio deleted.',
         );
       }
+      await _extractCapture(captureId);
     } catch (error) {
       if (mounted) setState(() => issue = '$error');
     } finally {
@@ -313,6 +403,19 @@ class _VoiceDraftsSheetState extends State<VoiceDraftsSheet> {
       await widget.api.setVoicePermission(false);
       await widget.store.deleteAll(widget.ownerId);
       await widget.onChanged();
+      await _load();
+    } catch (error) {
+      if (mounted) setState(() => issue = '$error');
+    } finally {
+      if (mounted) setState(() => working = false);
+    }
+  }
+
+  Future<void> _withdrawExtraction() async {
+    if (working) return;
+    setState(() => working = true);
+    try {
+      await widget.api.setExtractionPermission(false);
       await _load();
     } catch (error) {
       if (mounted) setState(() => issue = '$error');
@@ -398,6 +501,11 @@ class _VoiceDraftsSheetState extends State<VoiceDraftsSheet> {
                     ),
                   ),
                 if (receipt != null) Text(receipt!),
+                if (showLibraryAction)
+                  TextButton(
+                    onPressed: working ? null : widget.onOpenLibrary,
+                    child: const Text('View in Library'),
+                  ),
                 if (!providerAvailable && drafts.isNotEmpty)
                   const Text(
                     'Transcription is paused while the provider settings are reviewed. Your drafts remain on this device.',
@@ -447,7 +555,24 @@ class _VoiceDraftsSheetState extends State<VoiceDraftsSheet> {
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    subtitle: Text('Saved ${capture.createdAt}'),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Saved ${capture.createdAt}'),
+                        if (capture.itemCount > 0)
+                          Text(
+                            '${capture.itemCount} private recommendation${capture.itemCount == 1 ? '' : 's'} saved${capture.partial == true ? ' · review details' : ''}',
+                          ),
+                        if (capture.itemCount == 0 &&
+                            capture.extractionStatus != 'completed')
+                          TextButton(
+                            onPressed: working || !extractionAvailable
+                                ? null
+                                : () => _saveTranscript(capture),
+                            child: const Text('Save recommendation'),
+                          ),
+                      ],
+                    ),
                     onTap: () => showDialog<void>(
                       context: context,
                       builder: (context) => AlertDialog(
@@ -479,6 +604,11 @@ class _VoiceDraftsSheetState extends State<VoiceDraftsSheet> {
                 else if (providerAvailable)
                   const Text(
                     'Transcription permission will be requested when you choose a draft.',
+                  ),
+                if (extractionEnabled)
+                  TextButton(
+                    onPressed: working ? null : _withdrawExtraction,
+                    child: const Text('Turn off transcript processing'),
                   ),
                 const SizedBox(height: 12),
                 TextButton(

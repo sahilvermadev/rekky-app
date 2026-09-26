@@ -57,14 +57,23 @@ class VoiceCapture {
     required this.transcript,
     required this.sourceRevision,
     required this.createdAt,
+    required this.itemCount,
+    required this.extractionStatus,
+    required this.partial,
   });
   final String id, transcript, createdAt;
   final int sourceRevision;
+  final int itemCount;
+  final String? extractionStatus;
+  final bool? partial;
   factory VoiceCapture.fromJson(Map<String, dynamic> json) => VoiceCapture(
     id: json['id'] as String,
     transcript: json['transcript'] as String,
     sourceRevision: json['source_revision'] as int,
     createdAt: json['created_at'] as String,
+    itemCount: json['item_count'] as int? ?? 0,
+    extractionStatus: json['extraction_status'] as String?,
+    partial: json['partial'] as bool?,
   );
 }
 
@@ -116,6 +125,7 @@ class RekkyApi {
     String path, {
     Object? body,
     Map<String, String> headers = const {},
+    Duration timeout = const Duration(seconds: 20),
   }) async {
     final request = http.Request(method, _uri(path));
     request.headers.addAll({
@@ -125,11 +135,8 @@ class RekkyApi {
       ...headers,
     });
     if (body != null) request.body = jsonEncode(body);
-    final streamed = await _client
-        .send(request)
-        .timeout(const Duration(seconds: 20));
-    final response = await http.Response.fromStream(streamed)
-        .timeout(const Duration(seconds: 20));
+    final streamed = await _client.send(request).timeout(timeout);
+    final response = await http.Response.fromStream(streamed).timeout(timeout);
     return _decode(response);
   }
 
@@ -151,7 +158,24 @@ class RekkyApi {
         .toList();
   }
 
-  Future<void> transcribeVoice(
+  Future<Map<String, dynamic>> extractionPermission() =>
+      request('GET', '/v1/me/transcript-extraction-permission');
+
+  Future<void> setExtractionPermission(bool enabled) async {
+    await request(
+      'POST',
+      '/v1/me/transcript-extraction-permission',
+      body: {'enabled': enabled, if (enabled) 'disclosure_version': 1},
+    );
+  }
+
+  Future<Map<String, dynamic>> extractVoiceCapture(String captureId) => request(
+    'POST',
+    '/v1/voice-captures/$captureId/extract',
+    timeout: const Duration(seconds: 90),
+  );
+
+  Future<String> transcribeVoice(
     String draftId,
     int capturedAtMs,
     File audioFile,
@@ -183,6 +207,7 @@ class RekkyApi {
         0,
       );
     }
+    return capture?['id'] as String;
   }
 
   Future<void> deleteVoiceTranscript(VoiceCapture capture) async {

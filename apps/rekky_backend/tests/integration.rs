@@ -7,6 +7,7 @@ use axum::{
 use rekky_backend::{
     AppState,
     auth::{IdentityVerifier, Provider, VerifyError, hash_token},
+    extraction::{ExtractionError, Proposal, ProposedItem, TranscriptExtractor},
     migrate, router,
     voice::{TranscriptionError, VoiceTranscriber},
 };
@@ -30,6 +31,25 @@ impl IdentityVerifier for TestVerifier {
     }
 }
 struct TestTranscriber;
+struct TestExtractor;
+#[async_trait]
+impl TranscriptExtractor for TestExtractor {
+    fn available(&self) -> bool {
+        true
+    }
+    async fn extract(&self, transcript: &str) -> Result<Proposal, ExtractionError> {
+        Ok(Proposal {
+            items: vec![ProposedItem {
+                subject: transcript
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or_default()
+                    .to_owned(),
+                evidence: vec![transcript.to_owned()],
+            }],
+        })
+    }
+}
 #[async_trait]
 impl VoiceTranscriber for TestTranscriber {
     fn available(&self) -> bool {
@@ -84,6 +104,7 @@ impl TestApp {
             pool: pool.clone(),
             verifier,
             transcriber,
+            extractor: Arc::new(TestExtractor),
         });
         Some(Self {
             pool,
@@ -197,6 +218,8 @@ async fn wire_fixtures() {
         "voice_permission_ack",
         "voice_transcript_ready",
         "voice_permission_required",
+        "transcript_extraction_permission",
+        "voice_knowledge_saved",
     ] {
         assert!(names.contains(&name), "missing {name}");
     }
@@ -911,6 +934,153 @@ async fn voice_failed_draft_has_bounded_paid_retries() {
         t.call_audio(path, &token, audio, captured_ms).await.0,
         StatusCode::TOO_MANY_REQUESTS
     );
+    t.cleanup().await;
+}
+
+#[tokio::test]
+async fn transcript_extraction_saves_private_grounded_item_for_own_ask() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    let (owner_id, token) = t.sign_in("google", "valid-a").await;
+    let (_, other) = t.sign_in("google", "valid-b").await;
+    for token in [&token, &other] {
+        assert_eq!(
+            t.call(
+                Method::POST,
+                "/v1/me/visibility-disclosure",
+                Some(token),
+                Some(json!({"accept":true})),
+                &[]
+            )
+            .await
+            .0,
+            StatusCode::OK
+        );
+    }
+    let capture_id = Uuid::new_v4();
+    let source = "Ravi fixed the kitchen tap. He was careful and explained the repair.";
+    sqlx::query("INSERT INTO captures(id,owner_id,kind,status,desired_visibility) VALUES ($1,$2,'voice','transcript_ready','private')")
+        .bind(capture_id).bind(owner_id).execute(&t.pool).await.unwrap();
+    sqlx::query("INSERT INTO source_texts(id,capture_id,owner_id,kind,content) VALUES ($1,$2,$3,'transcript',$4)")
+        .bind(Uuid::new_v4()).bind(capture_id).bind(owner_id).bind(source).execute(&t.pool).await.unwrap();
+    let path = format!("/v1/voice-captures/{capture_id}/extract");
+    assert_eq!(
+        t.call(Method::POST, &path, Some(&token), None, &[]).await.0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        t.call(
+            Method::POST,
+            "/v1/me/transcript-extraction-permission",
+            Some(&token),
+            Some(json!({"enabled":true,"disclosure_version":1})),
+            &[]
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let (status, result) = t.call(Method::POST, &path, Some(&token), None, &[]).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(result["partial"], false);
+    assert_eq!(result["items"].as_array().unwrap().len(), 1);
+    assert_eq!(result["items"][0]["subject"], "Ravi");
+    assert_eq!(result["items"][0]["body"], source);
+    assert_eq!(result["items"][0]["visibility"], "private");
+    assert_eq!(result["items"][0]["capture_id"], capture_id.to_string());
+    assert_eq!(
+        t.call(Method::POST, &path, Some(&token), None, &[]).await.1["items"][0]["id"],
+        result["items"][0]["id"]
+    );
+    assert_eq!(
+        t.call(Method::POST, &path, Some(&other), None, &[]).await.0,
+        StatusCode::FORBIDDEN
+    );
+    let (_, found) = t
+        .call(
+            Method::POST,
+            "/v1/ask",
+            Some(&token),
+            Some(json!({"question":"Who fixed our kitchen tap?"})),
+            &[],
+        )
+        .await;
+    assert_eq!(found["results"][0]["item_id"], result["items"][0]["id"]);
+    let (_, hidden) = t
+        .call(
+            Method::POST,
+            "/v1/ask",
+            Some(&other),
+            Some(json!({"question":"Who fixed our kitchen tap?"})),
+            &[],
+        )
+        .await;
+    assert!(hidden["results"].as_array().unwrap().is_empty());
+    let (_, listed) = t
+        .call(Method::GET, "/v1/voice-captures", Some(&token), None, &[])
+        .await;
+    assert_eq!(listed["voice_captures"][0]["item_count"], 1);
+    assert_eq!(
+        listed["voice_captures"][0]["extraction_status"],
+        "completed"
+    );
+    t.cleanup().await;
+}
+
+#[tokio::test]
+async fn deleting_one_voice_item_preserves_shared_source_until_last_item() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    let (owner_id, token) = t.sign_in("google", "valid-a").await;
+    assert_eq!(
+        t.call(
+            Method::POST,
+            "/v1/me/visibility-disclosure",
+            Some(&token),
+            Some(json!({"accept":true})),
+            &[]
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let capture_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO captures(id,owner_id,kind,status,desired_visibility) VALUES ($1,$2,'voice','completed','private')")
+        .bind(capture_id).bind(owner_id).execute(&t.pool).await.unwrap();
+    sqlx::query("INSERT INTO source_texts(id,capture_id,owner_id,kind,content) VALUES ($1,$2,$3,'transcript','Ravi repaired the tap. Meera teaches swimming.')")
+        .bind(Uuid::new_v4()).bind(capture_id).bind(owner_id).execute(&t.pool).await.unwrap();
+    let mut item_ids = Vec::new();
+    for subject in ["Ravi", "Meera"] {
+        let item_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO knowledge_items(id,capture_id,owner_id,subject,body,visibility) VALUES ($1,$2,$3,$4,$5,'private')")
+            .bind(item_id).bind(capture_id).bind(owner_id).bind(subject).bind(subject)
+            .execute(&t.pool).await.unwrap();
+        item_ids.push(item_id);
+    }
+    for (index, item_id) in item_ids.iter().enumerate() {
+        let path = format!("/v1/items/{item_id}");
+        assert_eq!(
+            t.call(
+                Method::DELETE,
+                &path,
+                Some(&token),
+                None,
+                &[("if-match", "1")]
+            )
+            .await
+            .0,
+            StatusCode::NO_CONTENT
+        );
+        let count: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM source_texts WHERE capture_id=$1")
+                .bind(capture_id)
+                .fetch_one(&t.pool)
+                .await
+                .unwrap();
+        assert_eq!(count, if index == 0 { 1 } else { 0 });
+    }
     t.cleanup().await;
 }
 

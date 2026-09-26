@@ -67,6 +67,15 @@ void main() {
           as Map<String, dynamic>)['body']['server_audio_retained'],
       false,
     );
+    final extracted = RekkyItem.fromJson(
+      ((examples['voice_knowledge_saved']
+                      as Map<String, dynamic>)['body']['items']
+                  as List<dynamic>)
+              .single
+          as Map<String, dynamic>,
+    );
+    expect(extracted.visibility, 'private');
+    expect(extracted.captureId, '44444444-4444-4444-8444-444444444444');
   });
 
   test('the API client accepts saved-item and error wire examples', () async {
@@ -160,10 +169,45 @@ void main() {
         });
         final api = RekkyApi('https://api.example.test', client: client)
           ..token = 'session-token';
-        await api.transcribeVoice('draft-1234567890123456', 1234, file);
+        expect(
+          await api.transcribeVoice('draft-1234567890123456', 1234, file),
+          '44444444-4444-4444-8444-444444444444',
+        );
       } finally {
         await root.delete(recursive: true);
       }
+    },
+  );
+
+  test(
+    'private transcript can become a saved item without a second upload',
+    () async {
+      final client = MockClient((request) async {
+        expect(request.headers['authorization'], 'Bearer session-token');
+        if (request.url.path == '/v1/me/transcript-extraction-permission') {
+          expect(request.method, 'POST');
+          expect(jsonDecode(request.body)['disclosure_version'], 1);
+          return http.Response('{}', 200);
+        }
+        expect(request.url.path, '/v1/voice-captures/capture-1/extract');
+        expect(request.method, 'POST');
+        expect(request.body, isEmpty);
+        return http.Response(
+          jsonEncode({
+            'capture_id': 'capture-1',
+            'items': [
+              {'id': 'item-1', 'subject': 'Ravi', 'visibility': 'private'},
+            ],
+            'partial': false,
+          }),
+          200,
+        );
+      });
+      final api = RekkyApi('https://api.example.test', client: client)
+        ..token = 'session-token';
+      await api.setExtractionPermission(true);
+      final result = await api.extractVoiceCapture('capture-1');
+      expect(result['items'][0]['visibility'], 'private');
     },
   );
 }

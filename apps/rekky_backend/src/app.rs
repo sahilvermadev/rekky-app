@@ -1,6 +1,9 @@
 use crate::auth::{
     IdentityVerifier, Provider, VerifyError, account_for_token, exchange_identity, hash_token,
 };
+use crate::extraction::{
+    EXTRACTION_DISCLOSURE_VERSION, EXTRACTION_MODEL, TranscriptExtractor, validate,
+};
 use crate::voice::{VOICE_DISCLOSURE_VERSION, VOICE_MODEL, VOICE_PROVIDER, VoiceTranscriber};
 use axum::{
     Json, Router,
@@ -28,6 +31,7 @@ pub struct AppState {
     pub pool: PgPool,
     pub verifier: Arc<dyn IdentityVerifier>,
     pub transcriber: Arc<dyn VoiceTranscriber>,
+    pub extractor: Arc<dyn TranscriptExtractor>,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -43,6 +47,14 @@ pub fn router(state: AppState) -> Router {
             get(voice_permission).post(set_voice_permission),
         )
         .route("/v1/voice-captures", get(list_voice_captures))
+        .route(
+            "/v1/me/transcript-extraction-permission",
+            get(extraction_permission).post(set_extraction_permission),
+        )
+        .route(
+            "/v1/voice-captures/{id}/extract",
+            post(extract_voice_capture),
+        )
         .route(
             "/v1/voice-drafts/{id}/transcribe",
             post(transcribe_voice).layer(DefaultBodyLimit::max(5 * 1024 * 1024)),
@@ -271,8 +283,18 @@ async fn withdraw_processing(
     if !body.is_empty() && parse::<EmptyInput>(&body).is_err() {
         return Err(ApiError::bad("Invalid withdrawal request"));
     }
+    let mut tx = state.pool.begin().await?;
     let row = sqlx::query("INSERT INTO processing_permissions(account_id,enabled,generation) VALUES ($1,false,1) ON CONFLICT (account_id) DO UPDATE SET enabled=false,generation=processing_permissions.generation+1,updated_at=now() RETURNING generation")
-        .bind(id).fetch_one(&state.pool).await?;
+        .bind(id).fetch_one(&mut *tx).await?;
+    sqlx::query("UPDATE voice_transcription_permissions SET enabled=false,generation=generation+1,updated_at=now() WHERE account_id=$1 AND enabled=true")
+        .bind(id).execute(&mut *tx).await?;
+    sqlx::query("UPDATE transcript_extraction_permissions SET enabled=false,generation=generation+1,updated_at=now() WHERE account_id=$1 AND enabled=true")
+        .bind(id).execute(&mut *tx).await?;
+    sqlx::query("UPDATE voice_transcription_jobs SET status='cancelled',updated_at=now() WHERE account_id=$1 AND status='processing'")
+        .bind(id).execute(&mut *tx).await?;
+    sqlx::query("UPDATE transcript_extraction_jobs SET status='cancelled',updated_at=now() WHERE account_id=$1 AND status='processing'")
+        .bind(id).execute(&mut *tx).await?;
+    tx.commit().await?;
     Ok(ok(
         json!({"processing":{"enabled":false,"generation":row.try_get::<i64,_>("generation")?,"acknowledged":true}}),
     ))
@@ -367,8 +389,11 @@ async fn set_voice_permission(
 async fn list_voice_captures(State(state): State<AppState>, headers: HeaderMap) -> ApiResult {
     let id = owner(&state, &headers, true).await?;
     let rows = sqlx::query(
-        "SELECT c.id,c.created_at,s.content,s.revision FROM captures c JOIN source_texts s \
+        "SELECT c.id,c.created_at,s.content,s.revision,j.status extraction_status,j.partial, \
+         (SELECT count(*) FROM knowledge_items i WHERE i.capture_id=c.id AND i.owner_id=c.owner_id AND i.deleted_at IS NULL) item_count \
+         FROM captures c JOIN source_texts s \
          ON s.capture_id=c.id AND s.owner_id=c.owner_id \
+         LEFT JOIN transcript_extraction_jobs j ON j.capture_id=c.id AND j.account_id=c.owner_id \
          WHERE c.owner_id=$1 AND c.kind='voice' AND s.kind='transcript' \
          ORDER BY c.created_at DESC,c.id DESC LIMIT 50",
     )
@@ -382,11 +407,256 @@ async fn list_voice_captures(State(state): State<AppState>, headers: HeaderMap) 
                 "id":row.get::<Uuid,_>("id"),
                 "created_at":iso(row.get::<DateTime<Utc>,_>("created_at")),
                 "transcript":row.get::<String,_>("content"),
-                "source_revision":row.get::<i32,_>("revision")
+                "source_revision":row.get::<i32,_>("revision"),
+                "item_count":row.get::<i64,_>("item_count"),
+                "extraction_status":row.get::<Option<String>,_>("extraction_status"),
+                "partial":row.get::<Option<bool>,_>("partial")
             })
         })
         .collect();
     Ok(ok(json!({"voice_captures":captures})))
+}
+
+async fn extraction_permission(State(state): State<AppState>, headers: HeaderMap) -> ApiResult {
+    let id = owner(&state, &headers, true).await?;
+    let row = sqlx::query("SELECT enabled,generation,disclosure_version FROM transcript_extraction_permissions WHERE account_id=$1")
+        .bind(id).fetch_optional(&state.pool).await?;
+    Ok(ok(json!({"transcript_extraction":{
+        "enabled":row.as_ref().map(|r| r.get::<bool,_>("enabled")).unwrap_or(false),
+        "generation":row.as_ref().map(|r| r.get::<i64,_>("generation")).unwrap_or(0),
+        "disclosure_version":row.as_ref().and_then(|r| r.get::<Option<i32>,_>("disclosure_version")),
+        "provider":"openai",
+        "model":EXTRACTION_MODEL,
+        "provider_available":state.extractor.available()
+    }})))
+}
+
+async fn set_extraction_permission(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> ApiResult {
+    let id = owner(&state, &headers, true).await?;
+    let input: VoicePermissionInput = parse(&body)?;
+    if input.enabled && input.disclosure_version != Some(EXTRACTION_DISCLOSURE_VERSION) {
+        return Err(ApiError::bad(
+            "Current transcript-processing disclosure is required",
+        ));
+    }
+    if input.enabled && !state.extractor.available() {
+        return Err(ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "extraction_unavailable",
+            "Transcript extraction is not configured",
+        ));
+    }
+    let mut tx = state.pool.begin().await?;
+    let row = sqlx::query(
+        "INSERT INTO transcript_extraction_permissions(account_id,enabled,generation,disclosure_version) VALUES ($1,$2,1,$3) \
+         ON CONFLICT (account_id) DO UPDATE SET \
+         generation=CASE WHEN transcript_extraction_permissions.enabled IS DISTINCT FROM EXCLUDED.enabled \
+          OR (EXCLUDED.enabled AND transcript_extraction_permissions.disclosure_version IS DISTINCT FROM EXCLUDED.disclosure_version) \
+          THEN transcript_extraction_permissions.generation+1 ELSE transcript_extraction_permissions.generation END, \
+         enabled=EXCLUDED.enabled, \
+         disclosure_version=CASE WHEN EXCLUDED.enabled THEN EXCLUDED.disclosure_version ELSE transcript_extraction_permissions.disclosure_version END, \
+         updated_at=now() RETURNING generation")
+        .bind(id).bind(input.enabled).bind(if input.enabled { Some(EXTRACTION_DISCLOSURE_VERSION) } else { None })
+        .fetch_one(&mut *tx).await?;
+    if !input.enabled {
+        sqlx::query("UPDATE transcript_extraction_jobs SET status='cancelled',updated_at=now() WHERE account_id=$1 AND status='processing'")
+            .bind(id).execute(&mut *tx).await?;
+    }
+    let generation: i64 = row.try_get("generation")?;
+    tx.commit().await?;
+    Ok(ok(
+        json!({"transcript_extraction":{"enabled":input.enabled,"generation":generation,"acknowledged":true}}),
+    ))
+}
+
+async fn extraction_items(
+    pool: &PgPool,
+    owner_id: Uuid,
+    capture_id: Uuid,
+    partial: bool,
+) -> ApiResult {
+    let items: Vec<ItemRow> = sqlx::query_as("SELECT id,capture_id,subject,body,visibility,revision,created_at FROM knowledge_items WHERE owner_id=$1 AND capture_id=$2 AND deleted_at IS NULL ORDER BY created_at,id")
+        .bind(owner_id).bind(capture_id).fetch_all(pool).await?;
+    Ok(ok(
+        json!({"capture_id":capture_id,"items":items.iter().map(item_json).collect::<Vec<_>>(),"partial":partial}),
+    ))
+}
+
+async fn fail_extraction_attempt(
+    pool: &PgPool,
+    owner_id: Uuid,
+    capture_id: Uuid,
+    attempt_id: Uuid,
+) {
+    let _ = sqlx::query("UPDATE transcript_extraction_jobs SET status='failed',updated_at=now() WHERE account_id=$1 AND capture_id=$2 AND attempt_id=$3 AND status='processing'")
+        .bind(owner_id).bind(capture_id).bind(attempt_id).execute(pool).await;
+}
+
+async fn extract_voice_capture(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> ApiResult {
+    let owner_id = owner(&state, &headers, true).await?;
+    let capture_id = uuid(&id)?;
+    if !state.extractor.available() {
+        return Err(ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "extraction_unavailable",
+            "Transcript extraction is not configured",
+        ));
+    }
+    let attempt_id = Uuid::new_v4();
+    let mut tx = state.pool.begin().await?;
+    let permission = sqlx::query("SELECT enabled,generation FROM transcript_extraction_permissions WHERE account_id=$1 FOR UPDATE")
+        .bind(owner_id).fetch_optional(&mut *tx).await?;
+    let generation = permission
+        .as_ref()
+        .filter(|r| r.get::<bool, _>("enabled"))
+        .map(|r| r.get::<i64, _>("generation"))
+        .ok_or_else(|| {
+            ApiError::new(
+                StatusCode::FORBIDDEN,
+                "extraction_permission_required",
+                "Allow transcript processing before extracting knowledge",
+            )
+        })?;
+    let withdrawn =
+        sqlx::query("SELECT 1 FROM processing_permissions WHERE account_id=$1 AND enabled=false")
+            .bind(owner_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .is_some();
+    if withdrawn {
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "processing_withdrawn",
+            "Processing was turned off",
+        ));
+    }
+    let source = sqlx::query("SELECT s.content,s.revision FROM source_texts s JOIN captures c ON c.id=s.capture_id AND c.owner_id=s.owner_id WHERE c.id=$1 AND c.owner_id=$2 AND c.kind='voice' AND s.kind='transcript' FOR UPDATE OF s")
+        .bind(capture_id).bind(owner_id).fetch_optional(&mut *tx).await?
+        .ok_or_else(|| ApiError::not_found("Private transcript not found"))?;
+    let transcript: String = source.try_get("content")?;
+    if transcript.chars().count() > 6_000 {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "extraction_too_long",
+            "Transcript is too long for this pilot; private text remains available",
+        ));
+    }
+    let source_revision: i32 = source.try_get("revision")?;
+    let job = sqlx::query("SELECT status,attempts,lease_until,partial,source_revision FROM transcript_extraction_jobs WHERE capture_id=$1 AND account_id=$2 FOR UPDATE")
+        .bind(capture_id).bind(owner_id).fetch_optional(&mut *tx).await?;
+    if let Some(job) = &job {
+        let status: String = job.try_get("status")?;
+        if status == "completed" {
+            let partial = job.get::<Option<bool>, _>("partial").unwrap_or(false);
+            tx.commit().await?;
+            return extraction_items(&state.pool, owner_id, capture_id, partial).await;
+        }
+        if status == "cancelled" || job.get::<i32, _>("source_revision") != source_revision {
+            return Err(ApiError::conflict(
+                "Extraction source changed; review transcript",
+            ));
+        }
+        if job.get::<i32, _>("attempts") >= 3 {
+            return Err(ApiError::new(
+                StatusCode::TOO_MANY_REQUESTS,
+                "extraction_retry_limit",
+                "Extraction retry limit reached",
+            ));
+        }
+        if status == "processing" && job.get::<DateTime<Utc>, _>("lease_until") > Utc::now() {
+            return Err(ApiError::conflict("Transcript is already being processed"));
+        }
+        sqlx::query("UPDATE transcript_extraction_jobs SET status='processing',attempt_id=$3,permission_generation=$4,attempts=attempts+1,lease_until=now()+interval '3 minutes',updated_at=now() WHERE capture_id=$1 AND account_id=$2")
+            .bind(capture_id).bind(owner_id).bind(attempt_id).bind(generation).execute(&mut *tx).await?;
+    } else {
+        sqlx::query("SELECT pg_advisory_xact_lock(732783)")
+            .execute(&mut *tx)
+            .await?;
+        let account_count: i64 = sqlx::query_scalar("SELECT count(*) FROM transcript_extraction_jobs WHERE account_id=$1 AND created_at>now()-interval '24 hours'")
+            .bind(owner_id).fetch_one(&mut *tx).await?;
+        let global_count: i64 = sqlx::query_scalar("SELECT count(*) FROM transcript_extraction_jobs WHERE created_at>now()-interval '24 hours'")
+            .fetch_one(&mut *tx).await?;
+        if account_count >= 12 || global_count >= 100 {
+            return Err(ApiError::new(
+                StatusCode::TOO_MANY_REQUESTS,
+                "extraction_budget_reached",
+                "Transcript processing limit reached",
+            ));
+        }
+        sqlx::query("INSERT INTO transcript_extraction_jobs(capture_id,account_id,source_revision,permission_generation,attempt_id,status,lease_until) VALUES ($1,$2,$3,$4,$5,'processing',now()+interval '3 minutes')")
+            .bind(capture_id).bind(owner_id).bind(source_revision).bind(generation).bind(attempt_id).execute(&mut *tx).await?;
+    }
+    tx.commit().await?;
+
+    let proposal = match state.extractor.extract(&transcript).await {
+        Ok(value) => value,
+        Err(_) => {
+            fail_extraction_attempt(&state.pool, owner_id, capture_id, attempt_id).await;
+            return Err(ApiError::new(
+                StatusCode::BAD_GATEWAY,
+                "extraction_failed",
+                "Knowledge extraction failed; private transcript remains",
+            ));
+        }
+    };
+    let (items, partial) = match validate(proposal, &transcript) {
+        Ok(value) => value,
+        Err(_) => {
+            fail_extraction_attempt(&state.pool, owner_id, capture_id, attempt_id).await;
+            return Err(ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "extraction_unusable",
+                "No grounded recommendation was returned; private transcript remains",
+            ));
+        }
+    };
+    let mut tx = state.pool.begin().await?;
+    let permission = sqlx::query("SELECT enabled,generation FROM transcript_extraction_permissions WHERE account_id=$1 FOR UPDATE")
+        .bind(owner_id).fetch_one(&mut *tx).await?;
+    let source = sqlx::query("SELECT revision FROM source_texts WHERE capture_id=$1 AND owner_id=$2 AND kind='transcript' FOR UPDATE")
+        .bind(capture_id).bind(owner_id).fetch_optional(&mut *tx).await?;
+    let job = sqlx::query("SELECT status,attempt_id FROM transcript_extraction_jobs WHERE capture_id=$1 AND account_id=$2 FOR UPDATE")
+        .bind(capture_id).bind(owner_id).fetch_one(&mut *tx).await?;
+    let withdrawn =
+        sqlx::query("SELECT 1 FROM processing_permissions WHERE account_id=$1 AND enabled=false")
+            .bind(owner_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .is_some();
+    if !permission.get::<bool, _>("enabled")
+        || permission.get::<i64, _>("generation") != generation
+        || withdrawn
+        || source.as_ref().map(|r| r.get::<i32, _>("revision")) != Some(source_revision)
+        || job.get::<String, _>("status") != "processing"
+        || job.get::<Uuid, _>("attempt_id") != attempt_id
+    {
+        return Err(ApiError::conflict(
+            "Processing permission or transcript changed before knowledge could be saved",
+        ));
+    }
+    for item in items {
+        sqlx::query("INSERT INTO knowledge_items(id,capture_id,owner_id,subject,body,visibility) VALUES ($1,$2,$3,$4,$5,'private')")
+            .bind(Uuid::new_v4()).bind(capture_id).bind(owner_id).bind(item.subject).bind(item.body)
+            .execute(&mut *tx).await?;
+    }
+    sqlx::query("UPDATE captures SET status=$2,revision=revision+1 WHERE id=$1 AND owner_id=$3")
+        .bind(capture_id)
+        .bind(if partial { "partial" } else { "completed" })
+        .bind(owner_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("UPDATE transcript_extraction_jobs SET status='completed',partial=$3,updated_at=now() WHERE capture_id=$1 AND account_id=$2")
+        .bind(capture_id).bind(owner_id).bind(partial).execute(&mut *tx).await?;
+    tx.commit().await?;
+    extraction_items(&state.pool, owner_id, capture_id, partial).await
 }
 
 async fn voice_result(pool: &PgPool, owner_id: Uuid, capture_id: Uuid) -> ApiResult {
@@ -480,6 +750,19 @@ async fn transcribe_voice(
                 "Allow voice transcription before uploading audio",
             )
         })?;
+    let withdrawn =
+        sqlx::query("SELECT 1 FROM processing_permissions WHERE account_id=$1 AND enabled=false")
+            .bind(owner_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .is_some();
+    if withdrawn {
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "processing_withdrawn",
+            "Processing was turned off",
+        ));
+    }
     let existing =
         sqlx::query("SELECT 1 FROM voice_transcription_jobs WHERE account_id=$1 AND draft_id=$2")
             .bind(owner_id)
@@ -612,7 +895,14 @@ async fn transcribe_voice(
     .bind(&draft_id)
     .fetch_one(&mut *tx)
     .await?;
+    let withdrawn =
+        sqlx::query("SELECT 1 FROM processing_permissions WHERE account_id=$1 AND enabled=false")
+            .bind(owner_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .is_some();
     if !permission.get::<bool, _>("enabled")
+        || withdrawn
         || permission.get::<i64, _>("generation") != generation
         || job.get::<String, _>("status") != "processing"
         || job.get::<Uuid, _>("attempt_id") != attempt_id
@@ -909,11 +1199,15 @@ async fn delete_item(
         .bind(id)
         .execute(&mut *transaction)
         .await?;
-    sqlx::query("DELETE FROM source_texts WHERE capture_id=$1 AND owner_id=$2")
-        .bind(capture_id)
-        .bind(owner_id)
-        .execute(&mut *transaction)
-        .await?;
+    let siblings: i64 = sqlx::query_scalar("SELECT count(*) FROM knowledge_items WHERE capture_id=$1 AND owner_id=$2 AND deleted_at IS NULL")
+        .bind(capture_id).bind(owner_id).fetch_one(&mut *transaction).await?;
+    if siblings == 0 {
+        sqlx::query("DELETE FROM source_texts WHERE capture_id=$1 AND owner_id=$2")
+            .bind(capture_id)
+            .bind(owner_id)
+            .execute(&mut *transaction)
+            .await?;
+    }
     transaction.commit().await?;
     Ok(no_content())
 }

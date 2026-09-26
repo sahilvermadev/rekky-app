@@ -180,6 +180,11 @@ class _RekkyHomeState extends State<RekkyHome> {
     }
   }
 
+  Future<void> _reloadVoiceAndLibrary() async {
+    await _reloadVoiceDrafts();
+    await _reload();
+  }
+
   Future<bool> _recordVoiceDraft() async {
     final owner = accountId;
     if (owner == null) return false;
@@ -211,7 +216,11 @@ class _RekkyHomeState extends State<RekkyHome> {
         ownerId: owner,
         store: voiceStore,
         api: api,
-        onChanged: _reloadVoiceDrafts,
+        onChanged: _reloadVoiceAndLibrary,
+        onOpenLibrary: () {
+          Navigator.pop(context);
+          setState(() => destination = 1);
+        },
       ),
     );
   }
@@ -356,7 +365,7 @@ class _RekkyHomeState extends State<RekkyHome> {
                         builder: (dialogContext) => AlertDialog(
                           title: const Text('Delete this memory?'),
                           content: const Text(
-                            'This also deletes its private source text.',
+                            'The private source text is deleted when no other saved memories use it.',
                           ),
                           actions: [
                             TextButton(
