@@ -2,7 +2,8 @@ use crate::auth::{
     IdentityVerifier, Provider, VerifyError, account_for_token, exchange_identity, hash_token,
 };
 use crate::extraction::{
-    EXTRACTION_DISCLOSURE_VERSION, EXTRACTION_MODEL, TranscriptExtractor, validate,
+    EXTRACTION_DISCLOSURE_VERSION, EXTRACTION_MODEL, TranscriptExtractor, preserve_unresolved,
+    validate,
 };
 use crate::voice::{VOICE_DISCLOSURE_VERSION, VOICE_MODEL, VOICE_PROVIDER, VoiceTranscriber};
 use axum::{
@@ -607,7 +608,9 @@ async fn extract_voice_capture(
             ));
         }
     };
-    let (items, partial) = match validate(proposal, &transcript) {
+    let (items, partial) = match validate(proposal.clone(), &transcript).or_else(|_| {
+        preserve_unresolved(proposal, &transcript).ok_or(crate::extraction::ExtractionError::Failed)
+    }) {
         Ok(value) => value,
         Err(_) => {
             fail_extraction_attempt(&state.pool, owner_id, capture_id, attempt_id).await;

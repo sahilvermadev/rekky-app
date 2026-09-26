@@ -205,6 +205,29 @@ pub fn validate(
     Ok((items, partial))
 }
 
+/// Preserve the source as one private, review-needed item when a model names a
+/// real subject but its proposed evidence cannot be grounded. This deliberately
+/// does not trust any model-written claim or silently mark extraction complete.
+pub fn preserve_unresolved(proposal: Proposal, source: &str) -> Option<(Vec<ValidatedItem>, bool)> {
+    if source.trim().is_empty() || source.chars().count() > 6_000 {
+        return None;
+    }
+    let subject = proposal.items.into_iter().find_map(|item| {
+        let candidate = item.subject.trim();
+        if !(3..=120).contains(&candidate.chars().count()) {
+            return None;
+        }
+        evidence_span(source, candidate).map(|(start, end)| source[start..end].to_owned())
+    })?;
+    Some((
+        vec![ValidatedItem {
+            subject,
+            body: source.to_owned(),
+        }],
+        true,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -253,5 +276,32 @@ mod tests {
         };
         let (items, _) = validate(proposal, source).unwrap();
         assert_eq!(items[0].body, "Ravi fixed the kitchen tap—carefully");
+    }
+
+    #[test]
+    fn invalid_model_evidence_can_only_be_preserved_as_private_source_text() {
+        let source = "Ravi fixed the tap, but it leaks again.";
+        let proposal = Proposal {
+            items: vec![ProposedItem {
+                subject: "Ravi".into(),
+                evidence: vec!["Ravi fixed the tap permanently.".into()],
+            }],
+        };
+        assert!(validate(proposal.clone(), source).is_err());
+        let (items, partial) = preserve_unresolved(proposal, source).unwrap();
+        assert_eq!(items[0].subject, "Ravi");
+        assert_eq!(items[0].body, source);
+        assert!(partial);
+    }
+
+    #[test]
+    fn unresolved_subject_not_in_source_is_not_saved() {
+        let proposal = Proposal {
+            items: vec![ProposedItem {
+                subject: "Meera".into(),
+                evidence: vec!["Meera fixed the tap.".into()],
+            }],
+        };
+        assert!(preserve_unresolved(proposal, "Ravi fixed the tap.").is_none());
     }
 }
