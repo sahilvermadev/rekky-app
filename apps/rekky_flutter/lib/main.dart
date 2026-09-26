@@ -429,6 +429,12 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
             checkAccount();
             return source;
           },
+          loadPlace: () async {
+            checkAccount();
+            final place = await scopedApi.place(item);
+            checkAccount();
+            return place;
+          },
           changeAudience: (current, visibility) async {
             checkAccount();
             final updated = await scopedApi.changeVisibility(
@@ -451,11 +457,6 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
               library.removeWhere((i) => i.id == current.id);
               matches.removeWhere((m) => m['item_id'] == current.id);
             });
-          },
-          deleteSource: (current, source) async {
-            checkAccount();
-            await scopedApi.deleteSource(current, source);
-            checkAccount();
           },
           editRecommendation: (current) {
             if (mounted && signedIn && accountId == owner) {

@@ -3,6 +3,7 @@ pub mod auth;
 pub mod editing;
 pub mod extraction;
 pub mod migrate;
+pub mod places;
 pub mod readable_source;
 pub mod taxonomy;
 pub mod voice;

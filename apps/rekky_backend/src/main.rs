@@ -28,6 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         verifier,
         transcriber,
         extractor,
+        places: Arc::new(rekky_backend::places::GooglePlaces::from_env()),
     };
     let listener = tokio::net::TcpListener::bind(address).await?;
     let worker_state = state.clone();

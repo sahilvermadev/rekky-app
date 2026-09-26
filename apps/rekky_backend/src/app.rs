@@ -33,6 +33,7 @@ pub struct AppState {
     pub verifier: Arc<dyn IdentityVerifier>,
     pub transcriber: Arc<dyn VoiceTranscriber>,
     pub extractor: Arc<dyn TranscriptExtractor>,
+    pub places: Arc<dyn crate::places::PlaceResolver>,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -75,6 +76,7 @@ pub fn router(state: AppState) -> Router {
             axum::routing::patch(correct_classification),
         )
         .route("/v1/items/{id}/refine", post(refine_item))
+        .route("/v1/items/{id}/place", post(resolve_place))
         .route(
             "/v1/items/{id}",
             axum::routing::patch(change_visibility).delete(delete_item),
@@ -1637,6 +1639,65 @@ async fn list_items(
     Ok(ok(
         json!({"items":rows.iter().take(20).map(item_json).collect::<Vec<_>>(),"next_cursor":next_cursor}),
     ))
+}
+
+async fn resolve_place(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> ApiResult {
+    let owner_id = owner(&state, &headers, true).await?;
+    let id = uuid(&id)?;
+    let row = sqlx::query("SELECT subject,recommendation,revision FROM knowledge_items WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL")
+        .bind(id).bind(owner_id).fetch_optional(&state.pool).await?
+        .ok_or_else(|| ApiError::not_found("Recommendation not found"))?;
+    let recommendation: Option<Value> = row.try_get("recommendation")?;
+    let query = recommendation
+        .as_ref()
+        .and_then(|r| crate::places::query(row.get("subject"), r));
+    let empty = || ok(json!({"place":null}));
+    let Some(query) = query.filter(|_| state.places.available()) else {
+        return Ok(empty());
+    };
+    let revision: i32 = row.try_get("revision")?;
+    let mut tx = state.pool.begin().await?;
+    // Bounded pilot: 20 calls/account and 100 globally in a rolling day, no paid retry.
+    sqlx::query("SELECT pg_advisory_xact_lock(732785)")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM place_lookup_attempts WHERE created_at < now()-interval '1 day'")
+        .execute(&mut *tx)
+        .await?;
+    let counts = sqlx::query("SELECT count(*) total,count(*) FILTER(WHERE owner_id=$1) owned,count(*) FILTER(WHERE owner_id=$1 AND item_id=$2 AND created_at>now()-interval '10 seconds') recent FROM place_lookup_attempts")
+        .bind(owner_id).bind(id).fetch_one(&mut *tx).await?;
+    if counts.get::<i64, _>("total") >= 100
+        || counts.get::<i64, _>("owned") >= 20
+        || counts.get::<i64, _>("recent") > 0
+    {
+        return Ok(empty());
+    }
+    sqlx::query("INSERT INTO place_lookup_attempts(id,owner_id,item_id) VALUES($1,$2,$3)")
+        .bind(Uuid::new_v4())
+        .bind(owner_id)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    let matched = state.places.resolve(&query).await;
+    // Recheck session and item after the external request. No late address on an edited/deleted item.
+    owner(&state, &headers, true).await?;
+    let live: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM knowledge_items WHERE id=$1 AND owner_id=$2 AND revision=$3 AND deleted_at IS NULL)")
+        .bind(id).bind(owner_id).bind(revision).fetch_one(&state.pool).await?;
+    if !live {
+        return Err(ApiError::conflict(
+            "Recommendation changed. Reopen it to refresh the location.",
+        ));
+    }
+    let mut response = ok(json!({"place":matched}));
+    response
+        .headers_mut()
+        .insert("cache-control", "private, no-store".parse().unwrap());
+    Ok(response)
 }
 
 async fn capture(

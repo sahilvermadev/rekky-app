@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -112,6 +114,43 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Search Maps'), findsOneWidget);
       expect(find.textContaining('Couldn’t open'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'matched venue opens its place ID and keeps Google attribution while opening',
+    (tester) async {
+      final pending = Completer<bool>();
+      final wire = jsonDecode(
+        File('../../contracts/rekky/v1/fixtures/resolved_place.json')
+            .readAsStringSync(),
+      ) as Map<String, dynamic>;
+      final resolved = ResolvedPlace.fromJson(
+        wire['place'] as Map<String, dynamic>,
+      );
+      Uri? received;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RecommendationMapsAction(
+              item: place(),
+              place: resolved,
+              openUrl: (uri) {
+                received = uri;
+                return pending.future;
+              },
+            ),
+          ),
+        ),
+      );
+      expect(received, isNull);
+      await tester.tap(find.text('Google Maps'));
+      await tester.pump();
+      expect(received!.queryParameters['query_place_id'], 'synthetic-place-id');
+      expect(received!.host, 'www.google.com');
+      expect(find.text('Google Maps'), findsOneWidget);
+      pending.complete(true);
+      await tester.pumpAndSettle();
     },
   );
 

@@ -47,9 +47,11 @@ class RecommendationMapsAction extends StatefulWidget {
     super.key,
     required this.item,
     this.openUrl = _openMaps,
+    this.place,
   });
 
   final RekkyItem item;
+  final ResolvedPlace? place;
   final Future<bool> Function(Uri) openUrl;
 
   @override
@@ -82,7 +84,12 @@ class _RecommendationMapsActionState extends State<RecommendationMapsAction> {
 
   @override
   Widget build(BuildContext context) {
-    final uri = recommendationDestination(widget.item);
+    final matched = widget.item.recommendation?.destinationMode == 'auto'
+        ? widget.place
+        : null;
+    final uri =
+        matched?.destination(widget.item.subject) ??
+        recommendationDestination(widget.item);
     final custom = widget.item.recommendation?.destinationMode == 'custom';
     if (uri == null) return const SizedBox.shrink();
     return Padding(
@@ -98,12 +105,30 @@ class _RecommendationMapsActionState extends State<RecommendationMapsAction> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : Icon(custom ? Icons.open_in_new : Icons.map_outlined),
+            style: matched == null
+                ? null
+                : FilledButton.styleFrom(
+                    foregroundColor:
+                        Theme.of(context).brightness == Brightness.dark
+                        ? Colors.white
+                        : const Color(0xff1f1f1f),
+                    textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w400,
+                      letterSpacing: 0,
+                    ),
+                  ),
             label: Text(
-              opening
+              matched != null
+                  ? 'Google Maps'
+                  : opening
                   ? (custom ? 'Opening…' : 'Opening Maps…')
                   : (custom
                         ? widget.item.recommendation!.destinationLabel
+                        : matched != null
+                        ? 'Google Maps'
                         : 'Search Maps'),
+              softWrap: false,
             ),
           ),
           if (failed)

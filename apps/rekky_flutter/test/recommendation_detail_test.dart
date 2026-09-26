@@ -29,7 +29,7 @@ Future<void> openSheet(
   WidgetTester tester, {
   Future<RekkySource?> Function()? source,
   Future<RekkyItem> Function(RekkyItem, String)? audience,
-  Future<void> Function(RekkyItem, RekkySource)? deleteSource,
+  Future<ResolvedPlace?> Function()? place,
   Future<void> Function(RekkyItem)? deleteItem,
   double scale = 1,
   RekkyItem? item,
@@ -59,7 +59,7 @@ Future<void> openSheet(
                   loadSource: source ?? () async => original,
                   changeAudience:
                       audience ?? (item, value) async => revised(item, value),
-                  deleteSource: deleteSource ?? (_, _) async {},
+                  loadPlace: place,
                   deleteItem: deleteItem ?? (_) async {},
                   editRecommendation: (_) {},
                   refineItem: (_) {},
@@ -72,18 +72,13 @@ Future<void> openSheet(
     ),
   );
   await tester.tap(find.text('Open'));
-  await tester.pumpAndSettle();
-}
-
-Future<void> tapOriginal(WidgetTester tester) async {
-  await tester.ensureVisible(find.text('Original note'));
-  await tester.tap(find.text('Original note'));
-  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 500));
+  await tester.pump(const Duration(milliseconds: 500));
 }
 
 void main() {
   testWidgets(
-    'opens immediately; original loads once on demand and can finish after close',
+    'opens immediately while the quote loads once and can finish after close',
     (tester) async {
       var calls = 0;
       final pending = Completer<RekkySource?>();
@@ -94,14 +89,13 @@ void main() {
           return pending.future;
         },
       );
-      expect(calls, 0);
+      expect(calls, 1);
       expect(
         find.text(
           fixture('categorized_recommendation').recommendation!.summary,
         ),
         findsOneWidget,
       );
-      await tapOriginal(tester);
       expect(calls, 1);
       expect(find.byType(LinearProgressIndicator), findsOneWidget);
       await tester.tap(find.byTooltip('Close recommendation'));
@@ -113,35 +107,36 @@ void main() {
     },
   );
 
-  testWidgets('source failure stays inside the disclosure and retry recovers', (
-    tester,
-  ) async {
-    var calls = 0;
-    await openSheet(
-      tester,
-      source: () async {
-        if (++calls == 1) throw Exception('private internal detail');
-        return original;
-      },
-    );
-    await tapOriginal(tester);
-    await tester.pumpAndSettle();
-    expect(find.textContaining('Couldn’t load your original'), findsOneWidget);
-    expect(find.textContaining('private internal'), findsNothing);
-    expect(
-      find.text(fixture('categorized_recommendation').subject),
-      findsOneWidget,
-    );
-    await tester.ensureVisible(find.text('Retry'));
-    await tester.tap(find.text('Retry'));
-    await tester.pumpAndSettle();
-    expect(find.text(original.text), findsOneWidget);
-    expect(calls, 2);
-    await tapOriginal(tester);
-    await tapOriginal(tester);
-    await tester.pumpAndSettle();
-    expect(calls, 2);
-  });
+  testWidgets(
+    'source failure stays below the recommendation and retry recovers',
+    (tester) async {
+      var calls = 0;
+      await openSheet(
+        tester,
+        source: () async {
+          if (++calls == 1) throw Exception('private internal detail');
+          return original;
+        },
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('Couldn’t load your original'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('private internal'), findsNothing);
+      expect(
+        find.text(fixture('categorized_recommendation').subject),
+        findsOneWidget,
+      );
+      await tester.ensureVisible(find.text('Retry'));
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+      expect(find.text(original.text), findsOneWidget);
+      expect(calls, 2);
+      await tester.pumpAndSettle();
+      expect(calls, 2);
+    },
+  );
 
   testWidgets(
     'audience waits for acknowledgement, then uses returned revision for deletion',
@@ -210,36 +205,46 @@ void main() {
     },
   );
 
+  testWidgets('quote is visible without headings or source deletion controls', (
+    tester,
+  ) async {
+    await openSheet(tester);
+    expect(find.text(original.text), findsOneWidget);
+    for (final label in [
+      'Your experience',
+      'More from your note',
+      'Original note',
+      'Private · only you',
+      'Delete original note',
+    ]) {
+      expect(find.text(label), findsNothing);
+    }
+  });
+
   testWidgets(
-    'source deletion is scoped, confirmed and preserves the recommendation',
+    'missing source leaves no empty heading or removed-note message',
     (tester) async {
-      var deleted = 0;
-      await openSheet(
-        tester,
-        deleteSource: (_, savedSource) async {
-          expect(savedSource.revision, 3);
-          deleted++;
-        },
+      await openSheet(tester, source: () async => null);
+      expect(find.text('Original note removed.'), findsNothing);
+      expect(find.text('Original note'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'resolved address replaces spoken locality without blocking the quote',
+    (tester) async {
+      final pending = Completer<ResolvedPlace?>();
+      await openSheet(tester, place: () => pending.future);
+      expect(find.text('Pune'), findsOneWidget);
+      expect(find.text(original.text), findsOneWidget);
+      pending.complete(
+        const ResolvedPlace(id: 'sample-id', address: '12 Sample Road, Pune'),
       );
-      expect(find.text('Delete original note'), findsNothing);
-      await tapOriginal(tester);
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Delete original note'));
-      await tester.tap(find.text('Delete original note'));
-      await tester.pumpAndSettle();
-      expect(deleted, 0);
-      expect(
-        find.textContaining('all recommendations from this recording'),
-        findsOneWidget,
-      );
-      await tester.tap(find.text('Delete').last);
-      await tester.pumpAndSettle();
-      expect(deleted, 1);
-      expect(find.text('Original note removed.'), findsOneWidget);
-      expect(
-        find.text(fixture('categorized_recommendation').subject),
-        findsOneWidget,
-      );
+      expect(find.text('12 Sample Road, Pune'), findsOneWidget);
+      expect(find.text('Pune'), findsNothing);
+      expect(find.text('Google Maps'), findsOneWidget);
+      expect(find.text('Search Maps'), findsNothing);
     },
   );
 
@@ -268,7 +273,7 @@ void main() {
         },
       );
       expect(find.text('This saved note may be incomplete.'), findsOneWidget);
-      expect(calls, 0);
+      expect(calls, 1);
       await tester.ensureVisible(find.text('View original note'));
       await tester.tap(find.text('View original note'));
       await tester.pumpAndSettle();
@@ -300,9 +305,8 @@ void main() {
               )
               .dy;
           expect(map, lessThan(summary));
-          await tapOriginal(tester);
           await tester.pumpAndSettle();
-          await tester.ensureVisible(find.text('Delete original note'));
+          await tester.ensureVisible(find.text(original.text));
           expect(tester.takeException(), isNull);
           await tester.tap(find.byTooltip('Close recommendation'));
           await tester.pumpAndSettle();

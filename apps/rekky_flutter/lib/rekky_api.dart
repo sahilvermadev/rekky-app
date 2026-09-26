@@ -128,11 +128,11 @@ class RekkyRecommendation {
   final RekkyClassification? classification;
   String get categoryLabel => classification?.displayLabel ?? shelf;
   String get experienceLabel => switch (experience) {
-    'firsthand' => 'Your experience',
+    'firsthand' => 'Firsthand',
     'secondhand' =>
       attribution.isEmpty ? 'Heard from others' : 'Heard from $attribution',
     'interest' => 'Not tried yet',
-    _ => 'From your note',
+    _ => 'Saved experience',
   };
   String? get primaryLocation => locations
       .where(
@@ -171,6 +171,20 @@ class RekkyRecommendation {
         )
         .toList(),
     useCases: (json['use_cases'] as List).cast<String>(),
+  );
+}
+
+class ResolvedPlace {
+  const ResolvedPlace({required this.id, required this.address});
+  final String id, address;
+  factory ResolvedPlace.fromJson(Map<String, dynamic> json) => ResolvedPlace(
+    id: json['place_id'] as String,
+    address: json['address'] as String,
+  );
+  Uri destination(String subject) => Uri.https(
+    'www.google.com',
+    '/maps/search/',
+    {'api': '1', 'query': '$subject, $address', 'query_place_id': id},
   );
 }
 
@@ -500,20 +514,24 @@ class RekkyApi {
     );
   }
 
+  Future<ResolvedPlace?> place(RekkyItem item) async {
+    if (item.recommendation?.entityKind != 'place' ||
+        item.recommendation?.destinationMode != 'auto') {
+      return null;
+    }
+    final response = await request('POST', '/v1/items/${item.id}/place');
+    final data = response['place'];
+    return data == null
+        ? null
+        : ResolvedPlace.fromJson(data as Map<String, dynamic>);
+  }
+
   Future<RekkySource?> source(RekkyItem item) async {
     final response = await request('GET', '/v1/captures/${item.captureId}');
     final data =
         (response['capture'] as Map<String, dynamic>)['source']
             as Map<String, dynamic>?;
     return data == null ? null : RekkySource.fromJson(data);
-  }
-
-  Future<void> deleteSource(RekkyItem item, RekkySource source) async {
-    await request(
-      'DELETE',
-      '/v1/captures/${item.captureId}/source',
-      headers: {'if-match': '${source.revision}'},
-    );
   }
 
   Future<List<Map<String, dynamic>>> ask(String question) async {

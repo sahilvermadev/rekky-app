@@ -40,9 +40,11 @@ class RecommendationView extends StatelessWidget {
     super.key,
     required this.item,
     this.expanded = false,
+    this.place,
   });
   final RekkyItem item;
   final bool expanded;
+  final ResolvedPlace? place;
 
   @override
   Widget build(BuildContext context) {
@@ -93,7 +95,6 @@ class RecommendationView extends StatelessWidget {
       if (text.trim().isNotEmpty && !values.contains(text)) values.add(text);
     }
 
-    final supporting = <String, List<String>>{};
     for (final observation in recommendation.observations) {
       if (observation.kind == 'caution') continue;
       final heading = switch (observation.kind) {
@@ -103,12 +104,7 @@ class RecommendationView extends StatelessWidget {
         'praise' => 'What stood out',
         _ => 'More context',
       };
-      // Praise often paraphrases the summary. Retain it on demand rather than
-      // guessing semantic equivalence or deleting evidence from the model.
-      if (observation.kind == 'praise') {
-        final values = supporting.putIfAbsent(heading, () => []);
-        if (!values.contains(observation.text)) values.add(observation.text);
-      } else if (observation.text.trim() != recommendation.summary.trim()) {
+      if (observation.text.trim() != recommendation.summary.trim()) {
         add(heading, observation.text);
       }
     }
@@ -150,7 +146,7 @@ class RecommendationView extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(recommendation.categoryLabel, style: secondary),
-        if (recommendation.primaryLocation != null) ...[
+        if (place != null || recommendation.primaryLocation != null) ...[
           const SizedBox(height: 6),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -162,23 +158,31 @@ class RecommendationView extends StatelessWidget {
               ),
               const SizedBox(width: 6),
               Expanded(
-                child: Text(recommendation.primaryLocation!, style: secondary),
+                child: Text(
+                  place?.address ?? recommendation.primaryLocation!,
+                  style: secondary,
+                ),
               ),
             ],
           ),
         ],
-        RecommendationMapsAction(item: item),
+        RecommendationMapsAction(item: item, place: place),
         const SizedBox(height: 24),
-        Text(
-          recommendation.experienceLabel,
-          style: theme.textTheme.labelLarge?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+        if (recommendation.experience == 'secondhand' ||
+            recommendation.experience == 'interest') ...[
+          Text(
+            recommendation.experienceLabel,
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
-        ),
+          const SizedBox(height: 8),
+        ],
         if (recommendation.attribution.isNotEmpty &&
-            recommendation.experience != 'secondhand')
+            recommendation.experience != 'secondhand') ...[
           Text('Source: ${recommendation.attribution}', style: secondary),
-        const SizedBox(height: 8),
+          const SizedBox(height: 8),
+        ],
         Text(
           recommendation.summary,
           style: theme.textTheme.bodyLarge?.copyWith(
@@ -193,20 +197,6 @@ class RecommendationView extends StatelessWidget {
           ),
         for (final group in groups.entries)
           _ReadingSection(title: group.key, lines: group.value),
-        if (supporting.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          ExpansionTile(
-            tilePadding: EdgeInsets.zero,
-            childrenPadding: const EdgeInsets.only(bottom: 8),
-            shape: const Border(),
-            collapsedShape: const Border(),
-            title: const Text('More from your note'),
-            children: [
-              for (final group in supporting.entries)
-                _ReadingSection(title: group.key, lines: group.value),
-            ],
-          ),
-        ],
       ],
     );
   }

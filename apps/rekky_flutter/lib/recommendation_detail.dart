@@ -11,17 +11,17 @@ class RecommendationDetailSheet extends StatefulWidget {
     super.key,
     required this.item,
     required this.loadSource,
+    this.loadPlace,
     required this.changeAudience,
     required this.deleteItem,
-    required this.deleteSource,
     required this.editRecommendation,
     required this.refineItem,
   });
   final RekkyItem item;
   final Future<RekkySource?> Function() loadSource;
+  final Future<ResolvedPlace?> Function()? loadPlace;
   final Future<RekkyItem> Function(RekkyItem, String) changeAudience;
   final Future<void> Function(RekkyItem) deleteItem;
-  final Future<void> Function(RekkyItem, RekkySource) deleteSource;
   final void Function(RekkyItem) editRecommendation, refineItem;
 
   @override
@@ -32,10 +32,27 @@ class RecommendationDetailSheet extends StatefulWidget {
 class _RecommendationDetailSheetState extends State<RecommendationDetailSheet> {
   late RekkyItem item = widget.item;
   RekkySource? source;
-  bool sourceOpen = false, sourceLoaded = false, sourceLoading = false;
+  bool sourceLoaded = false, sourceLoading = false;
+  ResolvedPlace? place;
   bool saving = false;
   String? sourceError, actionError;
   final sourceKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    loadSource();
+    loadPlace();
+  }
+
+  Future<void> loadPlace() async {
+    try {
+      final loaded = await widget.loadPlace?.call();
+      if (mounted) setState(() => place = loaded);
+    } catch (_) {
+      // A missing/slow external address never blocks the saved recommendation.
+    }
+  }
 
   String errorText(Object error, String fallback) =>
       error is ApiFailure ? error.message : fallback;
@@ -68,7 +85,6 @@ class _RecommendationDetailSheetState extends State<RecommendationDetailSheet> {
   }
 
   void openOriginal() {
-    setState(() => sourceOpen = true);
     loadSource();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && sourceKey.currentContext != null) {
@@ -100,18 +116,14 @@ class _RecommendationDetailSheetState extends State<RecommendationDetailSheet> {
     }
   }
 
-  Future<void> remove({required bool originalOnly}) async {
+  Future<void> remove() async {
     if (saving) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(
-          originalOnly ? 'Delete original note?' : 'Delete recommendation?',
-        ),
-        content: Text(
-          originalOnly
-              ? 'Your saved recommendations stay. This removes the private source text used by all recommendations from this recording.'
-              : 'This removes the recommendation. Its original note is also deleted if no other saved recommendation uses it.',
+        title: const Text('Delete recommendation?'),
+        content: const Text(
+          'This removes the recommendation. Its original note is also deleted if no other saved recommendation uses it.',
         ),
         actions: [
           TextButton(
@@ -134,13 +146,8 @@ class _RecommendationDetailSheetState extends State<RecommendationDetailSheet> {
       actionError = null;
     });
     try {
-      if (originalOnly) {
-        await widget.deleteSource(item, source!);
-        if (mounted) setState(() => source = null);
-      } else {
-        await widget.deleteItem(item);
-        if (mounted) Navigator.pop(context);
-      }
+      await widget.deleteItem(item);
+      if (mounted) Navigator.pop(context);
     } catch (error) {
       if (mounted) {
         setState(() {
@@ -225,7 +232,7 @@ class _RecommendationDetailSheetState extends State<RecommendationDetailSheet> {
                   icon: const Icon(Icons.more_horiz),
                   onSelected: (value) {
                     if (value == 'delete') {
-                      remove(originalOnly: false);
+                      remove();
                       return;
                     }
                     Navigator.pop(context);
@@ -268,7 +275,7 @@ class _RecommendationDetailSheetState extends State<RecommendationDetailSheet> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  RecommendationView(item: item, expanded: true),
+                  RecommendationView(item: item, expanded: true, place: place),
                   if (actionError != null) ...[
                     const SizedBox(height: 16),
                     Semantics(
@@ -295,70 +302,43 @@ class _RecommendationDetailSheetState extends State<RecommendationDetailSheet> {
                       child: const Text('View original note'),
                     ),
                   ],
-                  const SizedBox(height: 20),
-                  const Divider(height: 1),
-                  // Built on demand: opening a recommendation never fetches a transcript.
+                  // Owner-only quote loads independently of the saved content.
                   Column(
                     key: sourceKey,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Original note'),
-                        subtitle: const Text('Private · only you'),
-                        trailing: Icon(
-                          sourceOpen ? Icons.expand_less : Icons.expand_more,
+                      if (sourceLoading)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 20),
+                          child: LinearProgressIndicator(
+                            semanticsLabel: 'Loading note',
+                          ),
                         ),
-                        onTap: () {
-                          setState(() => sourceOpen = !sourceOpen);
-                          if (sourceOpen) loadSource();
-                        },
-                      ),
-                      if (sourceOpen) ...[
-                        if (sourceLoading)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 16),
-                            child: LinearProgressIndicator(
-                              semanticsLabel: 'Loading original note',
-                            ),
-                          ),
-                        if (sourceError != null) ...[
-                          Text(
-                            sourceError!,
-                            style: TextStyle(color: theme.colorScheme.error),
-                          ),
-                          TextButton(
-                            onPressed: loadSource,
-                            child: const Text('Retry'),
-                          ),
-                        ],
-                        if (sourceLoaded && source == null)
-                          const Text('Original note removed.'),
-                        if (source != null) ...[
-                          OriginalNoteView(source: source!),
-                          const SizedBox(height: 8),
-                          if (source!.kind == 'transcript' &&
-                              item.recommendation == null)
-                            TextButton(
-                              onPressed: saving
-                                  ? null
-                                  : () {
-                                      Navigator.pop(context);
-                                      widget.refineItem(item);
-                                    },
-                              child: const Text('Update recommendation'),
-                            ),
+                      if (sourceError != null) ...[
+                        const SizedBox(height: 20),
+                        Text(
+                          sourceError!,
+                          style: TextStyle(color: theme.colorScheme.error),
+                        ),
+                        TextButton(
+                          onPressed: loadSource,
+                          child: const Text('Retry'),
+                        ),
+                      ],
+                      if (source != null) ...[
+                        const SizedBox(height: 24),
+                        OriginalNoteView(source: source!),
+                        if (source!.kind == 'transcript' &&
+                            item.recommendation == null)
                           TextButton(
                             onPressed: saving
                                 ? null
-                                : () => remove(originalOnly: true),
-                            style: TextButton.styleFrom(
-                              foregroundColor: theme.colorScheme.error,
-                            ),
-                            child: const Text('Delete original note'),
+                                : () {
+                                    Navigator.pop(context);
+                                    widget.refineItem(item);
+                                  },
+                            child: const Text('Update recommendation'),
                           ),
-                        ],
-                        const SizedBox(height: 16),
                       ],
                     ],
                   ),

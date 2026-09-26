@@ -45,7 +45,7 @@ void main() {
       item.recommendation!.cautions.single.text,
       'Small portions; order a few plates.',
     );
-    expect(item.recommendation!.experienceLabel, 'Your experience');
+    expect(item.recommendation!.experienceLabel, 'Firsthand');
   });
   for (final expanded in [false, true]) {
     testWidgets(
@@ -168,56 +168,56 @@ void main() {
     expect(find.text('Needs review'), findsOneWidget);
     expect(find.text('Saved note'), findsOneWidget);
   });
-  testWidgets('praise is grouped on demand while caveats stay visible', (
-    tester,
-  ) async {
-    const item = RekkyItem(
-      id: 'grouped',
-      captureId: 'capture',
-      subject: 'A useful place',
-      body: 'Stored evidence',
-      visibility: 'private',
-      revision: 1,
-      createdAt: '',
-      recommendation: RekkyRecommendation(
-        summary: 'A comfortable place for an afternoon.',
-        shelf: 'Places',
-        experience: 'secondhand',
-        entityKind: 'place',
-        observations: [
-          RecommendationDetail('praise', 'Comfortable seats.'),
-          RecommendationDetail('praise', 'Friendly staff.'),
-          RecommendationDetail('praise', 'Friendly staff.'),
-          RecommendationDetail(
-            'caution',
-            'Avoid the stairs if mobility is limited.',
-          ),
-        ],
-        locations: [],
-        useCases: [],
-      ),
-    );
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
-          body: SingleChildScrollView(
-            child: RecommendationView(item: item, expanded: true),
+  testWidgets(
+    'praise and caveats are visible without expanding another section',
+    (tester) async {
+      const item = RekkyItem(
+        id: 'grouped',
+        captureId: 'capture',
+        subject: 'A useful place',
+        body: 'Stored evidence',
+        visibility: 'private',
+        revision: 1,
+        createdAt: '',
+        recommendation: RekkyRecommendation(
+          summary: 'A comfortable place for an afternoon.',
+          shelf: 'Places',
+          experience: 'secondhand',
+          entityKind: 'place',
+          observations: [
+            RecommendationDetail('praise', 'Comfortable seats.'),
+            RecommendationDetail('praise', 'Friendly staff.'),
+            RecommendationDetail('praise', 'Friendly staff.'),
+            RecommendationDetail(
+              'caution',
+              'Avoid the stairs if mobility is limited.',
+            ),
+          ],
+          locations: [],
+          useCases: [],
+        ),
+      );
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: RecommendationView(item: item, expanded: true),
+            ),
           ),
         ),
-      ),
-    );
-    expect(find.text('Heard from others'), findsOneWidget);
-    expect(
-      find.text('Avoid the stairs if mobility is limited.'),
-      findsOneWidget,
-    );
-    expect(find.text('What stood out'), findsNothing);
-    await tester.tap(find.text('More from your note'));
-    await tester.pumpAndSettle();
-    expect(find.text('What stood out'), findsOneWidget);
-    expect(find.text('Comfortable seats.'), findsOneWidget);
-    expect(find.text('Friendly staff.'), findsOneWidget);
-  });
+      );
+      expect(find.text('Heard from others'), findsOneWidget);
+      expect(
+        find.text('Avoid the stairs if mobility is limited.'),
+        findsOneWidget,
+      );
+      expect(find.text('More from your note'), findsNothing);
+      expect(find.byType(ExpansionTile), findsNothing);
+      expect(find.text('What stood out'), findsOneWidget);
+      expect(find.text('Comfortable seats.'), findsOneWidget);
+      expect(find.text('Friendly staff.'), findsOneWidget);
+    },
+  );
   test('untried and hearsay are not labelled as firsthand', () {
     for (final (experience, label) in [
       ('interest', 'Not tried yet'),

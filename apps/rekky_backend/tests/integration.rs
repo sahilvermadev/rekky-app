@@ -308,6 +308,22 @@ impl IdentityVerifier for TestVerifier {
         Ok(format!("{}:{}:{token}", self.marker, provider.as_str()))
     }
 }
+struct TestPlaces;
+#[async_trait]
+impl rekky_backend::places::PlaceResolver for TestPlaces {
+    fn available(&self) -> bool {
+        true
+    }
+    async fn resolve(
+        &self,
+        _query: &rekky_backend::places::PlaceQuery,
+    ) -> Option<rekky_backend::places::PlaceMatch> {
+        Some(rekky_backend::places::PlaceMatch {
+            place_id: "synthetic-place".into(),
+            address: "12 Sample Road, Pune".into(),
+        })
+    }
+}
 struct TestTranscriber;
 struct TestExtractor;
 #[async_trait]
@@ -384,6 +400,7 @@ impl TestApp {
             verifier,
             transcriber,
             extractor: Arc::new(TestExtractor),
+            places: Arc::new(TestPlaces),
         };
         let app = router(state.clone());
         Some(Self {
@@ -2199,4 +2216,155 @@ async fn full_edits_are_atomic_searchable_owner_fenced_and_preserve_sources() {
         StatusCode::NOT_FOUND
     );
     t.cleanup().await;
+}
+
+#[tokio::test]
+async fn place_lookup_is_owner_scoped_ephemeral_and_budgeted() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    let (owner, token) = t.sign_in("google", "valid-a").await;
+    t.call(
+        Method::POST,
+        "/v1/me/visibility-disclosure",
+        Some(&token),
+        Some(json!({"accept":true})),
+        &[],
+    )
+    .await;
+    let item = categorized_item(&t, &token, "Cedar Cafe", "place", "place.cafe", &[]).await;
+    let id = Uuid::parse_str(item["id"].as_str().unwrap()).unwrap();
+    sqlx::query("UPDATE knowledge_items SET recommendation=jsonb_set(recommendation,'{locations}',$2) WHERE id=$1")
+        .bind(id).bind(json!([{"role":"venue","text":"Pune"}])).execute(&t.pool).await.unwrap();
+    let path = format!("/v1/items/{id}/place");
+    let (status, result) = t.call(Method::POST, &path, Some(&token), None, &[]).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(result["place"]["address"], "12 Sample Road, Pune");
+    let (_, other) = t.sign_in("google", "valid-b").await;
+    assert_ne!(
+        t.call(Method::POST, &path, Some(&other), None, &[]).await.0,
+        StatusCode::OK
+    );
+    let (_, retry) = t.call(Method::POST, &path, Some(&token), None, &[]).await;
+    assert!(retry["place"].is_null());
+    let rec: Value = sqlx::query_scalar("SELECT recommendation FROM knowledge_items WHERE id=$1")
+        .bind(id)
+        .fetch_one(&t.pool)
+        .await
+        .unwrap();
+    assert!(!rec.to_string().contains("12 Sample Road"));
+    sqlx::query(
+        "UPDATE place_lookup_attempts SET created_at=now()-interval '1 minute' WHERE owner_id=$1",
+    )
+    .bind(owner)
+    .execute(&t.pool)
+    .await
+    .unwrap();
+    for _ in 0..19 {
+        sqlx::query("INSERT INTO place_lookup_attempts(id,owner_id,item_id,created_at) VALUES($1,$2,$3,now()-interval '1 minute')").bind(Uuid::new_v4()).bind(owner).bind(id).execute(&t.pool).await.unwrap();
+    }
+    let (_, capped) = t.call(Method::POST, &path, Some(&token), None, &[]).await;
+    assert!(capped["place"].is_null());
+    // Explicit no-link overrides stop future lookup even if the provider is available.
+    sqlx::query("DELETE FROM place_lookup_attempts WHERE owner_id=$1")
+        .bind(owner)
+        .execute(&t.pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE knowledge_items SET recommendation=jsonb_set(recommendation,'{destination}',$2) WHERE id=$1").bind(id).bind(json!({"mode":"none"})).execute(&t.pool).await.unwrap();
+    let (_, disabled) = t.call(Method::POST, &path, Some(&token), None, &[]).await;
+    assert!(disabled["place"].is_null());
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM place_lookup_attempts WHERE owner_id=$1")
+            .bind(owner)
+            .fetch_one(&t.pool)
+            .await
+            .unwrap();
+    assert_eq!(count, 0);
+    t.cleanup().await;
+}
+
+struct BlockingPlaces {
+    started: Notify,
+    release: Notify,
+}
+#[async_trait]
+impl rekky_backend::places::PlaceResolver for BlockingPlaces {
+    fn available(&self) -> bool {
+        true
+    }
+    async fn resolve(
+        &self,
+        query: &rekky_backend::places::PlaceQuery,
+    ) -> Option<rekky_backend::places::PlaceMatch> {
+        self.started.notify_one();
+        self.release.notified().await;
+        TestPlaces.resolve(query).await
+    }
+}
+#[tokio::test]
+async fn place_lookup_rejects_late_results_after_edit_or_logout() {
+    for logout in [false, true] {
+        let Some(mut t) = TestApp::new().await else {
+            return;
+        };
+        let (_owner, token) = t.sign_in("google", "valid-a").await;
+        t.call(
+            Method::POST,
+            "/v1/me/visibility-disclosure",
+            Some(&token),
+            Some(json!({"accept":true})),
+            &[],
+        )
+        .await;
+        let item = categorized_item(&t, &token, "Cedar Cafe", "place", "place.cafe", &[]).await;
+        let id = Uuid::parse_str(item["id"].as_str().unwrap()).unwrap();
+        sqlx::query("UPDATE knowledge_items SET recommendation=jsonb_set(recommendation,'{locations}',$2) WHERE id=$1").bind(id).bind(json!([{"role":"venue","text":"Pune"}])).execute(&t.pool).await.unwrap();
+        let provider = Arc::new(BlockingPlaces {
+            started: Notify::new(),
+            release: Notify::new(),
+        });
+        t.state.places = provider.clone();
+        t.app = router(t.state.clone());
+        let app = t.app.clone();
+        let auth = format!("Bearer {token}");
+        let request = tokio::spawn(async move {
+            app.oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri(format!("/v1/items/{id}/place"))
+                    .header("authorization", auth)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+        });
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            provider.started.notified(),
+        )
+        .await
+        .unwrap();
+        if logout {
+            t.call(Method::DELETE, "/v1/session", Some(&token), None, &[])
+                .await;
+        } else {
+            sqlx::query("UPDATE knowledge_items SET subject='Another branch',revision=revision+1 WHERE id=$1").bind(id).execute(&t.pool).await.unwrap();
+        }
+        provider.release.notify_one();
+        let response = tokio::time::timeout(std::time::Duration::from_secs(5), request)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            if logout {
+                StatusCode::UNAUTHORIZED
+            } else {
+                StatusCode::CONFLICT
+            }
+        );
+        t.cleanup().await;
+    }
 }
