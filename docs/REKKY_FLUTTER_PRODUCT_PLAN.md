@@ -172,6 +172,9 @@ Show one level of shelf browsing with relevant filters, not a deep folder tree. 
 
 ### Presentation by category
 
+**Expanded reading view (2026-09-26):** opening an item immediately presents its saved content in a warm, readable sheet with an explicit close control. Keep a compact audience selector and an overflow menu above the subject. Place the category, supported locality and eligible Maps search action together, before the attributed summary. Show caveats and practical suggestions directly; group repeated observations under one heading and keep supporting praise under “More from your note.” Omit category attributes already expressed in the label and duplicate primary-location fields. Do not use speculative semantic matching to discard distinct claims or rewrite a personal experience into an objective endorsement. The original note is a separate private disclosure, fetched only on demand with local loading/retry; deleting it is available inside that disclosure and explains shared-source effects. Review flags remain visible with a route to compare the source, without inventing a field-level diagnosis or claiming correction is implemented. Audience changes show the last acknowledged value until the server succeeds.
+
+
 Default item previews show a subject, one useful piece of advice/context and attribution where relevant. Expand for source, qualifications, edits and other fields. Choose the useful action according to the category:
 
 - Restaurant: locality, the specific tip, a supported destination or branch choice.
@@ -785,3 +788,5 @@ Refinable hypotheses: exact visual palette, collection labels, contextual-collec
 | 2026-09-26 | Compact Library previews, natural saved-note summaries and an immediate Maps search action | Summaries/details open on tap; previews keep identity, locality, audience and concise caution/experience/review signals. Place searches use only name and stated venue locality. Exact automatic listing attachment remains behind the existing matching gate. |
 
 | 2026-09-26 | Canonical specific types plus independent attributes | One shared versioned vocabulary supplies consistent labels and search synonyms. Broad shelves remain; cards show Bar, Italian restaurant or General doctor where supported. Unknown types remain searchable descriptions. Optional user corrections are revision-fenced and preserved. |
+
+| 2026-09-26 | Reading-first expanded recommendations | Group useful content, put Maps beside locality, move maintenance to a menu and load private source text on demand. Preserve caveats and review signals; no provider reprocessing or changes to stored recommendations. |

@@ -103,14 +103,14 @@ void main() {
         ),
       );
       expect(calls, 0);
-      await tester.tap(find.text('Search in Maps'));
+      await tester.tap(find.text('Search Maps'));
       await tester.pump();
       await tester.tap(find.text('Opening Maps…'));
       expect(calls, 1);
       expect(received, recommendationMapsSearch(place()));
       pending.complete(true);
       await tester.pumpAndSettle();
-      expect(find.text('Search in Maps'), findsOneWidget);
+      expect(find.text('Search Maps'), findsOneWidget);
       expect(find.textContaining('Couldn’t open'), findsNothing);
     },
   );
@@ -135,11 +135,11 @@ void main() {
             ),
           ),
         );
-        await tester.tap(find.text('Search in Maps'));
+        await tester.tap(find.text('Search Maps'));
         await tester.pumpAndSettle();
         expect(find.text('Couldn’t open Maps. Try again.'), findsOneWidget);
         expect(find.textContaining('private provider query'), findsNothing);
-        await tester.tap(find.text('Search in Maps'));
+        await tester.tap(find.text('Search Maps'));
         await tester.pumpAndSettle();
         expect(calls, 2);
         expect(find.textContaining('Couldn’t open'), findsNothing);

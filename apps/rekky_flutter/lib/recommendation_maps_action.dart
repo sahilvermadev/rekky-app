@@ -82,7 +82,7 @@ class _RecommendationMapsActionState extends State<RecommendationMapsAction> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.map_outlined),
-            label: Text(opening ? 'Opening Maps…' : 'Search in Maps'),
+            label: Text(opening ? 'Opening Maps…' : 'Search Maps'),
           ),
           if (failed)
             Semantics(

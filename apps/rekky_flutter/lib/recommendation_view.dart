@@ -80,97 +80,173 @@ class RecommendationView extends StatelessWidget {
     if (recommendation == null) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (item.needsReview)
-            Text('Needs review', style: theme.textTheme.labelMedium),
-          Text(item.body),
-        ],
+        children: [Text(item.body)],
       );
     }
-    Widget detail(String title, String text) => Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: theme.textTheme.labelLarge),
-          const SizedBox(height: 3),
-          Text(text),
-        ],
-      ),
+    final secondary = theme.textTheme.bodyMedium?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+      height: 1.4,
     );
+    final groups = <String, List<String>>{};
+    void add(String heading, String text) {
+      final values = groups.putIfAbsent(heading, () => []);
+      if (text.trim().isNotEmpty && !values.contains(text)) values.add(text);
+    }
+
+    final supporting = <String, List<String>>{};
+    for (final observation in recommendation.observations) {
+      if (observation.kind == 'caution') continue;
+      final heading = switch (observation.kind) {
+        'suggestion' => 'Recommended',
+        'suitability' => 'Good for',
+        'price' => 'Price mentioned · current price unverified',
+        'praise' => 'What stood out',
+        _ => 'More context',
+      };
+      // Praise often paraphrases the summary. Retain it on demand rather than
+      // guessing semantic equivalence or deleting evidence from the model.
+      if (observation.kind == 'praise') {
+        final values = supporting.putIfAbsent(heading, () => []);
+        if (!values.contains(observation.text)) values.add(observation.text);
+      } else if (observation.text.trim() != recommendation.summary.trim()) {
+        add(heading, observation.text);
+      }
+    }
+    for (final location in recommendation.locations) {
+      if (location.text == recommendation.primaryLocation &&
+          (location.kind == 'venue' || location.kind == 'practice')) {
+        continue;
+      }
+      add(switch (location.kind) {
+        'venue' => 'Other location mentioned',
+        'practice' => 'Also practices in',
+        'service_area' => 'Stated service area',
+        'past_experience' => 'Location of the experience',
+        _ => 'Location in context',
+      }, location.text);
+    }
+    for (final type
+        in recommendation.classification?.types.skip(1) ??
+            <CategoryConcept>[]) {
+      add('Also', type.label);
+    }
+    for (final facet
+        in recommendation.classification?.facets ?? <CategoryConcept>[]) {
+      // The compound title already says Italian restaurant, for example.
+      if (!recommendation.categoryLabel.toLowerCase().contains(
+        facet.label.toLowerCase(),
+      )) {
+        add(facet.dimensionLabel, facet.label);
+      }
+    }
+    for (final descriptor
+        in recommendation.classification?.descriptors ?? <String>[]) {
+      add('More about it', descriptor);
+    }
+    for (final useCase in recommendation.useCases) {
+      add('Related needs', useCase);
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Text(recommendation.categoryLabel, style: secondary),
+        if (recommendation.primaryLocation != null) ...[
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.location_on_outlined,
+                size: 18,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(recommendation.primaryLocation!, style: secondary),
+              ),
+            ],
+          ),
+        ],
+        RecommendationMapsAction(item: item),
+        const SizedBox(height: 24),
         Text(
-          [
-            recommendation.categoryLabel,
-            if (recommendation.primaryLocation != null)
-              recommendation.primaryLocation!,
-          ].join(' · '),
-          style: theme.textTheme.labelMedium?.copyWith(
+          recommendation.experienceLabel,
+          style: theme.textTheme.labelLarge?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
-        const SizedBox(height: 6),
-        Text(
-          recommendation.experienceLabel,
-          style: theme.textTheme.labelMedium,
-        ),
-        if (item.needsReview) const Text('Some details need review'),
         const SizedBox(height: 8),
-        Text(recommendation.summary, style: theme.textTheme.bodyLarge),
-        RecommendationMapsAction(item: item),
-        for (final caution in recommendation.cautions)
-          detail('Worth knowing', caution.text),
-        if (expanded) ...[
-          if ((recommendation.classification?.types.length ?? 0) > 1)
-            detail(
-              'Also',
-              recommendation.classification!.types
-                  .skip(1)
-                  .map((c) => c.label)
-                  .join(' · '),
-            ),
-          for (final dimension
-              in (recommendation.classification?.facets ?? <CategoryConcept>[])
-                  .map((c) => c.dimension)
-                  .toSet())
-            detail(
-              recommendation.classification!.facets
-                  .firstWhere((c) => c.dimension == dimension)
-                  .dimensionLabel,
-              recommendation.classification!.facets
-                  .where((c) => c.dimension == dimension)
-                  .map((c) => c.label)
-                  .join(' · '),
-            ),
-          if (recommendation.classification?.descriptors.isNotEmpty ?? false)
-            detail(
-              'More about it',
-              recommendation.classification!.descriptors.join(' · '),
-            ),
-          for (final observation in recommendation.observations.where(
-            (o) => o.kind != 'caution',
-          ))
-            detail(switch (observation.kind) {
-              'suggestion' => 'Recommended',
-              'suitability' => 'Good for',
-              'price' => 'Price mentioned · current price unverified',
-              'praise' => 'What stood out',
-              _ => 'More context',
-            }, observation.text),
-          for (final location in recommendation.locations)
-            detail(switch (location.kind) {
-              'venue' => 'Location mentioned',
-              'practice' => 'Practices in',
-              'service_area' => 'Stated service area',
-              'past_experience' => 'Location of the experience',
-              _ => 'Location in context',
-            }, location.text),
-          if (recommendation.useCases.isNotEmpty)
-            detail('Related needs', recommendation.useCases.join(' · ')),
+        Text(
+          recommendation.summary,
+          style: theme.textTheme.bodyLarge?.copyWith(
+            height: 1.55,
+            letterSpacing: 0,
+          ),
+        ),
+        if (recommendation.cautions.isNotEmpty)
+          _ReadingSection(
+            title: 'Worth knowing',
+            lines: recommendation.cautions.map((c) => c.text).toSet().toList(),
+          ),
+        for (final group in groups.entries)
+          _ReadingSection(title: group.key, lines: group.value),
+        if (supporting.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: const EdgeInsets.only(bottom: 8),
+            shape: const Border(),
+            collapsedShape: const Border(),
+            title: const Text('More from your note'),
+            children: [
+              for (final group in supporting.entries)
+                _ReadingSection(title: group.key, lines: group.value),
+            ],
+          ),
         ],
       ],
     );
   }
+}
+
+class _ReadingSection extends StatelessWidget {
+  const _ReadingSection({required this.title, required this.lines});
+  final String title;
+  final List<String> lines;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 20),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: Theme.of(context).textTheme.titleSmall
+              ?.copyWith(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        for (final line in lines)
+          Padding(
+            padding: EdgeInsets.only(bottom: lines.length > 1 ? 8 : 0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (lines.length > 1) ...[
+                  const Text('•'),
+                  const SizedBox(width: 10),
+                ],
+                Expanded(
+                  child: Text(
+                    line,
+                    style: Theme.of(context).textTheme.bodyLarge
+                        ?.copyWith(height: 1.5, letterSpacing: 0),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    ),
+  );
 }

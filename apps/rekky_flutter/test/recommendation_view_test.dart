@@ -139,7 +139,7 @@ void main() {
             ),
           ),
         );
-        expect(find.text('Search in Maps'), findsOneWidget);
+        expect(find.text('Search Maps'), findsOneWidget);
         expect(tester.takeException(), isNull);
       });
     }
@@ -167,6 +167,56 @@ void main() {
     expect(find.text(item.body), findsNothing);
     expect(find.text('Needs review'), findsOneWidget);
     expect(find.text('Saved note'), findsOneWidget);
+  });
+  testWidgets('praise is grouped on demand while caveats stay visible', (
+    tester,
+  ) async {
+    const item = RekkyItem(
+      id: 'grouped',
+      captureId: 'capture',
+      subject: 'A useful place',
+      body: 'Stored evidence',
+      visibility: 'private',
+      revision: 1,
+      createdAt: '',
+      recommendation: RekkyRecommendation(
+        summary: 'A comfortable place for an afternoon.',
+        shelf: 'Places',
+        experience: 'secondhand',
+        entityKind: 'place',
+        observations: [
+          RecommendationDetail('praise', 'Comfortable seats.'),
+          RecommendationDetail('praise', 'Friendly staff.'),
+          RecommendationDetail('praise', 'Friendly staff.'),
+          RecommendationDetail(
+            'caution',
+            'Avoid the stairs if mobility is limited.',
+          ),
+        ],
+        locations: [],
+        useCases: [],
+      ),
+    );
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: RecommendationView(item: item, expanded: true),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('Heard from others'), findsOneWidget);
+    expect(
+      find.text('Avoid the stairs if mobility is limited.'),
+      findsOneWidget,
+    );
+    expect(find.text('What stood out'), findsNothing);
+    await tester.tap(find.text('More from your note'));
+    await tester.pumpAndSettle();
+    expect(find.text('What stood out'), findsOneWidget);
+    expect(find.text('Comfortable seats.'), findsOneWidget);
+    expect(find.text('Friendly staff.'), findsOneWidget);
   });
   test('untried and hearsay are not labelled as firsthand', () {
     for (final (experience, label) in [
