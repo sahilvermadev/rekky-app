@@ -876,20 +876,10 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
               }
               if (processingMessage != null) index -= 1;
               final item = library[index];
-              return Card(
-                child: ListTile(
-                  title: Text(item.subject),
-                  subtitle: Padding(
-                    padding: const EdgeInsets.only(top: 8, bottom: 12),
-                    child: RecommendationView(item: item),
-                  ),
-                  trailing: Icon(
-                    item.visibility == 'private'
-                        ? Icons.lock_outline
-                        : Icons.people_outline,
-                  ),
-                  onTap: () => _openItem(item),
-                ),
+              return RecommendationCard(
+                key: ValueKey(item.id),
+                item: item,
+                onTap: () => _openItem(item),
               );
             },
           ),

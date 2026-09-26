@@ -28,7 +28,7 @@ void main() {
   });
   for (final expanded in [false, true]) {
     testWidgets(
-      'caveats remain visible in ${expanded ? 'detail' : 'preview'} at large text sizes',
+      'detail preserves caveats and preview signals them at large text sizes: $expanded',
       (tester) async {
         tester.view.physicalSize = const Size(360, 640);
         tester.view.devicePixelRatio = 1;
@@ -54,7 +54,12 @@ void main() {
         );
         expect(
           find.text('Small portions; order a few plates.'),
-          findsOneWidget,
+          expanded ? findsOneWidget : findsNothing,
+        );
+        expect(find.text('Caution'), expanded ? findsNothing : findsOneWidget);
+        expect(
+          find.text(fixture().recommendation!.summary),
+          expanded ? findsOneWidget : findsNothing,
         );
         expect(
           find.textContaining('current price unverified'),
@@ -64,6 +69,84 @@ void main() {
       },
     );
   }
+  for (final width in [320.0, 375.0, 414.0, 768.0]) {
+    for (final scale in [1.0, 2.0]) {
+      testWidgets('compact card and detail fit width $width at scale $scale', (
+        tester,
+      ) async {
+        tester.view.physicalSize = Size(width, 800);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        var opened = false;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: MediaQuery(
+                data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: RecommendationCard(
+                    item: fixture(),
+                    onTap: () => opened = true,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        expect(find.text(fixture().recommendation!.summary), findsNothing);
+        if (scale == 1) {
+          expect(
+            tester.getSize(find.byType(RecommendationCard)).height,
+            lessThan(140),
+          );
+        }
+        await tester.tap(find.text(fixture().subject));
+        expect(opened, isTrue);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: MediaQuery(
+                data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: RecommendationView(item: fixture(), expanded: true),
+                ),
+              ),
+            ),
+          ),
+        );
+        expect(find.text('Search in Maps'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
+  testWidgets('legacy source passages never appear in compact cards', (
+    tester,
+  ) async {
+    const item = RekkyItem(
+      id: 'legacy',
+      captureId: 'capture',
+      subject: 'Saved subject',
+      body: 'A long private source passage',
+      visibility: 'private',
+      revision: 1,
+      createdAt: '',
+      needsReview: true,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RecommendationCard(item: item, onTap: () {}),
+        ),
+      ),
+    );
+    expect(find.text(item.body), findsNothing);
+    expect(find.text('Needs review'), findsOneWidget);
+    expect(find.text('Saved note'), findsOneWidget);
+  });
   test('untried and hearsay are not labelled as firsthand', () {
     for (final (experience, label) in [
       ('interest', 'Not tried yet'),

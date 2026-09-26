@@ -41,6 +41,7 @@ dependencies:
   path_provider: 2.1.6
   record: 7.1.1
   sqflite: 2.4.4
+  url_launcher: 6.3.2
 
 dev_dependencies:
   flutter_test:

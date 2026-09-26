@@ -59,8 +59,9 @@ class RekkyRecommendation {
     required this.observations,
     required this.locations,
     required this.useCases,
+    this.entityKind = 'unspecified',
   });
-  final String summary, shelf, experience;
+  final String summary, shelf, experience, entityKind;
   final List<RecommendationDetail> observations, locations;
   final List<String> useCases;
   String get experienceLabel => switch (experience) {
@@ -83,6 +84,7 @@ class RekkyRecommendation {
     summary: json['summary'] as String,
     shelf: json['shelf'] as String,
     experience: json['experience'] as String,
+    entityKind: json['entity_kind'] as String? ?? 'unspecified',
     observations: (json['observations'] as List)
         .map(
           (o) => RecommendationDetail(o['kind'] as String, o['text'] as String),
