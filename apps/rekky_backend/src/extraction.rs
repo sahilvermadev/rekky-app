@@ -45,6 +45,8 @@ pub struct ProposedItem {
     pub observations: Vec<Observation>,
     pub locations: Vec<Location>,
     pub use_cases: Vec<Claim>,
+    #[serde(default)]
+    pub classification: Value,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -53,7 +55,7 @@ pub struct Proposal {
     pub ignored_unit_ids: Vec<usize>,
     pub unresolved_unit_ids: Vec<usize>,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SourceUnit {
     pub id: usize,
     pub text: String,
@@ -156,6 +158,11 @@ fn choice(values: &[&str]) -> Value {
 }
 pub fn schema() -> Value {
     let claim = object(json!({"text":text_schema(),"evidence":evidence_schema()}));
+    let assignment = |is_type| {
+        object(
+            json!({"concept_id":{"type":"string","enum":crate::taxonomy::vocabulary().concepts.iter().filter(|c| (c.dimension == "type") == is_type).map(|c|&c.id).collect::<Vec<_>>()},"source_phrase":text_schema(),"evidence":evidence_schema()}),
+        )
+    };
     object(json!({
         "items":array(object(json!({
             "subject":text_schema(),"subject_evidence":evidence_schema(),
@@ -164,7 +171,8 @@ pub fn schema() -> Value {
             "summary":claim,
             "observations":array(object(json!({"kind":choice(&["praise","suggestion","suitability","caution","price","context"]),"text":text_schema(),"evidence":evidence_schema()}))),
             "locations":array(object(json!({"role":choice(&["venue","practice","service_area","past_experience","context"]),"text":text_schema(),"evidence":evidence_schema()}))),
-            "use_cases":array(claim)
+            "use_cases":array(claim.clone()),
+            "classification":object(json!({"types":array(assignment(true)),"facets":array(assignment(false)),"descriptors":array(claim)}))
         }))),
         "ignored_unit_ids":evidence_schema(),"unresolved_unit_ids":evidence_schema()
     }))
@@ -183,7 +191,7 @@ impl TranscriptExtractor for OpenAiExtractor {
             .json(&json!({
                 "model":EXTRACTION_MODEL,"store":false,"max_output_tokens":5500,
                 "input":[
-                    {"role":"system","content":include_str!("../prompts/understanding_v2.txt")},
+                    {"role":"system","content":format!("{}\nShared category vocabulary (use canonical IDs, not invented labels):\n{}",include_str!("../prompts/understanding_v2.txt"),serde_json::to_string(crate::taxonomy::vocabulary()).expect("vocabulary"))},
                     {"role":"user","content":json!({"transcript_units":source_units(transcript)}).to_string()}
                 ],
                 "text":{"format":{"type":"json_schema","name":"rekky_understanding_v2","strict":true,"schema":schema()}}
@@ -433,14 +441,26 @@ pub fn validate(
         }
         accounted.extend(&ids);
         ids.extend(&item.summary.evidence);
+        let classification_proposal =
+            serde_json::from_value(item.classification.clone()).unwrap_or_default();
+        // Classification can only cite this item's already represented units;
+        // it cannot claim coverage or borrow uncited sibling source material.
+        let item_units: Vec<_> = units
+            .iter()
+            .filter(|u| ids.contains(&u.id))
+            .cloned()
+            .collect();
+        let (classification, classification_support) =
+            crate::taxonomy::validate(&classification_proposal, &item.entity_kind, &item_units);
         let evidence = json!({"pipeline_version":UNDERSTANDING_VERSION,"proposal":item,
-            "units":units.iter().filter(|u|ids.contains(&u.id)).collect::<Vec<_>>()});
+            "units":item_units,"classification":classification_support});
         let recommendation = json!({
             "version":UNDERSTANDING_VERSION,"entity_kind":item.entity_kind,"shelf":shelf,
             "experience":item.experience,"summary":item.summary.text,
             "observations":item.observations.iter().map(|o|json!({"kind":o.kind,"text":o.text})).collect::<Vec<_>>(),
             "locations":item.locations.iter().map(|l|json!({"role":l.role,"text":l.text})).collect::<Vec<_>>(),
-            "use_cases":item.use_cases.iter().map(|c|c.text.clone()).collect::<Vec<_>>()
+            "use_cases":item.use_cases.iter().map(|c|c.text.clone()).collect::<Vec<_>>(),
+            "classification":classification
         });
         items.push(ValidatedItem {
             subject: item.subject.trim().to_owned(),

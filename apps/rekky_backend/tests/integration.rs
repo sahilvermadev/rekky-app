@@ -18,6 +18,284 @@ use tokio::sync::Notify;
 use tower::ServiceExt;
 use uuid::Uuid;
 
+async fn categorized_item(
+    t: &TestApp,
+    token: &str,
+    subject: &str,
+    kind: &str,
+    type_id: &str,
+    facets: &[String],
+) -> Value {
+    let (status, saved) = t.call(Method::POST,"/v1/items",Some(token),
+        Some(json!({"subject":subject,"body":"A saved experience in Pune.","visibility":"private"})),
+        &[("idempotency-key",&Uuid::new_v4().to_string())]).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let item = saved["item"].clone();
+    let classification =
+        rekky_backend::taxonomy::present(kind, &[type_id.to_owned()], facets, &[], "extracted")
+            .unwrap();
+    let rec = json!({"version":2,"entity_kind":kind,"shelf":"Test shelf","experience":"firsthand",
+        "summary":"A saved experience in Pune.","observations":[],"locations":[],"use_cases":[],"classification":classification});
+    sqlx::query("UPDATE knowledge_items SET recommendation=$1 WHERE id=$2")
+        .bind(rec)
+        .bind(Uuid::parse_str(item["id"].as_str().unwrap()).unwrap())
+        .execute(&t.pool)
+        .await
+        .unwrap();
+    item
+}
+
+#[tokio::test]
+async fn categories_search_synonyms_parents_facets_and_exact_titles_without_cross_owner_results() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    let (_, token) = t.sign_in("google", "valid-a").await;
+    t.call(
+        Method::POST,
+        "/v1/me/visibility-disclosure",
+        Some(&token),
+        Some(json!({"accept":true})),
+        &[],
+    )
+    .await;
+    let gp = categorized_item(
+        &t,
+        &token,
+        "Neha",
+        "person_service",
+        "service.general_doctor",
+        &[],
+    )
+    .await;
+    let doctor =
+        categorized_item(&t, &token, "Mira", "person_service", "service.doctor", &[]).await;
+    categorized_item(
+        &t,
+        &token,
+        "Dental clinic",
+        "person_service",
+        "service.dentist",
+        &[],
+    )
+    .await;
+    let italian = categorized_item(
+        &t,
+        &token,
+        "Lantern",
+        "place",
+        "place.restaurant",
+        &["cuisine.italian".into()],
+    )
+    .await;
+    categorized_item(
+        &t,
+        &token,
+        "Lotus",
+        "place",
+        "place.restaurant",
+        &["cuisine.thai".into()],
+    )
+    .await;
+    categorized_item(&t, &token, "Harbour", "place", "place.bar", &[]).await;
+    let film = categorized_item(&t, &token, "Doctor Who", "thing", "thing.film", &[]).await;
+    for (query, expected) in [
+        ("general physician", vec![gp["id"].clone()]),
+        ("GP", vec![gp["id"].clone()]),
+        ("doctors", vec![gp["id"].clone(), doctor["id"].clone()]),
+        ("चिकित्सक", vec![gp["id"].clone(), doctor["id"].clone()]),
+        ("Italian restaurants", vec![italian["id"].clone()]),
+        ("Italian restaurants in Pune", vec![italian["id"].clone()]),
+        ("Italian restaurants in Mumbai", vec![]),
+    ] {
+        let (status, response) = t
+            .call(
+                Method::POST,
+                "/v1/ask",
+                Some(&token),
+                Some(json!({"question":query})),
+                &[],
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{response}");
+        let actual: Vec<_> = response["results"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["item_id"].clone())
+            .collect();
+        assert_eq!(actual.len(), expected.len(), "{query}: {actual:?}");
+        assert!(expected.iter().all(|id| actual.contains(id)), "{query}");
+    }
+    let (_, exact) = t
+        .call(
+            Method::POST,
+            "/v1/ask",
+            Some(&token),
+            Some(json!({"question":"Doctor Who"})),
+            &[],
+        )
+        .await;
+    assert_eq!(exact["results"][0]["item_id"], film["id"]);
+    let (_, other) = t.sign_in("google", "valid-b").await;
+    t.call(
+        Method::POST,
+        "/v1/me/visibility-disclosure",
+        Some(&other),
+        Some(json!({"accept":true})),
+        &[],
+    )
+    .await;
+    let (_, private) = t
+        .call(
+            Method::POST,
+            "/v1/ask",
+            Some(&other),
+            Some(json!({"question":"physician"})),
+            &[],
+        )
+        .await;
+    assert_eq!(private["results"], json!([]));
+    t.cleanup().await;
+}
+
+#[tokio::test]
+async fn category_corrections_are_owner_revision_fenced_and_survive_source_deletion() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    let (_, token) = t.sign_in("google", "valid-a").await;
+    t.call(
+        Method::POST,
+        "/v1/me/visibility-disclosure",
+        Some(&token),
+        Some(json!({"accept":true})),
+        &[],
+    )
+    .await;
+    let item = categorized_item(&t, &token, "Neha", "person_service", "service.doctor", &[]).await;
+    let path = format!("/v1/items/{}/classification", item["id"].as_str().unwrap());
+    let input = json!({"types":["service.general_doctor"],"facets":[]});
+    let (_, other) = t.sign_in("google", "valid-b").await;
+    t.call(
+        Method::POST,
+        "/v1/me/visibility-disclosure",
+        Some(&other),
+        Some(json!({"accept":true})),
+        &[],
+    )
+    .await;
+    assert_eq!(
+        t.call(
+            Method::PATCH,
+            &path,
+            Some(&other),
+            Some(input.clone()),
+            &[("if-match", "1")]
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    for bad in [
+        json!({"types":["place.bar"],"facets":[]}),
+        json!({"types":["invented"],"facets":[]}),
+        json!({"types":[],"facets":["cuisine.italian"]}),
+    ] {
+        assert_eq!(
+            t.call(
+                Method::PATCH,
+                &path,
+                Some(&token),
+                Some(bad),
+                &[("if-match", "1")]
+            )
+            .await
+            .0,
+            StatusCode::BAD_REQUEST
+        );
+    }
+    let (status, edited) = t
+        .call(
+            Method::PATCH,
+            &path,
+            Some(&token),
+            Some(input.clone()),
+            &[("if-match", "1")],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{edited}");
+    assert_eq!(edited["item"]["revision"], 2);
+    assert_eq!(edited["item"]["body"], item["body"]);
+    assert_eq!(edited["item"]["visibility"], "private");
+    assert_eq!(
+        edited["item"]["recommendation"]["classification"]["origin"],
+        "user"
+    );
+    assert_eq!(
+        t.call(
+            Method::PATCH,
+            &path,
+            Some(&token),
+            Some(input),
+            &[("if-match", "1")]
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    let source_path = format!(
+        "/v1/captures/{}/source",
+        item["capture_id"].as_str().unwrap()
+    );
+    assert_eq!(
+        t.call(
+            Method::DELETE,
+            &source_path,
+            Some(&token),
+            None,
+            &[("if-match", "1")]
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    let (_, found) = t
+        .call(
+            Method::POST,
+            "/v1/ask",
+            Some(&token),
+            Some(json!({"question":"general physician"})),
+            &[],
+        )
+        .await;
+    assert_eq!(found["results"][0]["item_id"], item["id"]);
+    let delete_path = format!("/v1/items/{}", item["id"].as_str().unwrap());
+    assert_eq!(
+        t.call(
+            Method::DELETE,
+            &delete_path,
+            Some(&token),
+            None,
+            &[("if-match", "2")]
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    let (_, found) = t
+        .call(
+            Method::POST,
+            "/v1/ask",
+            Some(&token),
+            Some(json!({"question":"general physician"})),
+            &[],
+        )
+        .await;
+    assert_eq!(found["results"], json!([]));
+    t.cleanup().await;
+}
+
 struct TestVerifier {
     marker: Uuid,
 }

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'identity.dart';
+import 'category_editor.dart';
 import 'recommendation_view.dart';
 import 'rekky_api.dart';
 import 'voice_capture_sheet.dart';
@@ -455,6 +456,14 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
                   Wrap(
                     spacing: 8,
                     children: [
+                      if (item.recommendation != null)
+                        TextButton(
+                          onPressed: () {
+                            Navigator.pop(sheetContext);
+                            unawaited(_editCategory(item));
+                          },
+                          child: const Text('Edit category'),
+                        ),
                       if (source?.kind == 'transcript' &&
                           item.recommendation == null)
                         FilledButton.tonal(
@@ -587,6 +596,40 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
         ),
       ),
     );
+  }
+
+  Future<void> _editCategory(RekkyItem item) async {
+    final owner = accountId;
+    final scopedApi = RekkyApi(apiBaseUrl)..token = api.token;
+    try {
+      final concepts = await scopedApi.categoryConcepts();
+      if (!mounted || !signedIn || accountId != owner) return;
+      final changed = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        builder: (context) => ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * .8,
+          ),
+          child: CategoryEditor(
+            item: item,
+            concepts: concepts,
+            onSave: (types, facets) async {
+              if (!signedIn || accountId != owner) {
+                throw StateError('Account changed');
+              }
+              await scopedApi.changeClassification(item, types, facets);
+            },
+          ),
+        ),
+      );
+      if (changed == true && mounted && signedIn && accountId == owner) {
+        await _reload();
+      }
+    } catch (error) {
+      if (mounted && accountId == owner) setState(() => issue = '$error');
+    }
   }
 
   @override

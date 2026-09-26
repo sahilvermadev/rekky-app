@@ -1,0 +1,22 @@
+[
+  {
+    "id": "type_and_cuisine",
+    "transcript": "Harbour is a bar in Pune. I loved their beer. Saffron Table is a restaurant in Nashik serving Italian food. The mushroom pasta was excellent.",
+    "expected": "Harbour: place.bar. Saffron Table: place.restaurant plus cuisine.italian. Do not transfer cuisine to Harbour."
+  },
+  {
+    "id": "synonymous_profession",
+    "transcript": "Neha is a general doctor in Jaipur. She listens carefully. Riya is a general physician in Pune. Her advice helped me.",
+    "expected": "Both people use service.general_doctor with the same canonical label."
+  },
+  {
+    "id": "broad_and_unfamiliar",
+    "transcript": "Asha is a doctor in Jaipur. I do not know her specialty. Tara is a ceramic glaze consultant. She helped me choose glazes for my pottery.",
+    "expected": "Asha remains service.doctor, not general doctor. Tara retains ceramic glaze consultant as an unfamiliar source-backed description; no invented global type."
+  },
+  {
+    "id": "hindi_category",
+    "transcript": "नीलम एक रेस्तरां है जो पुणे में है। वहाँ इतालवी खाना मिलता है। मुझे पास्ता बहुत पसंद आया।",
+    "expected": "place.restaurant and cuisine.italian, retaining the Hindi subject and location."
+  }
+]

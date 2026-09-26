@@ -68,6 +68,11 @@ pub fn router(state: AppState) -> Router {
             post(transcribe_voice).layer(DefaultBodyLimit::max(5 * 1024 * 1024)),
         )
         .route("/v1/items", post(save_item).get(list_items))
+        .route("/v1/taxonomy", get(taxonomy_catalog))
+        .route(
+            "/v1/items/{id}/classification",
+            axum::routing::patch(correct_classification),
+        )
         .route("/v1/items/{id}/refine", post(refine_item))
         .route(
             "/v1/items/{id}",
@@ -1679,6 +1684,55 @@ async fn delete_source(
 struct VisibilityInput {
     visibility: Visibility,
 }
+async fn taxonomy_catalog(State(state): State<AppState>, headers: HeaderMap) -> ApiResult {
+    owner(&state, &headers, true).await?;
+    Ok(ok(json!(crate::taxonomy::vocabulary())))
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ClassificationInput {
+    types: Vec<String>,
+    facets: Vec<String>,
+}
+async fn correct_classification(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> ApiResult {
+    let owner_id = owner(&state, &headers, true).await?;
+    let id = uuid(&id)?;
+    let expected = revision(&headers)?;
+    let input: ClassificationInput = parse(&body)?;
+    let mut tx = state.pool.begin().await?;
+    let row = sqlx::query("SELECT recommendation,revision FROM knowledge_items WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL FOR UPDATE")
+        .bind(id).bind(owner_id).fetch_optional(&mut *tx).await?
+        .ok_or_else(|| ApiError::not_found("Item not found"))?;
+    if row.get::<i32, _>("revision") != expected {
+        return Err(ApiError::conflict("Item changed; refresh before editing"));
+    }
+    let mut recommendation: Value = row
+        .get::<Option<Value>, _>("recommendation")
+        .ok_or_else(|| ApiError::bad("This note does not have a structured category yet"))?;
+    let kind = recommendation["entity_kind"].as_str().unwrap_or("");
+    let descriptors: Vec<String> = recommendation["classification"]["descriptors"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+    let classification =
+        crate::taxonomy::present(kind, &input.types, &input.facets, &descriptors, "user")
+            .ok_or_else(|| ApiError::bad("Unknown, duplicate or incompatible category"))?;
+    recommendation["classification"] = classification;
+    let updated: ItemRow = sqlx::query_as("UPDATE knowledge_items SET recommendation=$1,revision=revision+1 WHERE id=$2 RETURNING id,capture_id,subject,body,visibility,revision,created_at,recommendation,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review")
+        .bind(recommendation).bind(id).fetch_one(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(ok(json!({"item":item_json(&updated)})))
+}
 async fn change_visibility(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1801,6 +1855,12 @@ async fn ask(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> 
         "an",
         "recommendation",
         "recommendations",
+        "find",
+        "show",
+        "please",
+        "want",
+        "looking",
+        "recommend",
     ]
     .into();
     let lower = input.question.to_lowercase();
@@ -1815,7 +1875,14 @@ async fn ask(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> 
             json!({"scope":"own","results":[],"answer":null,"next_cursor":null}),
         ));
     }
-    let question_hash = hash(input.question.as_bytes());
+    let question_hash = hash(
+        format!(
+            "taxonomy-{}:{}",
+            crate::taxonomy::vocabulary().version,
+            input.question
+        )
+        .as_bytes(),
+    );
     let offset = if let Some(cursor) = input.cursor.as_deref() {
         let parsed: AskCursor = decode(cursor)?;
         if parsed.offset < 0 || parsed.offset > 100000 || parsed.question_hash != question_hash {
@@ -1830,8 +1897,18 @@ async fn ask(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> 
         .map(|term| format!("{term}:*"))
         .collect::<Vec<_>>()
         .join(" | ");
-    let rows: Vec<AskRow> = sqlx::query_as("SELECT id,subject,body,visibility,revision FROM knowledge_items WHERE owner_id=$1 AND deleted_at IS NULL AND to_tsvector('simple',subject||' '||body) @@ to_tsquery('simple',$2) ORDER BY ts_rank_cd(to_tsvector('simple',subject||' '||body),to_tsquery('simple',$2)) DESC,created_at DESC,id DESC LIMIT 21 OFFSET $3")
-        .bind(owner_id).bind(search_terms).bind(offset).fetch_all(&state.pool).await?;
+    let (category_ids, remaining) = crate::taxonomy::query_concepts(&input.question);
+    let residual = remaining
+        .iter()
+        .filter(|term| term.chars().count() >= 2 && !stop.contains(term.as_str()))
+        .take(8)
+        .map(|term| format!("{term}:*"))
+        .collect::<Vec<_>>()
+        .join(" & ");
+    // Known type/facet phrases constrain categorized items together. Unclassified
+    // memories retain their lexical path, and an exact title always stays findable.
+    let rows: Vec<AskRow> = sqlx::query_as("SELECT id,subject,body,visibility,revision FROM knowledge_items WHERE owner_id=$1 AND deleted_at IS NULL AND (lower(subject)=lower($6) OR (cardinality($4::text[])=0 AND to_tsvector('simple',subject||' '||body||' '||category_search) @@ to_tsquery('simple',$2)) OR (cardinality($4::text[])>0 AND ((category_ids @> $4 AND ($5='' OR to_tsvector('simple',subject||' '||body) @@ to_tsquery('simple',$5))) OR (cardinality(category_ids)=0 AND to_tsvector('simple',subject||' '||body) @@ to_tsquery('simple',$2))))) ORDER BY (lower(subject)=lower($6)) DESC,ts_rank_cd(to_tsvector('simple',subject||' '||body||' '||category_search),to_tsquery('simple',$2)) DESC,created_at DESC,id DESC LIMIT 21 OFFSET $3")
+        .bind(owner_id).bind(search_terms).bind(offset).bind(category_ids).bind(residual).bind(&input.question).fetch_all(&state.pool).await?;
     let results: Vec<_> = rows.iter().take(20).map(|r| json!({"item_id":r.id,"subject":r.subject,"body":r.body,"visibility":r.visibility,"revision":r.revision,"evidence_item_id":r.id})).collect();
     let next_cursor = if rows.len() > 20 {
         Some(encode(&AskCursor {

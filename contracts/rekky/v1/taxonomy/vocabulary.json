@@ -1,0 +1,683 @@
+{
+  "version": 1,
+  "concepts": [
+    {
+      "id": "place.bar",
+      "label": "Bar",
+      "dimension": "type",
+      "entity_kinds": [
+        "place"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "bar",
+        "bars",
+        "pub",
+        "pubs",
+        "बार"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "place.restaurant",
+      "label": "Restaurant",
+      "dimension": "type",
+      "entity_kinds": [
+        "place"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "restaurant",
+        "restaurants",
+        "रेस्टोरेंट",
+        "रेस्तरां"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "place.cafe",
+      "label": "Café",
+      "dimension": "type",
+      "entity_kinds": [
+        "place"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "cafe",
+        "cafes",
+        "café",
+        "cafés",
+        "coffee shop",
+        "coffee shops",
+        "कैफ़े",
+        "कैफे"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "place.hotel",
+      "label": "Hotel",
+      "dimension": "type",
+      "entity_kinds": [
+        "place"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "hotel",
+        "hotels",
+        "होटल"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "place.shop",
+      "label": "Shop",
+      "dimension": "type",
+      "entity_kinds": [
+        "place"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "shop",
+        "shops",
+        "store",
+        "stores",
+        "दुकान"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "place.park",
+      "label": "Park",
+      "dimension": "type",
+      "entity_kinds": [
+        "place"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "park",
+        "parks",
+        "पार्क"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "place.museum",
+      "label": "Museum",
+      "dimension": "type",
+      "entity_kinds": [
+        "place"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "museum",
+        "museums",
+        "संग्रहालय"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "place.gym",
+      "label": "Gym",
+      "dimension": "type",
+      "entity_kinds": [
+        "place"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "gym",
+        "gyms",
+        "जिम"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "service.doctor",
+      "label": "Doctor",
+      "dimension": "type",
+      "entity_kinds": [
+        "person_service"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "doctor",
+        "doctors",
+        "physician",
+        "physicians",
+        "डॉक्टर",
+        "चिकित्सक"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "service.general_doctor",
+      "label": "General doctor",
+      "dimension": "type",
+      "entity_kinds": [
+        "person_service"
+      ],
+      "parent_id": "service.doctor",
+      "aliases": [
+        "general doctor",
+        "general doctors",
+        "general physician",
+        "general physicians",
+        "general practitioner",
+        "general practitioners",
+        "GP",
+        "GPs",
+        "सामान्य चिकित्सक"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "service.dentist",
+      "label": "Dentist",
+      "dimension": "type",
+      "entity_kinds": [
+        "person_service"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "dentist",
+        "dentists",
+        "दंत चिकित्सक"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "service.plumber",
+      "label": "Plumber",
+      "dimension": "type",
+      "entity_kinds": [
+        "person_service"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "plumber",
+        "plumbers",
+        "प्लंबर"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "service.electrician",
+      "label": "Electrician",
+      "dimension": "type",
+      "entity_kinds": [
+        "person_service"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "electrician",
+        "electricians",
+        "बिजली मिस्त्री"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "service.carpenter",
+      "label": "Carpenter",
+      "dimension": "type",
+      "entity_kinds": [
+        "person_service"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "carpenter",
+        "carpenters",
+        "बढ़ई"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "service.tailor",
+      "label": "Tailor",
+      "dimension": "type",
+      "entity_kinds": [
+        "person_service"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "tailor",
+        "tailors",
+        "दर्जी"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "service.tutor",
+      "label": "Tutor",
+      "dimension": "type",
+      "entity_kinds": [
+        "person_service"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "tutor",
+        "tutors",
+        "ट्यूटर"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "service.coach",
+      "label": "Coach",
+      "dimension": "type",
+      "entity_kinds": [
+        "person_service"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "coach",
+        "coaches",
+        "कोच"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "service.cleaner",
+      "label": "Cleaner",
+      "dimension": "type",
+      "entity_kinds": [
+        "person_service"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "cleaner",
+        "cleaners",
+        "house cleaner",
+        "house cleaners"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "service.mechanic",
+      "label": "Mechanic",
+      "dimension": "type",
+      "entity_kinds": [
+        "person_service"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "mechanic",
+        "mechanics",
+        "मैकेनिक"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "service.hairstylist",
+      "label": "Hairstylist",
+      "dimension": "type",
+      "entity_kinds": [
+        "person_service"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "hairstylist",
+        "hair stylist",
+        "hairdresser",
+        "barber"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "service.lawyer",
+      "label": "Lawyer",
+      "dimension": "type",
+      "entity_kinds": [
+        "person_service"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "lawyer",
+        "lawyers",
+        "advocate",
+        "advocates",
+        "वकील"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "thing.book",
+      "label": "Book",
+      "dimension": "type",
+      "entity_kinds": [
+        "thing"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "book",
+        "books",
+        "किताब",
+        "पुस्तक"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "thing.film",
+      "label": "Film",
+      "dimension": "type",
+      "entity_kinds": [
+        "thing"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "film",
+        "films",
+        "movie",
+        "movies",
+        "फिल्म"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "thing.podcast",
+      "label": "Podcast",
+      "dimension": "type",
+      "entity_kinds": [
+        "thing"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "podcast",
+        "podcasts",
+        "पॉडकास्ट"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "thing.app",
+      "label": "App",
+      "dimension": "type",
+      "entity_kinds": [
+        "thing"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "app",
+        "apps",
+        "application",
+        "applications",
+        "ऐप"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "thing.website",
+      "label": "Website",
+      "dimension": "type",
+      "entity_kinds": [
+        "thing"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "website",
+        "websites",
+        "site",
+        "sites",
+        "वेबसाइट"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "thing.product",
+      "label": "Product",
+      "dimension": "type",
+      "entity_kinds": [
+        "thing"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "product",
+        "products",
+        "उत्पाद"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "thing.course",
+      "label": "Course",
+      "dimension": "type",
+      "entity_kinds": [
+        "thing"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "course",
+        "courses",
+        "कोर्स"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "activity.class",
+      "label": "Class",
+      "dimension": "type",
+      "entity_kinds": [
+        "activity_event"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "class",
+        "classes",
+        "lesson",
+        "lessons",
+        "कक्षा"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "activity.tour",
+      "label": "Tour",
+      "dimension": "type",
+      "entity_kinds": [
+        "activity_event"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "tour",
+        "tours",
+        "टूर"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "activity.event",
+      "label": "Event",
+      "dimension": "type",
+      "entity_kinds": [
+        "activity_event"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "event",
+        "events",
+        "आयोजन"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "idea.recipe",
+      "label": "Recipe",
+      "dimension": "type",
+      "entity_kinds": [
+        "idea_tip"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "recipe",
+        "recipes",
+        "रेसिपी"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "idea.tip",
+      "label": "Tip",
+      "dimension": "type",
+      "entity_kinds": [
+        "idea_tip"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "tip",
+        "tips",
+        "advice",
+        "सलाह"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "cuisine.italian",
+      "label": "Italian",
+      "dimension": "cuisine",
+      "entity_kinds": [
+        "place"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "Italian",
+        "इटालियन",
+        "इतालवी",
+        "Italian food",
+        "Italian cuisine",
+        "इटालियन खाना",
+        "इटालियन भोजन",
+        "इतालवी खाना",
+        "इतालवी भोजन"
+      ],
+      "dimension_label": "Cuisine"
+    },
+    {
+      "id": "cuisine.indian",
+      "label": "Indian",
+      "dimension": "cuisine",
+      "entity_kinds": [
+        "place"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "Indian",
+        "भारतीय",
+        "Indian food",
+        "Indian cuisine",
+        "भारतीय खाना",
+        "भारतीय भोजन"
+      ],
+      "dimension_label": "Cuisine"
+    },
+    {
+      "id": "cuisine.chinese",
+      "label": "Chinese",
+      "dimension": "cuisine",
+      "entity_kinds": [
+        "place"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "Chinese",
+        "चाइनीज़",
+        "चाइनीज",
+        "Chinese food",
+        "Chinese cuisine",
+        "चाइनीज़ खाना",
+        "चाइनीज़ भोजन",
+        "चाइनीज खाना",
+        "चाइनीज भोजन"
+      ],
+      "dimension_label": "Cuisine"
+    },
+    {
+      "id": "cuisine.japanese",
+      "label": "Japanese",
+      "dimension": "cuisine",
+      "entity_kinds": [
+        "place"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "Japanese",
+        "जापानी",
+        "Japanese food",
+        "Japanese cuisine",
+        "जापानी खाना",
+        "जापानी भोजन"
+      ],
+      "dimension_label": "Cuisine"
+    },
+    {
+      "id": "cuisine.thai",
+      "label": "Thai",
+      "dimension": "cuisine",
+      "entity_kinds": [
+        "place"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "Thai",
+        "थाई",
+        "Thai food",
+        "Thai cuisine",
+        "थाई खाना",
+        "थाई भोजन"
+      ],
+      "dimension_label": "Cuisine"
+    },
+    {
+      "id": "cuisine.mexican",
+      "label": "Mexican",
+      "dimension": "cuisine",
+      "entity_kinds": [
+        "place"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "Mexican",
+        "मैक्सिकन",
+        "Mexican food",
+        "Mexican cuisine",
+        "मैक्सिकन खाना",
+        "मैक्सिकन भोजन"
+      ],
+      "dimension_label": "Cuisine"
+    },
+    {
+      "id": "cuisine.korean",
+      "label": "Korean",
+      "dimension": "cuisine",
+      "entity_kinds": [
+        "place"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "Korean",
+        "कोरियाई",
+        "Korean food",
+        "Korean cuisine",
+        "कोरियाई खाना",
+        "कोरियाई भोजन"
+      ],
+      "dimension_label": "Cuisine"
+    },
+    {
+      "id": "cuisine.lebanese",
+      "label": "Lebanese",
+      "dimension": "cuisine",
+      "entity_kinds": [
+        "place"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "Lebanese",
+        "लेबनीज़",
+        "Lebanese food",
+        "Lebanese cuisine",
+        "लेबनीज़ खाना",
+        "लेबनीज़ भोजन"
+      ],
+      "dimension_label": "Cuisine"
+    }
+  ]
+}

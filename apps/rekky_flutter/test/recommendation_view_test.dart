@@ -6,17 +6,38 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rekky_flutter/rekky_api.dart';
 import 'package:rekky_flutter/recommendation_view.dart';
 
-RekkyItem fixture() {
+RekkyItem fixture([String name = 'structured_recommendation']) {
   final wire = jsonDecode(
     File('../../contracts/rekky/v1/fixtures/wire.json').readAsStringSync(),
   );
   final example = (wire['examples'] as List).firstWhere(
-    (e) => e['name'] == 'structured_recommendation',
+    (e) => e['name'] == name,
   );
   return RekkyItem.fromJson(example['body']['item'] as Map<String, dynamic>);
 }
 
 void main() {
+  testWidgets(
+    'canonical type and cuisine replace broad shelf on compact cards',
+    (tester) async {
+      final item = fixture('categorized_recommendation');
+      expect(item.recommendation!.categoryLabel, 'Italian restaurant');
+      expect(
+        item.recommendation!.classification!.types.single.id,
+        'place.restaurant',
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RecommendationCard(item: item, onTap: () {}),
+          ),
+        ),
+      );
+      expect(find.text('Italian restaurant · Pune'), findsOneWidget);
+      expect(find.text('Places · Pune'), findsNothing);
+      expect(find.text(item.recommendation!.summary), findsNothing);
+    },
+  );
   test('structured recommendation consumes the shared wire fixture', () {
     final item = fixture();
     expect(item.recommendation!.primaryLocation, 'Pune');

@@ -62,7 +62,7 @@ class RecommendationView extends StatelessWidget {
             recommendation == null
                 ? 'Saved note'
                 : [
-                    recommendation.shelf,
+                    recommendation.categoryLabel,
                     if (recommendation.primaryLocation != null)
                       recommendation.primaryLocation!,
                   ].join(' · '),
@@ -103,7 +103,7 @@ class RecommendationView extends StatelessWidget {
       children: [
         Text(
           [
-            recommendation.shelf,
+            recommendation.categoryLabel,
             if (recommendation.primaryLocation != null)
               recommendation.primaryLocation!,
           ].join(' · '),
@@ -123,6 +123,32 @@ class RecommendationView extends StatelessWidget {
         for (final caution in recommendation.cautions)
           detail('Worth knowing', caution.text),
         if (expanded) ...[
+          if ((recommendation.classification?.types.length ?? 0) > 1)
+            detail(
+              'Also',
+              recommendation.classification!.types
+                  .skip(1)
+                  .map((c) => c.label)
+                  .join(' · '),
+            ),
+          for (final dimension
+              in (recommendation.classification?.facets ?? <CategoryConcept>[])
+                  .map((c) => c.dimension)
+                  .toSet())
+            detail(
+              recommendation.classification!.facets
+                  .firstWhere((c) => c.dimension == dimension)
+                  .dimensionLabel,
+              recommendation.classification!.facets
+                  .where((c) => c.dimension == dimension)
+                  .map((c) => c.label)
+                  .join(' · '),
+            ),
+          if (recommendation.classification?.descriptors.isNotEmpty ?? false)
+            detail(
+              'More about it',
+              recommendation.classification!.descriptors.join(' · '),
+            ),
           for (final observation in recommendation.observations.where(
             (o) => o.kind != 'caution',
           ))

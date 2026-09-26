@@ -1,0 +1,92 @@
+{
+  "date": "2026-09-26",
+  "provenance": "Four synthetic development scenarios, reused during three prompt/schema iterations; not a held-out quality gate",
+  "provider_calls": 12,
+  "real_transcripts_sent": 0,
+  "cases": [
+    {
+      "id": "type_and_cuisine",
+      "status": "valid",
+      "elapsed_ms": 3782,
+      "categories": [
+        {
+          "types": [
+            "place.bar"
+          ],
+          "facets": [],
+          "has_unmapped_description": false
+        },
+        {
+          "types": [
+            "place.restaurant"
+          ],
+          "facets": [
+            "cuisine.italian"
+          ],
+          "has_unmapped_description": false
+        }
+      ]
+    },
+    {
+      "id": "synonymous_profession",
+      "status": "valid",
+      "elapsed_ms": 2934,
+      "categories": [
+        {
+          "types": [
+            "service.general_doctor"
+          ],
+          "facets": [],
+          "has_unmapped_description": false
+        },
+        {
+          "types": [
+            "service.general_doctor"
+          ],
+          "facets": [],
+          "has_unmapped_description": false
+        }
+      ]
+    },
+    {
+      "id": "broad_and_unfamiliar",
+      "status": "valid",
+      "elapsed_ms": 2764,
+      "categories": [
+        {
+          "types": [
+            "service.doctor"
+          ],
+          "facets": [],
+          "has_unmapped_description": false
+        },
+        {
+          "types": [],
+          "facets": [],
+          "has_unmapped_description": true
+        }
+      ]
+    },
+    {
+      "id": "hindi_category",
+      "status": "valid",
+      "elapsed_ms": 2757,
+      "categories": [
+        {
+          "types": [
+            "place.restaurant"
+          ],
+          "facets": [
+            "cuisine.italian"
+          ],
+          "has_unmapped_description": false
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Alias/source checks do not prove semantic entailment or correct subject association.",
+    "Initial runs dropped cuisine phrases and misplaced a cuisine into the type array; aliases, separated schema enums and canonical dimension normalization address these observed failures.",
+    "Coverage of unfamiliar languages, implicit descriptions, ambiguous aliases and taxonomy evolution remains unproven."
+  ]
+}

@@ -51,6 +51,56 @@ class RecommendationDetail {
   final String kind, text;
 }
 
+class CategoryConcept {
+  const CategoryConcept({
+    required this.id,
+    required this.label,
+    required this.dimension,
+    this.entityKinds = const [],
+    this.parentId,
+    this.dimensionLabel = 'Attributes',
+  });
+  final String id, label, dimension;
+  final List<String> entityKinds;
+  final String? parentId;
+  final String dimensionLabel;
+  factory CategoryConcept.fromJson(Map<String, dynamic> json) =>
+      CategoryConcept(
+        id: json['id'] as String,
+        label: json['label'] as String,
+        dimension: json['dimension'] as String,
+        parentId: json['parent_id'] as String?,
+        dimensionLabel:
+            json['dimension_label'] as String? ??
+            (json['dimension'] == 'cuisine' ? 'Cuisine' : 'Attributes'),
+        entityKinds:
+            (json['entity_kinds'] as List?)?.cast<String>() ?? const [],
+      );
+}
+
+class RekkyClassification {
+  const RekkyClassification({
+    required this.types,
+    required this.facets,
+    required this.descriptors,
+    this.displayLabel,
+  });
+  final List<CategoryConcept> types, facets;
+  final List<String> descriptors;
+  final String? displayLabel;
+  factory RekkyClassification.fromJson(Map<String, dynamic> json) =>
+      RekkyClassification(
+        types: (json['types'] as List)
+            .map((c) => CategoryConcept.fromJson(c as Map<String, dynamic>))
+            .toList(),
+        facets: (json['facets'] as List)
+            .map((c) => CategoryConcept.fromJson(c as Map<String, dynamic>))
+            .toList(),
+        descriptors: (json['descriptors'] as List).cast<String>(),
+        displayLabel: json['display_label'] as String?,
+      );
+}
+
 class RekkyRecommendation {
   const RekkyRecommendation({
     required this.summary,
@@ -60,10 +110,13 @@ class RekkyRecommendation {
     required this.locations,
     required this.useCases,
     this.entityKind = 'unspecified',
+    this.classification,
   });
   final String summary, shelf, experience, entityKind;
   final List<RecommendationDetail> observations, locations;
   final List<String> useCases;
+  final RekkyClassification? classification;
+  String get categoryLabel => classification?.displayLabel ?? shelf;
   String get experienceLabel => switch (experience) {
     'firsthand' => 'Your experience',
     'secondhand' => 'Heard from others',
@@ -85,6 +138,11 @@ class RekkyRecommendation {
     shelf: json['shelf'] as String,
     experience: json['experience'] as String,
     entityKind: json['entity_kind'] as String? ?? 'unspecified',
+    classification: json['classification'] is Map<String, dynamic>
+        ? RekkyClassification.fromJson(
+            json['classification'] as Map<String, dynamic>,
+          )
+        : null,
     observations: (json['observations'] as List)
         .map(
           (o) => RecommendationDetail(o['kind'] as String, o['text'] as String),
@@ -375,6 +433,27 @@ class RekkyApi {
       'PATCH',
       '/v1/items/${item.id}',
       body: {'visibility': visibility},
+      headers: {'if-match': '${item.revision}'},
+    );
+    return RekkyItem.fromJson(response['item'] as Map<String, dynamic>);
+  }
+
+  Future<List<CategoryConcept>> categoryConcepts() async {
+    final response = await request('GET', '/v1/taxonomy');
+    return (response['concepts'] as List)
+        .map((c) => CategoryConcept.fromJson(c as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<RekkyItem> changeClassification(
+    RekkyItem item,
+    List<String> types,
+    List<String> facets,
+  ) async {
+    final response = await request(
+      'PATCH',
+      '/v1/items/${item.id}/classification',
+      body: {'types': types, 'facets': facets},
       headers: {'if-match': '${item.revision}'},
     );
     return RekkyItem.fromJson(response['item'] as Map<String, dynamic>);

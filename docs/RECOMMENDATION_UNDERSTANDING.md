@@ -8,6 +8,7 @@ The canonical plan already requires this in sections 4 (flexible, evidence-backe
 | --- | --- |
 | A concise faithful account | A short attributed summary plus flexible observations; repetition and filler can disappear from display copy |
 | Stable subject and one primary shelf | An exact source-backed subject and entity kind; server derives Places, People & services, Things, Activities & events, or Ideas & tips |
+| Specific type and attributes | A shared versioned vocabulary supplies type IDs, consistent labels, synonyms and ancestors; cuisine is separate from Restaurant, and unfamiliar descriptions remain searchable. [Categorization](./CATEGORIZATION.md) |
 | Useful observations | Praise, concrete suggestions, suitability, cautions, attributed prices and open-ended context; absent information is omitted |
 | Experience and attribution | Firsthand, secondhand, untried interest or unspecified; owner-facing labels and prose preserve supplied attribution |
 | Distinct location roles | Venue, practice, stated service area, past experience and contextual mention; no implied service coverage or external place match |
