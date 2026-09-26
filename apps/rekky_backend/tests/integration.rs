@@ -7,7 +7,7 @@ use axum::{
 use rekky_backend::{
     AppState,
     auth::{IdentityVerifier, Provider, VerifyError, hash_token},
-    extraction::{ExtractionError, Proposal, ProposedItem, TranscriptExtractor},
+    extraction::{ExtractionError, Proposal, TranscriptExtractor, source_units},
     migrate, router,
     voice::{TranscriptionError, VoiceTranscriber},
 };
@@ -38,16 +38,13 @@ impl TranscriptExtractor for TestExtractor {
         true
     }
     async fn extract(&self, transcript: &str) -> Result<Proposal, ExtractionError> {
-        Ok(Proposal {
-            items: vec![ProposedItem {
-                subject: transcript
-                    .split_whitespace()
-                    .next()
-                    .unwrap_or_default()
-                    .to_owned(),
-                evidence: vec![transcript.to_owned()],
-            }],
-        })
+        let ids: Vec<_> = source_units(transcript).iter().map(|u| u.id).collect();
+        Ok(serde_json::from_value(json!({
+            "items":[{"subject":transcript.split_whitespace().next().unwrap_or_default(),
+                "subject_evidence":ids,"entity_kind":"person_service","experience":"firsthand",
+                "summary":{"text":transcript,"evidence":ids},"observations":[],"locations":[],"use_cases":[]}],
+            "ignored_unit_ids":[],"unresolved_unit_ids":[]
+        })).unwrap())
     }
 }
 #[async_trait]
@@ -223,6 +220,7 @@ async fn wire_fixtures() {
         "voice_permission_required",
         "transcript_extraction_permission",
         "voice_knowledge_saved",
+        "structured_recommendation",
         "remember_queued",
         "remember_saved",
         "remember_partial",
@@ -1443,4 +1441,216 @@ async fn remember_cancellation_fences_delayed_upload_and_inflight_transcription(
     let remaining:i64=sqlx::query_scalar("SELECT count(*) FROM voice_uploads WHERE account_id=$1 AND (audio IS NOT NULL OR status!='cancelled')").bind(owner).fetch_one(&t.pool).await.unwrap();
     assert_eq!(remaining, 0);
     t.cleanup().await;
+}
+
+struct BlockingExtractor {
+    started: Notify,
+    release: Notify,
+}
+#[async_trait]
+impl TranscriptExtractor for BlockingExtractor {
+    fn available(&self) -> bool {
+        true
+    }
+    async fn extract(&self, transcript: &str) -> Result<Proposal, ExtractionError> {
+        self.started.notify_one();
+        self.release.notified().await;
+        TestExtractor.extract(transcript).await
+    }
+}
+async fn legacy_voice_item(t: &mut TestApp) -> (Uuid, String, String, String) {
+    let (owner, token) = t.sign_in("google", "valid-a").await;
+    t.call(
+        Method::POST,
+        "/v1/me/visibility-disclosure",
+        Some(&token),
+        Some(json!({"accept":true})),
+        &[],
+    )
+    .await;
+    t.call(
+        Method::POST,
+        "/v1/me/transcript-extraction-permission",
+        Some(&token),
+        Some(json!({"enabled":true,"disclosure_version":1})),
+        &[],
+    )
+    .await;
+    let (_,saved)=t.call(Method::POST,"/v1/items",Some(&token),Some(json!({"subject":"Ravi","body":"Ravi fixed the kitchen tap.","visibility":"private"})),&[("idempotency-key","legacy-item-0001")]).await;
+    let item = saved["item"]["id"].as_str().unwrap().to_owned();
+    let capture = saved["item"]["capture_id"].as_str().unwrap().to_owned();
+    sqlx::query("UPDATE captures SET kind='voice' WHERE id=$1")
+        .bind(Uuid::parse_str(&capture).unwrap())
+        .execute(&t.pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE source_texts SET kind='transcript' WHERE capture_id=$1")
+        .bind(Uuid::parse_str(&capture).unwrap())
+        .execute(&t.pool)
+        .await
+        .unwrap();
+    (owner, token, item, capture)
+}
+#[tokio::test]
+async fn explicit_refinement_preserves_identity_privacy_and_source_deletion_removes_support() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    let (_owner, token, item, capture) = legacy_voice_item(&mut t).await;
+    let path = format!("/v1/items/{item}/refine");
+    let (status, result) = t
+        .call(
+            Method::POST,
+            &path,
+            Some(&token),
+            None,
+            &[("if-match", "1")],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    assert_eq!(result["items"][0]["id"], item);
+    assert_eq!(result["items"][0]["visibility"], "private");
+    assert_eq!(result["items"][0]["revision"], 2);
+    assert_eq!(
+        result["items"][0]["recommendation"]["experience"],
+        "firsthand"
+    );
+    assert!(!result.to_string().contains("subject_evidence"));
+    // Lost-response recovery is free and doesn't create a second item.
+    assert_eq!(
+        t.call(
+            Method::POST,
+            &path,
+            Some(&token),
+            None,
+            &[("if-match", "1")]
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let attempts: i32 =
+        sqlx::query_scalar("SELECT attempts FROM recommendation_refinement_jobs WHERE item_id=$1")
+            .bind(Uuid::parse_str(&item).unwrap())
+            .fetch_one(&t.pool)
+            .await
+            .unwrap();
+    assert_eq!(attempts, 1);
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM item_source_support WHERE item_id=$1")
+            .bind(Uuid::parse_str(&item).unwrap())
+            .fetch_one(&t.pool)
+            .await
+            .unwrap();
+    assert_eq!(count, 1);
+    assert_eq!(
+        t.call(
+            Method::DELETE,
+            &format!("/v1/captures/{capture}/source"),
+            Some(&token),
+            None,
+            &[("if-match", "1")]
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM item_source_support WHERE item_id=$1")
+            .bind(Uuid::parse_str(&item).unwrap())
+            .fetch_one(&t.pool)
+            .await
+            .unwrap();
+    assert_eq!(count, 0);
+    let (_, listed) = t
+        .call(Method::GET, "/v1/items", Some(&token), None, &[])
+        .await;
+    assert_eq!(listed["items"].as_array().unwrap().len(), 1);
+    t.cleanup().await;
+}
+#[tokio::test]
+async fn refinement_rejects_late_results_after_source_delete_withdrawal_or_item_edit() {
+    for action in ["source", "permission", "item"] {
+        let Some(mut t) = TestApp::new().await else {
+            return;
+        };
+        let (_owner, token, item, capture) = legacy_voice_item(&mut t).await;
+        let extractor = Arc::new(BlockingExtractor {
+            started: Notify::new(),
+            release: Notify::new(),
+        });
+        t.state.extractor = extractor.clone();
+        t.app = router(t.state.clone());
+        let app = t.app.clone();
+        let path = format!("/v1/items/{item}/refine");
+        let owned_token = token.clone();
+        let request = tokio::spawn(async move {
+            app.oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri(path)
+                    .header("authorization", format!("Bearer {owned_token}"))
+                    .header("if-match", "1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .status()
+        });
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            extractor.started.notified(),
+        )
+        .await
+        .unwrap();
+        match action {
+            "source" => {
+                t.call(
+                    Method::DELETE,
+                    &format!("/v1/captures/{capture}/source"),
+                    Some(&token),
+                    None,
+                    &[("if-match", "1")],
+                )
+                .await;
+            }
+            "permission" => {
+                t.call(
+                    Method::POST,
+                    "/v1/me/transcript-extraction-permission",
+                    Some(&token),
+                    Some(json!({"enabled":false})),
+                    &[],
+                )
+                .await;
+            }
+            _ => {
+                t.call(
+                    Method::PATCH,
+                    &format!("/v1/items/{item}"),
+                    Some(&token),
+                    Some(json!({"visibility":"friends"})),
+                    &[("if-match", "1")],
+                )
+                .await;
+            }
+        }
+        extractor.release.notify_one();
+        assert_eq!(
+            tokio::time::timeout(std::time::Duration::from_secs(5), request)
+                .await
+                .unwrap()
+                .unwrap(),
+            StatusCode::CONFLICT
+        );
+        let value: Option<Value> =
+            sqlx::query_scalar("SELECT recommendation FROM knowledge_items WHERE id=$1")
+                .bind(Uuid::parse_str(&item).unwrap())
+                .fetch_one(&t.pool)
+                .await
+                .unwrap();
+        assert!(value.is_none());
+        t.cleanup().await;
+    }
 }

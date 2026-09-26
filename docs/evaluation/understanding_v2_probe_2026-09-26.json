@@ -1,0 +1,49 @@
+{
+  "scope": "Four synthetic prompt-development cases; not a held-out quality evaluation. Third run preceded final source-phrase filtering for optional use cases. No user transcripts.",
+  "model": "gpt-4.1-mini",
+  "date": "2026-09-26",
+  "cases": [
+    {
+      "id": "place_details",
+      "status": "valid",
+      "partial": false,
+      "item_count": 1,
+      "understanding_ms": 3047
+    },
+    {
+      "id": "multi_subject_attribution",
+      "status": "valid",
+      "partial": false,
+      "item_count": 3,
+      "understanding_ms": 5253
+    },
+    {
+      "id": "hinglish_uncertainty",
+      "status": "valid",
+      "partial": false,
+      "item_count": 1,
+      "understanding_ms": 2380
+    },
+    {
+      "id": "professional_experience",
+      "status": "valid",
+      "partial": false,
+      "item_count": 1,
+      "understanding_ms": 2600
+    }
+  ],
+  "findings": [
+    "Concrete venue suggestions and table/portion caveats retained.",
+    "Negative repair experience and untried recommendation kept distinct.",
+    "Past-job and professional-practice locations were distinct in the final probe.",
+    "Hinglish summary retained the conditional weekend warning and uncertain price.",
+    "Doctor example retained unknown qualifications/contact.",
+    "Optional model use-case phrases still added ranking/advice not present in source; final validator now drops phrases that are not contiguous source phrases.",
+    "Named-referrer preservation varied; the final prompt was reinforced, but broad semantic faithfulness remains unproven."
+  ],
+  "limits": [
+    "Prompt iterated against these same cases; no independent generalization result.",
+    "Duration covers understanding only, not recording/upload/transcription.",
+    "Structured validation is not proof of semantic correctness."
+  ]
+}

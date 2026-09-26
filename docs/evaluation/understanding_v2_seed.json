@@ -1,0 +1,6 @@
+[
+  {"id":"place_details","transcript":"I went to Lantern Cafe in Pune and really liked it. The mushroom noodles were excellent. It is good for two or three friends, but the tables are too small for a large group. I think the starters were around 180 when I visited last winter. The portions are small, so order a few plates.","expected_subjects":["Lantern Cafe"]},
+  {"id":"multi_subject_attribution","transcript":"Kite Kitchen in Gurugram has the best ramen I have tried in Delhi. Arun fixed my kitchen tap in Jaipur, but it started leaking again after a week. I would not recommend him for that job. My friend Nisha suggested Meena for swimming lessons. I have not tried Meena's classes.","expected_subjects":["Kite Kitchen","Arun","Meena"]},
+  {"id":"hinglish_uncertainty","transcript":"Maine Saffron Cafe Pune mein try kiya. Chai bahut achhi thi, lekin service slow thi. Weekend pe jaldi ho toh mat jaana. Price shayad 80 tha, exact yaad nahi.","expected_subjects":["Saffron Cafe"]},
+  {"id":"professional_experience","transcript":"Dr. Neha Rao practices in Jaipur. I have visited her for minor illnesses for years. She listens carefully and her practical advice has helped me. I would recommend her as a general doctor. I do not know her exact qualifications or clinic phone number.","expected_subjects":["Dr. Neha Rao"]}
+]

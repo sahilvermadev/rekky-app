@@ -2,8 +2,8 @@ use crate::auth::{
     IdentityVerifier, Provider, VerifyError, account_for_token, exchange_identity, hash_token,
 };
 use crate::extraction::{
-    EXTRACTION_DISCLOSURE_VERSION, EXTRACTION_MODEL, TranscriptExtractor, preserve_unresolved,
-    validate,
+    EXTRACTION_DISCLOSURE_VERSION, EXTRACTION_MODEL, TranscriptExtractor, UNDERSTANDING_VERSION,
+    preserve_unresolved, validate,
 };
 use crate::voice::{VOICE_DISCLOSURE_VERSION, VOICE_MODEL, VOICE_PROVIDER, VoiceTranscriber};
 use axum::{
@@ -68,6 +68,7 @@ pub fn router(state: AppState) -> Router {
             post(transcribe_voice).layer(DefaultBodyLimit::max(5 * 1024 * 1024)),
         )
         .route("/v1/items", post(save_item).get(list_items))
+        .route("/v1/items/{id}/refine", post(refine_item))
         .route(
             "/v1/items/{id}",
             axum::routing::patch(change_visibility).delete(delete_item),
@@ -304,6 +305,7 @@ async fn withdraw_processing(
         .bind(id).execute(&mut *tx).await?;
     sqlx::query("UPDATE voice_uploads SET status='cancelled',audio=NULL WHERE account_id=$1 AND audio IS NOT NULL")
         .bind(id).execute(&mut *tx).await?;
+    sqlx::query("UPDATE recommendation_refinement_jobs SET status='cancelled' WHERE account_id=$1 AND status!='completed'").bind(id).execute(&mut *tx).await?;
     sqlx::query("UPDATE captures SET auto_processing=false WHERE owner_id=$1 AND auto_processing")
         .bind(id)
         .execute(&mut *tx)
@@ -481,6 +483,7 @@ async fn set_extraction_permission(
     if !input.enabled {
         sqlx::query("UPDATE transcript_extraction_jobs SET status='cancelled',updated_at=now() WHERE account_id=$1 AND status='processing'")
             .bind(id).execute(&mut *tx).await?;
+        sqlx::query("UPDATE recommendation_refinement_jobs SET status='cancelled' WHERE account_id=$1 AND status!='completed'").bind(id).execute(&mut *tx).await?;
         sqlx::query(
             "UPDATE captures SET auto_processing=false WHERE owner_id=$1 AND auto_processing",
         )
@@ -503,7 +506,7 @@ async fn extraction_items(
     capture_id: Uuid,
     partial: bool,
 ) -> ApiResult {
-    let items: Vec<ItemRow> = sqlx::query_as("SELECT id,capture_id,subject,body,visibility,revision,created_at,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review FROM knowledge_items WHERE owner_id=$1 AND capture_id=$2 AND deleted_at IS NULL ORDER BY created_at,id")
+    let items: Vec<ItemRow> = sqlx::query_as("SELECT id,capture_id,subject,body,visibility,revision,created_at,recommendation,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review FROM knowledge_items WHERE owner_id=$1 AND capture_id=$2 AND deleted_at IS NULL ORDER BY created_at,id")
         .bind(owner_id).bind(capture_id).fetch_all(pool).await?;
     Ok(ok(
         json!({"capture_id":capture_id,"items":items.iter().map(item_json).collect::<Vec<_>>(),"partial":partial}),
@@ -571,7 +574,7 @@ async fn process_voice_capture(
             "Processing was turned off",
         ));
     }
-    let source = sqlx::query("SELECT s.content,s.revision,c.auto_processing FROM source_texts s JOIN captures c ON c.id=s.capture_id AND c.owner_id=s.owner_id WHERE c.id=$1 AND c.owner_id=$2 AND c.kind='voice' AND s.kind='transcript' FOR UPDATE OF s")
+    let source = sqlx::query("SELECT s.id,s.content,s.revision,c.auto_processing FROM source_texts s JOIN captures c ON c.id=s.capture_id AND c.owner_id=s.owner_id WHERE c.id=$1 AND c.owner_id=$2 AND c.kind='voice' AND s.kind='transcript' FOR UPDATE OF s")
         .bind(capture_id).bind(owner_id).fetch_optional(&mut *tx).await?
         .ok_or_else(|| ApiError::not_found("Private transcript not found"))?;
     if expected_generation
@@ -592,6 +595,7 @@ async fn process_voice_capture(
         ));
     }
     let source_revision: i32 = source.try_get("revision")?;
+    let source_id: Uuid = source.try_get("id")?;
     let job = sqlx::query("SELECT status,attempts,lease_until,partial,source_revision FROM transcript_extraction_jobs WHERE capture_id=$1 AND account_id=$2 FOR UPDATE")
         .bind(capture_id).bind(owner_id).fetch_optional(&mut *tx).await?;
     if let Some(job) = &job {
@@ -622,9 +626,9 @@ async fn process_voice_capture(
         sqlx::query("SELECT pg_advisory_xact_lock(732783)")
             .execute(&mut *tx)
             .await?;
-        let account_count: i64 = sqlx::query_scalar("SELECT count(*) FROM transcript_extraction_jobs WHERE account_id=$1 AND created_at>now()-interval '24 hours'")
+        let account_count: i64 = sqlx::query_scalar("SELECT (SELECT count(*) FROM transcript_extraction_jobs WHERE account_id=$1 AND created_at>now()-interval '24 hours')+(SELECT count(*) FROM recommendation_refinement_jobs WHERE account_id=$1 AND created_at>now()-interval '24 hours')")
             .bind(owner_id).fetch_one(&mut *tx).await?;
-        let global_count: i64 = sqlx::query_scalar("SELECT count(*) FROM transcript_extraction_jobs WHERE created_at>now()-interval '24 hours'")
+        let global_count: i64 = sqlx::query_scalar("SELECT (SELECT count(*) FROM transcript_extraction_jobs WHERE created_at>now()-interval '24 hours')+(SELECT count(*) FROM recommendation_refinement_jobs WHERE created_at>now()-interval '24 hours')")
             .fetch_one(&mut *tx).await?;
         if account_count >= 12 || global_count >= 100 {
             return Err(ApiError::new(
@@ -687,9 +691,12 @@ async fn process_voice_capture(
         ));
     }
     for item in items {
-        sqlx::query("INSERT INTO knowledge_items(id,capture_id,owner_id,subject,body,visibility) VALUES ($1,$2,$3,$4,$5,'private')")
-            .bind(Uuid::new_v4()).bind(capture_id).bind(owner_id).bind(item.subject).bind(item.body)
+        let item_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO knowledge_items(id,capture_id,owner_id,subject,body,visibility,recommendation) VALUES ($1,$2,$3,$4,$5,'private',$6)")
+            .bind(item_id).bind(capture_id).bind(owner_id).bind(item.subject).bind(item.body).bind(item.recommendation)
             .execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO item_source_support(item_id,source_id,source_revision,pipeline_version,support) VALUES($1,$2,$3,$4,$5)")
+            .bind(item_id).bind(source_id).bind(source_revision).bind(UNDERSTANDING_VERSION).bind(item.evidence).execute(&mut *tx).await?;
     }
     sqlx::query("UPDATE captures SET status=$2,revision=revision+1 WHERE id=$1 AND owner_id=$3")
         .bind(capture_id)
@@ -699,6 +706,214 @@ async fn process_voice_capture(
         .await?;
     sqlx::query("UPDATE transcript_extraction_jobs SET status='completed',partial=$3,updated_at=now() WHERE capture_id=$1 AND account_id=$2")
         .bind(capture_id).bind(owner_id).bind(partial).execute(&mut *tx).await?;
+    tx.commit().await?;
+    extraction_items(&state.pool, owner_id, capture_id, partial).await
+}
+
+/// Explicitly upgrade a legacy single-item voice capture in place. New voice
+/// captures use the worker; this route never scans or reprocesses a library.
+async fn refine_item(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> ApiResult {
+    let owner_id = owner(&state, &headers, true).await?;
+    let id = uuid(&id)?;
+    let expected_revision = revision(&headers)?;
+    let attempt_id = Uuid::new_v4();
+    let mut tx = state.pool.begin().await?;
+    let permission=sqlx::query("SELECT enabled,generation FROM transcript_extraction_permissions WHERE account_id=$1 FOR UPDATE")
+        .bind(owner_id).fetch_optional(&mut *tx).await?;
+    let generation = permission
+        .filter(|p| p.get::<bool, _>("enabled"))
+        .map(|p| p.get::<i64, _>("generation"))
+        .ok_or_else(|| {
+            ApiError::new(
+                StatusCode::FORBIDDEN,
+                "extraction_permission_required",
+                "Turn on voice processing in settings",
+            )
+        })?;
+    let withdrawn: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM processing_permissions WHERE account_id=$1 AND enabled=false)",
+    )
+    .bind(owner_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if withdrawn {
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "processing_withdrawn",
+            "Processing was turned off",
+        ));
+    }
+    let row=sqlx::query("SELECT i.capture_id,i.subject,i.revision,i.recommendation,s.id source_id,s.content,s.revision source_revision FROM knowledge_items i JOIN captures c ON c.id=i.capture_id JOIN source_texts s ON s.capture_id=c.id AND s.owner_id=i.owner_id WHERE i.id=$1 AND i.owner_id=$2 AND i.deleted_at IS NULL AND c.kind='voice'")
+        .bind(id).bind(owner_id).fetch_optional(&mut *tx).await?.ok_or_else(||ApiError::not_found("Voice recommendation or private source not found"))?;
+    let capture_id: Uuid = row.get("capture_id");
+    if row
+        .get::<Option<Value>, _>("recommendation")
+        .is_some_and(|v| v["version"] == UNDERSTANDING_VERSION)
+    {
+        tx.commit().await?;
+        let partial: bool = sqlx::query_scalar("SELECT status='partial' FROM captures WHERE id=$1")
+            .bind(capture_id)
+            .fetch_one(&state.pool)
+            .await?;
+        return extraction_items(&state.pool, owner_id, capture_id, partial).await;
+    }
+    if row.get::<i32, _>("revision") != expected_revision {
+        return Err(ApiError::conflict(
+            "Recommendation changed; refresh before updating",
+        ));
+    }
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM knowledge_items WHERE capture_id=$1")
+        .bind(capture_id)
+        .fetch_one(&mut *tx)
+        .await?;
+    if count != 1 {
+        return Err(ApiError::conflict(
+            "Updating a shared multi-item capture is not supported yet",
+        ));
+    }
+    if !state.extractor.available() {
+        return Err(ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "extraction_unavailable",
+            "Voice processing is unavailable",
+        ));
+    }
+    let transcript: String = row.get("content");
+    if transcript.chars().count() > 6000 {
+        return Err(ApiError::bad("Transcript is too long for this pilot"));
+    }
+    let source_id: Uuid = row.get("source_id");
+    let source_revision: i32 = row.get("source_revision");
+    let old_subject: String = row.get("subject");
+    let job=sqlx::query("SELECT status,attempts,permission_generation,source_revision,item_revision,lease_until FROM recommendation_refinement_jobs WHERE item_id=$1 FOR UPDATE").bind(id).fetch_optional(&mut *tx).await?;
+    if let Some(job) = job {
+        if job.get::<String, _>("status") == "cancelled"
+            || job.get::<i64, _>("permission_generation") != generation
+            || job.get::<i32, _>("source_revision") != source_revision
+            || job.get::<i32, _>("item_revision") != expected_revision
+        {
+            return Err(ApiError::conflict(
+                "The source, item or processing permission changed",
+            ));
+        }
+        if job.get::<i32, _>("attempts") >= 3 {
+            return Err(ApiError::new(
+                StatusCode::TOO_MANY_REQUESTS,
+                "refinement_retry_limit",
+                "Update attempt limit reached; existing recommendation retained",
+            ));
+        }
+        if job.get::<String, _>("status") == "processing"
+            && job.get::<DateTime<Utc>, _>("lease_until") > Utc::now()
+        {
+            return Err(ApiError::conflict(
+                "Recommendation update is already running",
+            ));
+        }
+        sqlx::query("UPDATE recommendation_refinement_jobs SET attempts=attempts+1,status='processing',attempt_id=$2,lease_until=now()+interval '3 minutes' WHERE item_id=$1")
+            .bind(id).bind(attempt_id).execute(&mut *tx).await?;
+    } else {
+        sqlx::query("SELECT pg_advisory_xact_lock(732783)")
+            .execute(&mut *tx)
+            .await?;
+        let counts=sqlx::query("SELECT (SELECT count(*) FROM transcript_extraction_jobs WHERE account_id=$1 AND created_at>now()-interval '24 hours')+(SELECT count(*) FROM recommendation_refinement_jobs WHERE account_id=$1 AND created_at>now()-interval '24 hours') own_count, (SELECT count(*) FROM transcript_extraction_jobs WHERE created_at>now()-interval '24 hours')+(SELECT count(*) FROM recommendation_refinement_jobs WHERE created_at>now()-interval '24 hours') total_count")
+            .bind(owner_id).fetch_one(&mut *tx).await?;
+        if counts.get::<i64, _>("own_count") >= 12 || counts.get::<i64, _>("total_count") >= 100 {
+            return Err(ApiError::new(
+                StatusCode::TOO_MANY_REQUESTS,
+                "extraction_budget_reached",
+                "Processing limit reached; existing recommendation retained",
+            ));
+        }
+        sqlx::query("INSERT INTO recommendation_refinement_jobs(item_id,account_id,attempt_id,status,permission_generation,source_revision,item_revision,lease_until) VALUES($1,$2,$3,'processing',$4,$5,$6,now()+interval '3 minutes')")
+            .bind(id).bind(owner_id).bind(attempt_id).bind(generation).bind(source_revision).bind(expected_revision).execute(&mut *tx).await?;
+    }
+    tx.commit().await?;
+    let result = state
+        .extractor
+        .extract(&transcript)
+        .await
+        .and_then(|p| validate(p, &transcript));
+    let (mut items, partial) = match result {
+        Ok((items, partial))
+            if items.len() == 1
+                && (old_subject
+                    .to_lowercase()
+                    .contains(&items[0].subject.to_lowercase())
+                    || items[0]
+                        .subject
+                        .to_lowercase()
+                        .contains(&old_subject.to_lowercase())) =>
+        {
+            (items, partial)
+        }
+        _ => {
+            sqlx::query("UPDATE recommendation_refinement_jobs SET status='failed' WHERE item_id=$1 AND attempt_id=$2 AND status='processing'").bind(id).bind(attempt_id).execute(&state.pool).await?;
+            return Err(ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "refinement_unusable",
+                "Could not safely update this recommendation; the existing item is unchanged",
+            ));
+        }
+    };
+    let item = items.remove(0);
+    let mut tx = state.pool.begin().await?;
+    let permission=sqlx::query("SELECT enabled,generation FROM transcript_extraction_permissions WHERE account_id=$1 FOR UPDATE").bind(owner_id).fetch_one(&mut *tx).await?;
+    let live =
+        sqlx::query("SELECT revision,deleted_at FROM knowledge_items WHERE id=$1 FOR UPDATE")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let source = sqlx::query("SELECT revision FROM source_texts WHERE id=$1 FOR UPDATE")
+        .bind(source_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+    let job = sqlx::query(
+        "SELECT status,attempt_id FROM recommendation_refinement_jobs WHERE item_id=$1 FOR UPDATE",
+    )
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if !permission.get::<bool, _>("enabled")
+        || permission.get::<i64, _>("generation") != generation
+        || !live.is_some_and(|r| {
+            r.get::<i32, _>("revision") == expected_revision
+                && r.get::<Option<DateTime<Utc>>, _>("deleted_at").is_none()
+        })
+        || source.map(|s| s.get::<i32, _>("revision")) != Some(source_revision)
+        || job.get::<String, _>("status") != "processing"
+        || job.get::<Uuid, _>("attempt_id") != attempt_id
+    {
+        return Err(ApiError::conflict(
+            "The item, source or processing permission changed before the update could be saved",
+        ));
+    }
+    // Same item ID and audience; the caller's revision fences edits and deletion.
+    sqlx::query("UPDATE knowledge_items SET subject=$2,body=$3,recommendation=$4,revision=revision+1 WHERE id=$1")
+        .bind(id).bind(item.subject).bind(item.body).bind(item.recommendation).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO item_source_support(item_id,source_id,source_revision,pipeline_version,support) VALUES($1,$2,$3,$4,$5) ON CONFLICT(item_id) DO UPDATE SET source_id=EXCLUDED.source_id,source_revision=EXCLUDED.source_revision,pipeline_version=EXCLUDED.pipeline_version,support=EXCLUDED.support")
+        .bind(id).bind(source_id).bind(source_revision).bind(UNDERSTANDING_VERSION).bind(item.evidence).execute(&mut *tx).await?;
+    sqlx::query("UPDATE captures SET status=$2,revision=revision+1 WHERE id=$1")
+        .bind(capture_id)
+        .bind(if partial { "partial" } else { "completed" })
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "UPDATE transcript_extraction_jobs SET partial=$2,pipeline_version=$3 WHERE capture_id=$1",
+    )
+    .bind(capture_id)
+    .bind(partial)
+    .bind(UNDERSTANDING_VERSION)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("UPDATE recommendation_refinement_jobs SET status='completed' WHERE item_id=$1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
     tx.commit().await?;
     extraction_items(&state.pool, owner_id, capture_id, partial).await
 }
@@ -1285,9 +1500,11 @@ struct ItemRow {
     created_at: DateTime<Utc>,
     #[sqlx(default)]
     needs_review: bool,
+    #[sqlx(default)]
+    recommendation: Option<Value>,
 }
 fn item_json(row: &ItemRow) -> Value {
-    json!({"id":row.id,"capture_id":row.capture_id,"subject":row.subject,"body":row.body,"visibility":row.visibility,"revision":row.revision,"created_at":iso(row.created_at),"needs_review":row.needs_review})
+    json!({"id":row.id,"capture_id":row.capture_id,"subject":row.subject,"body":row.body,"visibility":row.visibility,"revision":row.revision,"created_at":iso(row.created_at),"needs_review":row.needs_review,"recommendation":row.recommendation})
 }
 fn iso(date: DateTime<Utc>) -> String {
     date.to_rfc3339_opts(SecondsFormat::Micros, true)
@@ -1330,7 +1547,7 @@ async fn save_item(State(state): State<AppState>, headers: HeaderMap, body: Byte
             .as_str()
             .and_then(|s| Uuid::parse_str(s).ok())
             .ok_or_else(|| ApiError::from(sqlx::Error::RowNotFound))?;
-        let live: Option<ItemRow> = sqlx::query_as("SELECT id,capture_id,subject,body,visibility,revision,created_at,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review FROM knowledge_items WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL")
+        let live: Option<ItemRow> = sqlx::query_as("SELECT id,capture_id,subject,body,visibility,revision,created_at,recommendation,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review FROM knowledge_items WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL")
             .bind(item_id).bind(owner_id).fetch_optional(&mut *transaction).await?;
         transaction.commit().await?;
         return match live {
@@ -1349,7 +1566,7 @@ async fn save_item(State(state): State<AppState>, headers: HeaderMap, body: Byte
         .bind(capture_id).bind(owner_id).bind(input.visibility.as_str()).execute(&mut *transaction).await?;
     sqlx::query("INSERT INTO source_texts(id,capture_id,owner_id,kind,content) VALUES ($1,$2,$3,'typed',$4)")
         .bind(source_id).bind(capture_id).bind(owner_id).bind(&input.body).execute(&mut *transaction).await?;
-    let item: ItemRow = sqlx::query_as("INSERT INTO knowledge_items(id,capture_id,owner_id,subject,body,visibility) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id,capture_id,subject,body,visibility,revision,created_at")
+    let item: ItemRow = sqlx::query_as("INSERT INTO knowledge_items(id,capture_id,owner_id,subject,body,visibility) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id,capture_id,subject,body,visibility,revision,created_at,recommendation")
         .bind(item_id).bind(capture_id).bind(owner_id).bind(&input.subject).bind(&input.body).bind(input.visibility.as_str())
         .fetch_one(&mut *transaction).await?;
     let response = json!({"item":item_json(&item)});
@@ -1388,7 +1605,7 @@ async fn list_items(
 ) -> ApiResult {
     let owner_id = owner(&state, &headers, true).await?;
     let cursor: Option<ItemCursor> = query.cursor.as_deref().map(decode).transpose()?;
-    let rows: Vec<ItemRow> = sqlx::query_as("SELECT id,capture_id,subject,body,visibility,revision,created_at,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review FROM knowledge_items WHERE owner_id=$1 AND deleted_at IS NULL AND ($2::timestamptz IS NULL OR (created_at,id)<($2::timestamptz,$3::uuid)) ORDER BY created_at DESC,id DESC LIMIT 21")
+    let rows: Vec<ItemRow> = sqlx::query_as("SELECT id,capture_id,subject,body,visibility,revision,created_at,recommendation,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review FROM knowledge_items WHERE owner_id=$1 AND deleted_at IS NULL AND ($2::timestamptz IS NULL OR (created_at,id)<($2::timestamptz,$3::uuid)) ORDER BY created_at DESC,id DESC LIMIT 21")
         .bind(owner_id).bind(cursor.as_ref().map(|c| c.created_at)).bind(cursor.as_ref().map(|c| c.id))
         .fetch_all(&state.pool).await?;
     let next_cursor = if rows.len() > 20 {
@@ -1472,7 +1689,7 @@ async fn change_visibility(
     let id = uuid(&id)?;
     let revision = revision(&headers)?;
     let input: VisibilityInput = parse(&body)?;
-    let updated: Option<ItemRow> = sqlx::query_as("UPDATE knowledge_items SET visibility=$1,revision=revision+1 WHERE id=$2 AND owner_id=$3 AND revision=$4 AND deleted_at IS NULL RETURNING id,capture_id,subject,body,visibility,revision,created_at")
+    let updated: Option<ItemRow> = sqlx::query_as("UPDATE knowledge_items SET visibility=$1,revision=revision+1 WHERE id=$2 AND owner_id=$3 AND revision=$4 AND deleted_at IS NULL RETURNING id,capture_id,subject,body,visibility,revision,created_at,recommendation")
         .bind(input.visibility.as_str()).bind(id).bind(owner_id).bind(revision).fetch_optional(&state.pool).await?;
     if let Some(item) = updated {
         return Ok(ok(json!({"item":item_json(&item)})));
@@ -1508,6 +1725,10 @@ async fn delete_item(
     }
     let capture_id: Uuid = row.try_get("capture_id")?;
     sqlx::query("UPDATE knowledge_items SET deleted_at=now(),revision=revision+1 WHERE id=$1")
+        .bind(id)
+        .execute(&mut *transaction)
+        .await?;
+    sqlx::query("DELETE FROM item_source_support WHERE item_id=$1")
         .bind(id)
         .execute(&mut *transaction)
         .await?;

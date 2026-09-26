@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'identity.dart';
+import 'recommendation_view.dart';
 import 'rekky_api.dart';
 import 'voice_capture_sheet.dart';
 import 'voice_drafts.dart';
@@ -379,6 +380,25 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _refineItem(RekkyItem item) async {
+    final owner = accountId;
+    final scopedApi = RekkyApi(apiBaseUrl)..token = api.token;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Updating your recommendation…')),
+    );
+    try {
+      await scopedApi.refineItem(item);
+      if (!mounted || accountId != owner || !signedIn) return;
+      await _reload();
+      if (!mounted || accountId != owner || !signedIn) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Recommendation updated.')));
+    } catch (error) {
+      if (mounted && accountId == owner) setState(() => issue = '$error');
+    }
+  }
+
   Future<void> _openItem(RekkyItem item) async {
     RekkySource? source;
     try {
@@ -392,147 +412,177 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (sheetContext) => Padding(
-        padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
-        child: SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                item.subject,
-                style: Theme.of(sheetContext).textTheme.headlineSmall,
-              ),
-              const SizedBox(height: 12),
-              if (item.needsReview)
-                const Text('Needs review · saved privately'),
-              Text(item.body),
-              const SizedBox(height: 16),
-              ExpansionTile(
-                tilePadding: EdgeInsets.zero,
-                title: const Text('Private source'),
-                subtitle: Text(
-                  source?.kind == 'transcript'
-                      ? 'Machine transcript · only you'
-                      : 'Original text · only you',
-                ),
+      builder: (sheetContext) => ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(sheetContext).height * .9,
+        ),
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(source?.text ?? 'Source removed'),
+                  Text(
+                    item.subject,
+                    style: Theme.of(sheetContext).textTheme.headlineSmall,
                   ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Audience: ${item.visibility == 'private' ? 'Only me' : 'Friends'}',
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                children: [
-                  if (source != null)
-                    TextButton(
-                      onPressed: () async {
-                        final confirmed = await showDialog<bool>(
-                          context: sheetContext,
-                          builder: (dialogContext) => AlertDialog(
-                            title: const Text('Delete private source?'),
-                            content: const Text(
-                              'Your saved memory stays available, but its original source text will be removed.',
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () =>
-                                    Navigator.pop(dialogContext, false),
-                                child: const Text('Cancel'),
-                              ),
-                              FilledButton(
-                                onPressed: () =>
-                                    Navigator.pop(dialogContext, true),
-                                child: const Text('Delete source'),
-                              ),
-                            ],
-                          ),
-                        );
-                        if (confirmed != true) return;
-                        try {
-                          await api.deleteSource(item, source!);
-                          if (sheetContext.mounted) Navigator.pop(sheetContext);
-                        } catch (error) {
-                          if (mounted) setState(() => issue = '$error');
-                          if (sheetContext.mounted) Navigator.pop(sheetContext);
-                        }
-                      },
-                      child: const Text('Delete source'),
+                  const SizedBox(height: 12),
+                  RecommendationView(item: item, expanded: true),
+                  const SizedBox(height: 16),
+                  ExpansionTile(
+                    tilePadding: EdgeInsets.zero,
+                    title: const Text('Private source'),
+                    subtitle: Text(
+                      source?.kind == 'transcript'
+                          ? 'Machine transcript · only you'
+                          : 'Original text · only you',
                     ),
-                  OutlinedButton(
-                    onPressed: () async {
-                      try {
-                        await api.changeVisibility(
-                          item,
-                          item.visibility == 'private' ? 'friends' : 'private',
-                        );
-                        if (sheetContext.mounted) Navigator.pop(sheetContext);
-                        await _reload();
-                      } catch (error) {
-                        if (mounted) setState(() => issue = '$error');
-                        if (sheetContext.mounted) Navigator.pop(sheetContext);
-                      }
-                    },
-                    child: Text(
-                      item.visibility == 'private'
-                          ? 'Share with friends'
-                          : 'Make private',
-                    ),
+                    children: [
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(source?.text ?? 'Source removed'),
+                      ),
+                    ],
                   ),
-                  TextButton(
-                    onPressed: () async {
-                      final confirmed = await showDialog<bool>(
-                        context: sheetContext,
-                        builder: (dialogContext) => AlertDialog(
-                          title: const Text('Delete this memory?'),
-                          content: const Text(
-                            'The private source text is deleted when no other saved memories use it.',
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () =>
-                                  Navigator.pop(dialogContext, false),
-                              child: const Text('Cancel'),
-                            ),
-                            FilledButton(
-                              onPressed: () =>
-                                  Navigator.pop(dialogContext, true),
-                              child: const Text('Delete'),
-                            ),
-                          ],
+                  const SizedBox(height: 16),
+                  Text(
+                    'Audience: ${item.visibility == 'private' ? 'Only me' : 'Friends'}',
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      if (source?.kind == 'transcript' &&
+                          item.recommendation == null)
+                        FilledButton.tonal(
+                          onPressed: () {
+                            Navigator.pop(sheetContext);
+                            unawaited(_refineItem(item));
+                          },
+                          child: const Text('Update recommendation'),
                         ),
-                      );
-                      if (confirmed != true) return;
-                      try {
-                        await api.delete(item);
-                        if (mounted) {
-                          setState(() {
-                            library.removeWhere((saved) => saved.id == item.id);
-                            matches.removeWhere(
-                              (match) => match['item_id'] == item.id,
+                      if (source != null)
+                        TextButton(
+                          onPressed: () async {
+                            final confirmed = await showDialog<bool>(
+                              context: sheetContext,
+                              builder: (dialogContext) => AlertDialog(
+                                title: const Text('Delete private source?'),
+                                content: const Text(
+                                  'Your saved memory stays available, but its original source text will be removed.',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(dialogContext, false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  FilledButton(
+                                    onPressed: () =>
+                                        Navigator.pop(dialogContext, true),
+                                    child: const Text('Delete source'),
+                                  ),
+                                ],
+                              ),
                             );
-                          });
-                        }
-                        if (sheetContext.mounted) Navigator.pop(sheetContext);
-                        await _reload();
-                      } catch (error) {
-                        if (mounted) setState(() => issue = '$error');
-                        if (sheetContext.mounted) Navigator.pop(sheetContext);
-                      }
-                    },
-                    child: const Text('Delete'),
+                            if (confirmed != true) return;
+                            try {
+                              await api.deleteSource(item, source!);
+                              if (sheetContext.mounted) {
+                                Navigator.pop(sheetContext);
+                              }
+                            } catch (error) {
+                              if (mounted) setState(() => issue = '$error');
+                              if (sheetContext.mounted) {
+                                Navigator.pop(sheetContext);
+                              }
+                            }
+                          },
+                          child: const Text('Delete source'),
+                        ),
+                      OutlinedButton(
+                        onPressed: () async {
+                          try {
+                            await api.changeVisibility(
+                              item,
+                              item.visibility == 'private'
+                                  ? 'friends'
+                                  : 'private',
+                            );
+                            if (sheetContext.mounted) {
+                              Navigator.pop(sheetContext);
+                            }
+                            await _reload();
+                          } catch (error) {
+                            if (mounted) setState(() => issue = '$error');
+                            if (sheetContext.mounted) {
+                              Navigator.pop(sheetContext);
+                            }
+                          }
+                        },
+                        child: Text(
+                          item.visibility == 'private'
+                              ? 'Share with friends'
+                              : 'Make private',
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () async {
+                          final confirmed = await showDialog<bool>(
+                            context: sheetContext,
+                            builder: (dialogContext) => AlertDialog(
+                              title: const Text('Delete this memory?'),
+                              content: const Text(
+                                'The private source text is deleted when no other saved memories use it.',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.pop(dialogContext, false),
+                                  child: const Text('Cancel'),
+                                ),
+                                FilledButton(
+                                  onPressed: () =>
+                                      Navigator.pop(dialogContext, true),
+                                  child: const Text('Delete'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirmed != true) return;
+                          try {
+                            await api.delete(item);
+                            if (mounted) {
+                              setState(() {
+                                library.removeWhere(
+                                  (saved) => saved.id == item.id,
+                                );
+                                matches.removeWhere(
+                                  (match) => match['item_id'] == item.id,
+                                );
+                              });
+                            }
+                            if (sheetContext.mounted) {
+                              Navigator.pop(sheetContext);
+                            }
+                            await _reload();
+                          } catch (error) {
+                            if (mounted) setState(() => issue = '$error');
+                            if (sheetContext.mounted) {
+                              Navigator.pop(sheetContext);
+                            }
+                          }
+                        },
+                        child: const Text('Delete'),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -829,10 +879,9 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
               return Card(
                 child: ListTile(
                   title: Text(item.subject),
-                  subtitle: Text(
-                    '${item.needsReview ? 'Needs review · ' : ''}${item.body}',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                  subtitle: Padding(
+                    padding: const EdgeInsets.only(top: 8, bottom: 12),
+                    child: RecommendationView(item: item),
                   ),
                   trailing: Icon(
                     item.visibility == 'private'

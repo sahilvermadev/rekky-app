@@ -7,3 +7,5 @@ Start with signed-in account sessions, captures, owner-only source transcripts, 
 Legacy Zod definitions are reference material only. Domain models must remain independent of generated transport models.
 
 The one-tap flow adds `POST/GET/DELETE /v1/remember/{draft_id}` and queued/saved/partial/cancelled receipt fixtures. POST returns 202 after durable upload acceptance, not after extraction. Poll GET for `transcribed` to delete local audio and `capture_status` completed/partial to refresh Library. Item lists include `needs_review` for partial captures. See [one-tap contract and limits](../../docs/ONE_TAP_REMEMBER.md).
+
+Understanding v2 adds an optional `recommendation` item field (summary, entity kind/shelf, experience, observations, location roles and use cases); older/text items may have null/absent data. The `structured_recommendation` wire fixture is consumed by both clients. Raw source support is not part of this field. `POST /v1/items/{id}/refine` uses If-Match for an explicit in-place upgrade of a legacy single-item voice capture and returns the existing extraction-items envelope.

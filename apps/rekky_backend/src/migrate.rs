@@ -29,6 +29,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "007_auto_voice_processing.sql",
         include_str!("../migrations/007_auto_voice_processing.sql"),
     ),
+    (
+        "008_structured_recommendations.sql",
+        include_str!("../migrations/008_structured_recommendations.sql"),
+    ),
 ];
 
 pub async fn run(pool: &PgPool) -> Result<(), sqlx::Error> {

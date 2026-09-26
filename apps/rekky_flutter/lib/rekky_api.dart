@@ -23,9 +23,11 @@ class RekkyItem {
     required this.revision,
     required this.createdAt,
     this.needsReview = false,
+    this.recommendation,
   });
   final String id, captureId, subject, body, visibility, createdAt;
   final bool needsReview;
+  final RekkyRecommendation? recommendation;
   final int revision;
   factory RekkyItem.fromJson(Map<String, dynamic> json) => RekkyItem(
     id: json['id'] as String,
@@ -36,6 +38,62 @@ class RekkyItem {
     revision: json['revision'] as int,
     createdAt: json['created_at'] as String,
     needsReview: json['needs_review'] as bool? ?? false,
+    recommendation: json['recommendation'] is Map<String, dynamic>
+        ? RekkyRecommendation.fromJson(
+            json['recommendation'] as Map<String, dynamic>,
+          )
+        : null,
+  );
+}
+
+class RecommendationDetail {
+  const RecommendationDetail(this.kind, this.text);
+  final String kind, text;
+}
+
+class RekkyRecommendation {
+  const RekkyRecommendation({
+    required this.summary,
+    required this.shelf,
+    required this.experience,
+    required this.observations,
+    required this.locations,
+    required this.useCases,
+  });
+  final String summary, shelf, experience;
+  final List<RecommendationDetail> observations, locations;
+  final List<String> useCases;
+  String get experienceLabel => switch (experience) {
+    'firsthand' => 'Your experience',
+    'secondhand' => 'Heard from others',
+    'interest' => 'Not tried yet',
+    _ => 'From your note',
+  };
+  String? get primaryLocation => locations
+      .where(
+        (location) => location.kind == 'venue' || location.kind == 'practice',
+      )
+      .map((location) => location.text)
+      .firstOrNull;
+  List<RecommendationDetail> get cautions =>
+      observations.where((o) => o.kind == 'caution').toList();
+  factory RekkyRecommendation.fromJson(
+    Map<String, dynamic> json,
+  ) => RekkyRecommendation(
+    summary: json['summary'] as String,
+    shelf: json['shelf'] as String,
+    experience: json['experience'] as String,
+    observations: (json['observations'] as List)
+        .map(
+          (o) => RecommendationDetail(o['kind'] as String, o['text'] as String),
+        )
+        .toList(),
+    locations: (json['locations'] as List)
+        .map(
+          (o) => RecommendationDetail(o['role'] as String, o['text'] as String),
+        )
+        .toList(),
+    useCases: (json['use_cases'] as List).cast<String>(),
   );
 }
 
@@ -169,6 +227,15 @@ class RekkyApi {
       'POST',
       '/v1/me/transcript-extraction-permission',
       body: {'enabled': enabled, if (enabled) 'disclosure_version': 1},
+    );
+  }
+
+  Future<void> refineItem(RekkyItem item) async {
+    await request(
+      'POST',
+      '/v1/items/${item.id}/refine',
+      headers: {'if-match': '${item.revision}'},
+      timeout: const Duration(seconds: 90),
     );
   }
 
