@@ -87,6 +87,7 @@ impl VoiceTranscriber for BlockingTranscriber {
 struct TestApp {
     pool: PgPool,
     app: Router,
+    state: AppState,
     ids: Vec<Uuid>,
 }
 impl TestApp {
@@ -100,15 +101,17 @@ impl TestApp {
         let verifier = Arc::new(TestVerifier {
             marker: Uuid::new_v4(),
         });
-        let app = router(AppState {
+        let state = AppState {
             pool: pool.clone(),
             verifier,
             transcriber,
             extractor: Arc::new(TestExtractor),
-        });
+        };
+        let app = router(state.clone());
         Some(Self {
             pool,
             app,
+            state,
             ids: vec![],
         })
     }
@@ -220,6 +223,10 @@ async fn wire_fixtures() {
         "voice_permission_required",
         "transcript_extraction_permission",
         "voice_knowledge_saved",
+        "remember_queued",
+        "remember_saved",
+        "remember_partial",
+        "remember_cancelled",
     ] {
         assert!(names.contains(&name), "missing {name}");
     }
@@ -1177,5 +1184,263 @@ async fn synthetic_ask_baseline() {
     assert_eq!(metrics.values().map(|m| m.0).sum::<usize>(), 8);
     assert_eq!(metrics.values().map(|m| m.1).sum::<usize>(), 9);
     assert_eq!(forbidden.len(), 3);
+    t.cleanup().await;
+}
+
+#[tokio::test]
+async fn remember_finishes_without_a_session_and_purges_audio_atomically() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    let (owner, token) = t.sign_in("google", "valid-a").await;
+    let (_, other) = t.sign_in("google", "valid-b").await;
+    for who in [&token, &other] {
+        assert_eq!(
+            t.call(
+                Method::POST,
+                "/v1/me/visibility-disclosure",
+                Some(who),
+                Some(json!({"accept":true})),
+                &[]
+            )
+            .await
+            .0,
+            StatusCode::OK
+        );
+    }
+    let mut audio = vec![0u8; 256];
+    audio[4..8].copy_from_slice(b"ftyp");
+    let path = "/v1/remember/automatic-recording-001";
+    let now = chrono::Utc::now().timestamp_millis();
+    assert_eq!(
+        t.call_audio(path, &token, audio.clone(), now).await.0,
+        StatusCode::FORBIDDEN
+    );
+    for permission in ["voice-transcription", "transcript-extraction"] {
+        assert_eq!(
+            t.call(
+                Method::POST,
+                &format!("/v1/me/{permission}-permission"),
+                Some(&token),
+                Some(json!({"enabled":true,"disclosure_version":1})),
+                &[]
+            )
+            .await
+            .0,
+            StatusCode::OK
+        );
+    }
+    let (status, receipt) = t.call_audio(path, &token, audio.clone(), now).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    assert_eq!(receipt["remember"]["status"], "queued");
+    assert_eq!(receipt["remember"]["transcript_saved"], false);
+    assert_eq!(
+        t.call_audio(path, &token, audio.clone(), now).await.0,
+        StatusCode::OK
+    );
+    let mut different = audio.clone();
+    different[100] = 3;
+    assert_eq!(
+        t.call_audio(path, &token, different, now).await.0,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        t.call(Method::GET, path, Some(&other), None, &[]).await.0,
+        StatusCode::NOT_FOUND
+    );
+    // The worker has no session token and does not depend on the phone polling.
+    assert_eq!(
+        t.call(Method::DELETE, "/v1/session", Some(&token), None, &[])
+            .await
+            .0,
+        StatusCode::NO_CONTENT
+    );
+    rekky_backend::app::process_pending_voice(&t.state, Some(owner))
+        .await
+        .unwrap();
+    let (status, audio_gone, capture_id): (String, bool, Uuid) = sqlx::query_as(
+        "SELECT status,audio IS NULL,capture_id FROM voice_uploads WHERE account_id=$1",
+    )
+    .bind(owner)
+    .fetch_one(&t.pool)
+    .await
+    .unwrap();
+    assert_eq!(status, "transcribed");
+    assert!(audio_gone);
+    let count:i64=sqlx::query_scalar("SELECT count(*) FROM knowledge_items WHERE capture_id=$1 AND visibility='private' AND deleted_at IS NULL")
+        .bind(capture_id).fetch_one(&t.pool).await.unwrap();
+    assert_eq!(count, 1);
+    rekky_backend::app::process_pending_voice(&t.state, Some(owner))
+        .await
+        .unwrap();
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM knowledge_items WHERE capture_id=$1")
+        .bind(capture_id)
+        .fetch_one(&t.pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+    let (_, new_token) = t.sign_in("google", "valid-a").await;
+    let (_, receipt) = t.call(Method::GET, path, Some(&new_token), None, &[]).await;
+    assert_eq!(receipt["remember"]["capture_status"], "completed");
+    assert_eq!(receipt["remember"]["transcript_saved"], true);
+    let (_, answer) = t
+        .call(
+            Method::POST,
+            "/v1/ask",
+            Some(&new_token),
+            Some(json!({"question":"kitchen tap"})),
+            &[],
+        )
+        .await;
+    assert_eq!(answer["results"].as_array().unwrap().len(), 1);
+    t.cleanup().await;
+}
+
+#[tokio::test]
+async fn remember_withdrawal_purges_queued_audio_and_never_restarts_it() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    let (owner, token) = t.sign_in("google", "valid-a").await;
+    t.call(
+        Method::POST,
+        "/v1/me/visibility-disclosure",
+        Some(&token),
+        Some(json!({"accept":true})),
+        &[],
+    )
+    .await;
+    for permission in ["voice-transcription", "transcript-extraction"] {
+        t.call(
+            Method::POST,
+            &format!("/v1/me/{permission}-permission"),
+            Some(&token),
+            Some(json!({"enabled":true,"disclosure_version":1})),
+            &[],
+        )
+        .await;
+    }
+    let mut audio = vec![0u8; 256];
+    audio[4..8].copy_from_slice(b"ftyp");
+    let path = "/v1/remember/automatic-withdraw-001";
+    assert_eq!(
+        t.call_audio(path, &token, audio, chrono::Utc::now().timestamp_millis())
+            .await
+            .0,
+        StatusCode::ACCEPTED
+    );
+    t.call(
+        Method::POST,
+        "/v1/me/transcript-extraction-permission",
+        Some(&token),
+        Some(json!({"enabled":false})),
+        &[],
+    )
+    .await;
+    t.call(
+        Method::POST,
+        "/v1/me/transcript-extraction-permission",
+        Some(&token),
+        Some(json!({"enabled":true,"disclosure_version":1})),
+        &[],
+    )
+    .await;
+    rekky_backend::app::process_pending_voice(&t.state, Some(owner))
+        .await
+        .unwrap();
+    let (status, gone): (String, bool) =
+        sqlx::query_as("SELECT status,audio IS NULL FROM voice_uploads WHERE account_id=$1")
+            .bind(owner)
+            .fetch_one(&t.pool)
+            .await
+            .unwrap();
+    assert_eq!(status, "cancelled");
+    assert!(gone);
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM voice_transcription_jobs WHERE account_id=$1")
+            .bind(owner)
+            .fetch_one(&t.pool)
+            .await
+            .unwrap();
+    assert_eq!(count, 0);
+    t.cleanup().await;
+}
+
+#[tokio::test]
+async fn remember_cancellation_fences_delayed_upload_and_inflight_transcription() {
+    let transcriber = Arc::new(BlockingTranscriber {
+        started: Notify::new(),
+        release: Notify::new(),
+    });
+    let Some(mut t) = TestApp::new_with_transcriber(transcriber.clone()).await else {
+        return;
+    };
+    let (owner, token) = t.sign_in("google", "valid-a").await;
+    t.call(
+        Method::POST,
+        "/v1/me/visibility-disclosure",
+        Some(&token),
+        Some(json!({"accept":true})),
+        &[],
+    )
+    .await;
+    for permission in ["voice-transcription", "transcript-extraction"] {
+        t.call(
+            Method::POST,
+            &format!("/v1/me/{permission}-permission"),
+            Some(&token),
+            Some(json!({"enabled":true,"disclosure_version":1})),
+            &[],
+        )
+        .await;
+    }
+    let mut audio = vec![0u8; 256];
+    audio[4..8].copy_from_slice(b"ftyp");
+    let now = chrono::Utc::now().timestamp_millis();
+    let delayed = "/v1/remember/cancelled-before-upload-001";
+    assert_eq!(
+        t.call(Method::DELETE, delayed, Some(&token), None, &[])
+            .await
+            .0,
+        StatusCode::NO_CONTENT
+    );
+    let (_, receipt) = t.call_audio(delayed, &token, audio.clone(), now).await;
+    assert_eq!(receipt["remember"]["status"], "cancelled");
+    let path = "/v1/remember/cancelled-during-upload-001";
+    assert_eq!(
+        t.call_audio(path, &token, audio, now).await.0,
+        StatusCode::ACCEPTED
+    );
+    let state = t.state.clone();
+    let worker = tokio::spawn(async move {
+        rekky_backend::app::process_pending_voice(&state, Some(owner))
+            .await
+            .unwrap();
+    });
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        transcriber.started.notified(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        t.call(Method::DELETE, path, Some(&token), None, &[])
+            .await
+            .0,
+        StatusCode::NO_CONTENT
+    );
+    transcriber.release.notify_one();
+    tokio::time::timeout(std::time::Duration::from_secs(5), worker)
+        .await
+        .unwrap()
+        .unwrap();
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM captures WHERE owner_id=$1")
+        .bind(owner)
+        .fetch_one(&t.pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+    let remaining:i64=sqlx::query_scalar("SELECT count(*) FROM voice_uploads WHERE account_id=$1 AND (audio IS NOT NULL OR status!='cancelled')").bind(owner).fetch_one(&t.pool).await.unwrap();
+    assert_eq!(remaining, 0);
     t.cleanup().await;
 }

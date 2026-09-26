@@ -1,5 +1,3 @@
-import 'dart:convert';
-import 'dart:math';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -8,6 +6,7 @@ import 'identity.dart';
 import 'rekky_api.dart';
 import 'voice_capture_sheet.dart';
 import 'voice_drafts.dart';
+import 'voice_processing.dart';
 
 const apiBaseUrl = String.fromEnvironment('API_BASE_URL');
 void main() => runApp(const RekkyApp());
@@ -35,30 +34,68 @@ class RekkyHome extends StatefulWidget {
   State<RekkyHome> createState() => _RekkyHomeState();
 }
 
-class _RekkyHomeState extends State<RekkyHome> {
+class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
   final api = RekkyApi(apiBaseUrl);
   final identity = IdentityService();
   final voiceStore = VoiceDraftStore();
   final question = TextEditingController();
   bool busy = true, signedIn = false, disclosed = false, searching = false;
+  bool recordingScreenOpen = false;
   int destination = 0;
   String? issue;
   List<RekkyItem> library = [];
   List<Map<String, dynamic>> matches = [];
   List<VoiceDraft> voiceDrafts = [];
   String? accountId;
+  VoiceProcessingCoordinator? voiceProcessing;
+  String? processingMessage;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _restore();
   }
 
   @override
   void dispose() {
     question.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    voiceProcessing?.stop();
     unawaited(voiceStore.dispose());
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      voiceProcessing?.resume();
+      if (signedIn && disclosed) unawaited(_reload());
+    } else if (state == AppLifecycleState.paused) {
+      voiceProcessing?.pause();
+    }
+  }
+
+  void _startVoiceProcessing() {
+    final owner = accountId;
+    if (owner == null || !disclosed) return;
+    voiceProcessing?.stop();
+    voiceProcessing = VoiceProcessingCoordinator(
+      ownerId: owner,
+      store: voiceStore,
+      api: RekkyApi(apiBaseUrl)..token = api.token,
+      onChanged: () async {
+        if (mounted && accountId == owner && signedIn) {
+          await _reloadVoiceAndLibrary();
+        }
+      },
+      onStatus: (message) {
+        if (mounted && accountId == owner) {
+          setState(() => processingMessage = message);
+        }
+      },
+    );
+    unawaited(voiceProcessing!.process());
   }
 
   Future<void> _restore() async {
@@ -72,7 +109,16 @@ class _RekkyHomeState extends State<RekkyHome> {
             (me['account']
                     as Map<String, dynamic>)['visibility_disclosure_accepted']
                 as bool;
-        if (disclosed) library = await api.items();
+        if (disclosed) {
+          final voice = await api.voicePermission();
+          final extraction = await api.extractionPermission();
+          if ((voice['voice_transcription'] as Map)['generation'] == 0 &&
+              (extraction['transcript_extraction'] as Map)['generation'] == 0) {
+            disclosed = false;
+          } else {
+            library = await api.items();
+          }
+        }
         voiceDrafts = await voiceStore.forOwner(accountId!);
       }
     } on ApiFailure catch (failure) {
@@ -86,6 +132,7 @@ class _RekkyHomeState extends State<RekkyHome> {
       issue = '$error';
     }
     if (mounted) setState(() => busy = false);
+    if (signedIn && disclosed) _startVoiceProcessing();
   }
 
   Future<void> _signIn(String provider) async {
@@ -108,12 +155,22 @@ class _RekkyHomeState extends State<RekkyHome> {
           (me['account']
                   as Map<String, dynamic>)['visibility_disclosure_accepted']
               as bool;
-      if (disclosed) library = await api.items();
+      if (disclosed) {
+        final voice = await api.voicePermission();
+        final extraction = await api.extractionPermission();
+        if ((voice['voice_transcription'] as Map)['generation'] == 0 &&
+            (extraction['transcript_extraction'] as Map)['generation'] == 0) {
+          disclosed = false;
+        } else {
+          library = await api.items();
+        }
+      }
       voiceDrafts = await voiceStore.forOwner(accountId!);
     } catch (error) {
       issue = '$error';
     }
     if (mounted) setState(() => busy = false);
+    if (signedIn && disclosed) _startVoiceProcessing();
   }
 
   Future<void> _accept() async {
@@ -123,15 +180,20 @@ class _RekkyHomeState extends State<RekkyHome> {
     });
     try {
       await api.acceptDisclosure();
+      await api.setVoicePermission(true);
+      await api.setExtractionPermission(true);
       disclosed = true;
       library = await api.items();
     } catch (error) {
       issue = '$error';
     }
     if (mounted) setState(() => busy = false);
+    if (disclosed) _startVoiceProcessing();
   }
 
   Future<void> _signOut() async {
+    voiceProcessing?.stop();
+    voiceProcessing = null;
     setState(() => busy = true);
     var remoteRevoked = true;
     try {
@@ -148,6 +210,7 @@ class _RekkyHomeState extends State<RekkyHome> {
         library = [];
         matches = [];
         voiceDrafts = [];
+        processingMessage = null;
         accountId = null;
         busy = false;
         issue = remoteRevoked ? null : 'Signed out on this device. Server revocation could not be confirmed.';
@@ -156,9 +219,11 @@ class _RekkyHomeState extends State<RekkyHome> {
   }
 
   Future<void> _reload() async {
+    final owner = accountId;
+    if (owner == null || !signedIn || !disclosed) return;
     try {
       final items = await api.items();
-      if (mounted) {
+      if (mounted && accountId == owner && signedIn) {
         setState(() {
           library = items;
           issue = null;
@@ -188,16 +253,16 @@ class _RekkyHomeState extends State<RekkyHome> {
   Future<bool> _recordVoiceDraft() async {
     final owner = accountId;
     if (owner == null) return false;
-    return await showModalBottomSheet<bool>(
-          context: context,
-          isScrollControlled: true,
-          isDismissible: false,
-          enableDrag: false,
-          showDragHandle: true,
-          builder: (_) => VoiceCaptureSheet(
-            ownerId: owner,
-            store: voiceStore,
-            onChanged: _reloadVoiceDrafts,
+    return await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => VoiceCaptureSheet(
+              ownerId: owner,
+              store: voiceStore,
+              onChanged: _reloadVoiceDrafts,
+              onCaptured: () =>
+                  unawaited(voiceProcessing?.process() ?? Future<void>.value()),
+            ),
           ),
         ) ??
         false;
@@ -225,6 +290,60 @@ class _RekkyHomeState extends State<RekkyHome> {
     );
   }
 
+  Future<void> _processingSettings() async {
+    final owner = accountId;
+    if (owner == null) return;
+    try {
+      final voice = await api.voicePermission();
+      final extraction = await api.extractionPermission();
+      final enabled =
+          (voice['voice_transcription'] as Map)['enabled'] == true &&
+          (extraction['transcript_extraction'] as Map)['enabled'] == true;
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(
+            enabled ? 'Voice processing is on' : 'Turn on voice processing?',
+          ),
+          content: Text(
+            enabled
+                ? 'Turning this off stops new voice and transcript processing. Unprocessed recordings on this phone will be deleted; saved memories and transcripts remain.'
+                : 'Rekky will send new recordings and their private transcript text to OpenAI to make recommendations. Audio is deleted after a usable transcript is saved. Existing saved content remains private until you choose to share it.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(enabled ? 'Turn off' : 'Turn on'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+      if (enabled) {
+        voiceProcessing?.stop();
+        await api.setVoicePermission(false);
+        await api.setExtractionPermission(false);
+        await voiceStore.deleteAll(owner);
+        await voiceStore.clearPendingRemembers(owner);
+        if (mounted) setState(() => processingMessage = null);
+      } else {
+        await api.setVoicePermission(true);
+        await api.setExtractionPermission(true);
+        unawaited(voiceProcessing?.process() ?? Future<void>.value());
+      }
+      _startVoiceProcessing();
+      await _reloadVoiceDrafts();
+    } catch (error) {
+      _startVoiceProcessing();
+      if (mounted) setState(() => issue = '$error');
+    }
+  }
+
   Future<void> _ask() async {
     final q = question.text.trim();
     if (q.isEmpty) return;
@@ -241,22 +360,23 @@ class _RekkyHomeState extends State<RekkyHome> {
     if (mounted) setState(() => searching = false);
   }
 
-  String _newKey() => base64UrlEncode(
-    List<int>.generate(24, (_) => Random.secure().nextInt(256)),
-  ).replaceAll('=', '');
-
   Future<void> _remember() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => _RememberSheet(
-        api: api,
-        newKey: _newKey,
-        onSaved: _reload,
-        onRecord: _recordVoiceDraft,
-      ),
-    );
+    if (recordingScreenOpen) return;
+    recordingScreenOpen = true;
+    try {
+      final saved = await _recordVoiceDraft();
+      if (saved && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Got it. We’ll add it to your Library.'),
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) setState(() => issue = '$error');
+    } finally {
+      recordingScreenOpen = false;
+    }
   }
 
   Future<void> _openItem(RekkyItem item) async {
@@ -285,16 +405,25 @@ class _RekkyHomeState extends State<RekkyHome> {
                 style: Theme.of(sheetContext).textTheme.headlineSmall,
               ),
               const SizedBox(height: 12),
+              if (item.needsReview)
+                const Text('Needs review · saved privately'),
               Text(item.body),
               const SizedBox(height: 16),
-              Text(
-                source?.kind == 'transcript'
-                    ? 'Machine transcript · only you can see this'
-                    : 'Source text · only you can see this',
-                style: Theme.of(sheetContext).textTheme.labelLarge,
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                title: const Text('Private source'),
+                subtitle: Text(
+                  source?.kind == 'transcript'
+                      ? 'Machine transcript · only you'
+                      : 'Original text · only you',
+                ),
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(source?.text ?? 'Source removed'),
+                  ),
+                ],
               ),
-              const SizedBox(height: 4),
-              Text(source?.text ?? 'Source removed'),
               const SizedBox(height: 16),
               Text(
                 'Audience: ${item.visibility == 'private' ? 'Only me' : 'Friends'}',
@@ -484,7 +613,7 @@ class _RekkyHomeState extends State<RekkyHome> {
                 ),
                 const SizedBox(height: 12),
                 const Text(
-                  'Your source text and future voice transcripts stay private. Voice audio will be temporary and deleted after accepted transcription.',
+                  'When you use Remember, Rekky automatically sends the selected audio and its private transcript text to OpenAI to create your recommendation. Audio is deleted after a usable transcript is saved. The transcript stays private. You can turn future processing off in settings.',
                 ),
                 const Spacer(),
                 if (issue != null)
@@ -508,10 +637,24 @@ class _RekkyHomeState extends State<RekkyHome> {
       appBar: AppBar(
         title: const Text('Rekky'),
         actions: [
-          IconButton(
-            tooltip: 'Sign out',
-            onPressed: _signOut,
-            icon: const Icon(Icons.logout),
+          PopupMenuButton<String>(
+            tooltip: 'Account and recovery',
+            onSelected: (value) {
+              if (value == 'recordings') unawaited(_openVoiceDrafts());
+              if (value == 'processing') unawaited(_processingSettings());
+              if (value == 'signout') unawaited(_signOut());
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: 'processing',
+                child: Text('Voice processing'),
+              ),
+              PopupMenuItem(
+                value: 'recordings',
+                child: Text('Pending recordings'),
+              ),
+              PopupMenuItem(value: 'signout', child: Text('Sign out')),
+            ],
           ),
         ],
       ),
@@ -532,21 +675,68 @@ class _RekkyHomeState extends State<RekkyHome> {
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _remember,
-        icon: const Icon(Icons.add),
-        label: const Text('Remember'),
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: destination,
-        onDestinationSelected: (value) => setState(() => destination = value),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.search), label: 'Ask'),
-          NavigationDestination(
-            icon: Icon(Icons.bookmarks_outlined),
-            label: 'Library',
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: Semantics(
+                  selected: destination == 0,
+                  child: TextButton(
+                    style: TextButton.styleFrom(
+                      backgroundColor: destination == 0
+                          ? Theme.of(context).colorScheme.secondaryContainer
+                          : null,
+                    ),
+                    onPressed: () => setState(() => destination = 0),
+                    child: const Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [Icon(Icons.search), Text('Ask')],
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: FilledButton(
+                  onPressed: _remember,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 10),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.mic),
+                        Text('Remember', textAlign: TextAlign.center),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Semantics(
+                  selected: destination == 1,
+                  child: TextButton(
+                    style: TextButton.styleFrom(
+                      backgroundColor: destination == 1
+                          ? Theme.of(context).colorScheme.secondaryContainer
+                          : null,
+                    ),
+                    onPressed: () => setState(() => destination = 1),
+                    child: const Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.bookmarks_outlined),
+                        Text('Library'),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -578,18 +768,6 @@ class _RekkyHomeState extends State<RekkyHome> {
         const SizedBox(height: 8),
         const Text(
           'Searching your own saved memories. Friend answers come later.',
-        ),
-        const SizedBox(height: 16),
-        Card(
-          child: ListTile(
-            leading: const Icon(Icons.mic_none),
-            title: const Text('Voice drafts and private transcripts'),
-            subtitle: Text(
-              '${voiceDrafts.length} local draft${voiceDrafts.length == 1 ? '' : 's'}',
-            ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: _openVoiceDrafts,
-          ),
         ),
         const SizedBox(height: 20),
         if (searching) const LinearProgressIndicator(),
@@ -630,21 +808,29 @@ class _RekkyHomeState extends State<RekkyHome> {
     onRefresh: _reload,
     child: library.isEmpty
         ? ListView(
-            children: const [
-              SizedBox(height: 160),
-              Center(child: Text('Your saved memories will appear here.')),
+            children: [
+              if (processingMessage != null)
+                ListTile(title: Text(processingMessage!)),
+              const SizedBox(height: 160),
+              const Center(
+                child: Text('Your saved memories will appear here.'),
+              ),
             ],
           )
         : ListView.builder(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-            itemCount: library.length,
+            itemCount: library.length + (processingMessage == null ? 0 : 1),
             itemBuilder: (context, index) {
+              if (processingMessage != null && index == 0) {
+                return ListTile(title: Text(processingMessage!));
+              }
+              if (processingMessage != null) index -= 1;
               final item = library[index];
               return Card(
                 child: ListTile(
                   title: Text(item.subject),
                   subtitle: Text(
-                    item.body,
+                    '${item.needsReview ? 'Needs review · ' : ''}${item.body}',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -658,140 +844,5 @@ class _RekkyHomeState extends State<RekkyHome> {
               );
             },
           ),
-  );
-}
-
-class _RememberSheet extends StatefulWidget {
-  const _RememberSheet({
-    required this.api,
-    required this.newKey,
-    required this.onSaved,
-    required this.onRecord,
-  });
-
-  final RekkyApi api;
-  final String Function() newKey;
-  final Future<void> Function() onSaved;
-  final Future<bool> Function() onRecord;
-
-  @override
-  State<_RememberSheet> createState() => _RememberSheetState();
-}
-
-class _RememberSheetState extends State<_RememberSheet> {
-  final subject = TextEditingController();
-  final body = TextEditingController();
-  String visibility = 'friends';
-  bool saving = false;
-  String? formIssue, pendingPayload, pendingKey;
-
-  @override
-  void dispose() {
-    subject.dispose();
-    body.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    final title = subject.text.trim();
-    final thought = body.text.trim();
-    if (title.isEmpty || thought.isEmpty) {
-      setState(() => formIssue = 'Add a subject and a thought.');
-      return;
-    }
-    setState(() {
-      saving = true;
-      formIssue = null;
-    });
-    try {
-      final payload = jsonEncode([title, thought, visibility]);
-      if (pendingPayload != payload) {
-        pendingPayload = payload;
-        pendingKey = widget.newKey();
-      }
-      await widget.api.save(title, thought, visibility, pendingKey!);
-      if (mounted) Navigator.pop(context);
-      await widget.onSaved();
-    } catch (error) {
-      if (mounted) {
-        setState(() {
-          saving = false;
-          formIssue = '$error';
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: EdgeInsets.fromLTRB(
-      24,
-      8,
-      24,
-      MediaQuery.viewInsetsOf(context).bottom + 24,
-    ),
-    child: SingleChildScrollView(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Keep something useful',
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Type a thought, or record a local voice draft. Transcription and organization are coming next.',
-          ),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: () async {
-              final saved = await widget.onRecord();
-              if (saved && mounted) Navigator.pop(this.context);
-            },
-            icon: const Icon(Icons.mic_none),
-            label: const Text('Record voice draft'),
-          ),
-          const SizedBox(height: 20),
-          TextField(
-            controller: subject,
-            maxLength: 120,
-            decoration: const InputDecoration(
-              labelText: 'Who or what is this about?',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          TextField(
-            controller: body,
-            minLines: 3,
-            maxLines: 7,
-            maxLength: 20000,
-            decoration: const InputDecoration(
-              labelText: 'What should you remember?',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(visibility == 'private' ? 'Only me' : 'Friends'),
-            subtitle: const Text(
-              'Friends items will be visible to accepted friends when sharing launches.',
-            ),
-            value: visibility == 'private',
-            onChanged: (value) =>
-                setState(() => visibility = value ? 'private' : 'friends'),
-          ),
-          if (formIssue != null)
-            Text(
-              formIssue!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-          FilledButton(
-            onPressed: saving ? null : _save,
-            child: Text(saving ? 'Saving…' : 'Save memory'),
-          ),
-        ],
-      ),
-    ),
   );
 }

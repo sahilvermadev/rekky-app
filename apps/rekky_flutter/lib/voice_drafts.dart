@@ -55,10 +55,12 @@ class VoiceDraft {
     required this.status,
     required this.createdAtMs,
     required this.bytes,
+    this.autoProcess = false,
   });
 
   final String id, ownerId, status;
   final int createdAtMs, bytes;
+  final bool autoProcess;
 
   factory VoiceDraft.fromRow(Map<String, Object?> row) => VoiceDraft(
     id: row['id'] as String,
@@ -66,6 +68,7 @@ class VoiceDraft {
     status: row['status'] as String,
     createdAtMs: row['created_at_ms'] as int,
     bytes: row['bytes'] as int,
+    autoProcess: (row['auto_process'] as int? ?? 0) == 1,
   );
 }
 
@@ -106,7 +109,7 @@ class VoiceDraftStore {
     return (factory ?? databaseFactory).openDatabase(
       '${support.path}/voice_drafts_v1.db',
       options: OpenDatabaseOptions(
-        version: 2,
+        version: 3,
         onCreate: (db, _) async {
           await db.execute('''
           CREATE TABLE voice_drafts (
@@ -115,12 +118,19 @@ class VoiceDraftStore {
             status TEXT NOT NULL CHECK(status IN ('recording','ready','interrupted','missing','accepted','deleting')),
             path TEXT NOT NULL,
             bytes INTEGER NOT NULL DEFAULT 0,
-            created_at_ms INTEGER NOT NULL
+            created_at_ms INTEGER NOT NULL,
+            auto_process INTEGER NOT NULL DEFAULT 0
           )
         ''');
           await db.execute(
             'CREATE INDEX voice_drafts_owner_idx ON voice_drafts(owner_id, created_at_ms DESC)',
           );
+          await db.execute('''
+            CREATE TABLE pending_remembers (
+              draft_id TEXT PRIMARY KEY,
+              owner_id TEXT NOT NULL
+            )
+          ''');
         },
         onUpgrade: (db, oldVersion, _) async {
           if (oldVersion < 2) {
@@ -134,7 +144,8 @@ class VoiceDraftStore {
                 status TEXT NOT NULL CHECK(status IN ('recording','ready','interrupted','missing','accepted','deleting')),
                 path TEXT NOT NULL,
                 bytes INTEGER NOT NULL DEFAULT 0,
-                created_at_ms INTEGER NOT NULL
+                created_at_ms INTEGER NOT NULL,
+                auto_process INTEGER NOT NULL DEFAULT 0
               )
             ''');
             await db.execute('''
@@ -145,6 +156,19 @@ class VoiceDraftStore {
             await db.execute(
               'CREATE INDEX voice_drafts_owner_idx ON voice_drafts(owner_id, created_at_ms DESC)',
             );
+          }
+          if (oldVersion < 3) {
+            if (oldVersion >= 2) {
+              await db.execute(
+                'ALTER TABLE voice_drafts ADD COLUMN auto_process INTEGER NOT NULL DEFAULT 0',
+              );
+            }
+            await db.execute('''
+              CREATE TABLE pending_remembers (
+                draft_id TEXT PRIMARY KEY,
+                owner_id TEXT NOT NULL
+              )
+            ''');
           }
         },
       ),
@@ -255,7 +279,12 @@ class VoiceDraftStore {
       final protectedPath = await _promote(id, path);
       await db.update(
         'voice_drafts',
-        {'status': 'ready', 'bytes': bytes, 'path': protectedPath},
+        {
+          'status': 'ready',
+          'bytes': bytes,
+          'path': protectedPath,
+          'auto_process': 1,
+        },
         where: 'id = ? AND owner_id = ?',
         whereArgs: [id, ownerId],
       );
@@ -268,6 +297,7 @@ class VoiceDraftStore {
         ...rows.single,
         'status': 'ready',
         'bytes': bytes,
+        'auto_process': 1,
       });
     } catch (_) {
       _activeId = null;
@@ -340,6 +370,43 @@ class VoiceDraftStore {
       whereArgs: [id, ownerId, 'ready'],
     );
     await _retryPendingDeletion(db);
+  }
+
+  Future<void> queueRemember(String ownerId, String draftId) async {
+    final db = await _database;
+    await db.insert('pending_remembers', {
+      'draft_id': draftId,
+      'owner_id': ownerId,
+    }, conflictAlgorithm: ConflictAlgorithm.ignore);
+  }
+
+  Future<List<String>> pendingRemembers(String ownerId) async {
+    final db = await _database;
+    final rows = await db.query(
+      'pending_remembers',
+      columns: ['draft_id'],
+      where: 'owner_id = ?',
+      whereArgs: [ownerId],
+    );
+    return rows.map((row) => row['draft_id'] as String).toList();
+  }
+
+  Future<void> acknowledgeRemember(String ownerId, String draftId) async {
+    final db = await _database;
+    await db.delete(
+      'pending_remembers',
+      where: 'owner_id = ? AND draft_id = ?',
+      whereArgs: [ownerId, draftId],
+    );
+  }
+
+  Future<void> clearPendingRemembers(String ownerId) async {
+    final db = await _database;
+    await db.delete(
+      'pending_remembers',
+      where: 'owner_id = ?',
+      whereArgs: [ownerId],
+    );
   }
 
   Future<void> deleteAll(String ownerId) async {
@@ -434,7 +501,14 @@ class VoiceDraftStore {
     }
     final rows = await db.query(
       'voice_drafts',
-      columns: ['id', 'owner_id', 'status', 'bytes', 'created_at_ms'],
+      columns: [
+        'id',
+        'owner_id',
+        'status',
+        'bytes',
+        'created_at_ms',
+        'auto_process',
+      ],
       where: "owner_id = ? AND status NOT IN ('accepted','deleting')",
       whereArgs: [ownerId],
       orderBy: 'created_at_ms DESC',

@@ -49,6 +49,13 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/v1/voice-captures", get(list_voice_captures))
         .route(
+            "/v1/remember/{id}",
+            post(queue_voice)
+                .get(remember_status)
+                .delete(cancel_remember)
+                .layer(DefaultBodyLimit::max(5 * 1024 * 1024)),
+        )
+        .route(
             "/v1/me/transcript-extraction-permission",
             get(extraction_permission).post(set_extraction_permission),
         )
@@ -295,6 +302,12 @@ async fn withdraw_processing(
         .bind(id).execute(&mut *tx).await?;
     sqlx::query("UPDATE transcript_extraction_jobs SET status='cancelled',updated_at=now() WHERE account_id=$1 AND status='processing'")
         .bind(id).execute(&mut *tx).await?;
+    sqlx::query("UPDATE voice_uploads SET status='cancelled',audio=NULL WHERE account_id=$1 AND audio IS NOT NULL")
+        .bind(id).execute(&mut *tx).await?;
+    sqlx::query("UPDATE captures SET auto_processing=false WHERE owner_id=$1 AND auto_processing")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
     tx.commit().await?;
     Ok(ok(
         json!({"processing":{"enabled":false,"generation":row.try_get::<i64,_>("generation")?,"acknowledged":true}}),
@@ -375,6 +388,8 @@ async fn set_voice_permission(
             .bind(id)
             .execute(&mut *tx)
             .await?;
+        sqlx::query("UPDATE voice_uploads SET status='cancelled',audio=NULL WHERE account_id=$1 AND audio IS NOT NULL")
+            .bind(id).execute(&mut *tx).await?;
     }
     let generation: i64 = row.try_get("generation")?;
     tx.commit().await?;
@@ -466,6 +481,14 @@ async fn set_extraction_permission(
     if !input.enabled {
         sqlx::query("UPDATE transcript_extraction_jobs SET status='cancelled',updated_at=now() WHERE account_id=$1 AND status='processing'")
             .bind(id).execute(&mut *tx).await?;
+        sqlx::query(
+            "UPDATE captures SET auto_processing=false WHERE owner_id=$1 AND auto_processing",
+        )
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query("UPDATE voice_uploads SET status='cancelled',audio=NULL WHERE account_id=$1 AND audio IS NOT NULL")
+            .bind(id).execute(&mut *tx).await?;
     }
     let generation: i64 = row.try_get("generation")?;
     tx.commit().await?;
@@ -480,7 +503,7 @@ async fn extraction_items(
     capture_id: Uuid,
     partial: bool,
 ) -> ApiResult {
-    let items: Vec<ItemRow> = sqlx::query_as("SELECT id,capture_id,subject,body,visibility,revision,created_at FROM knowledge_items WHERE owner_id=$1 AND capture_id=$2 AND deleted_at IS NULL ORDER BY created_at,id")
+    let items: Vec<ItemRow> = sqlx::query_as("SELECT id,capture_id,subject,body,visibility,revision,created_at,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review FROM knowledge_items WHERE owner_id=$1 AND capture_id=$2 AND deleted_at IS NULL ORDER BY created_at,id")
         .bind(owner_id).bind(capture_id).fetch_all(pool).await?;
     Ok(ok(
         json!({"capture_id":capture_id,"items":items.iter().map(item_json).collect::<Vec<_>>(),"partial":partial}),
@@ -504,6 +527,15 @@ async fn extract_voice_capture(
 ) -> ApiResult {
     let owner_id = owner(&state, &headers, true).await?;
     let capture_id = uuid(&id)?;
+    process_voice_capture(&state, owner_id, capture_id, None).await
+}
+
+async fn process_voice_capture(
+    state: &AppState,
+    owner_id: Uuid,
+    capture_id: Uuid,
+    expected_generation: Option<i64>,
+) -> ApiResult {
     if !state.extractor.available() {
         return Err(ApiError::new(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -539,9 +571,18 @@ async fn extract_voice_capture(
             "Processing was turned off",
         ));
     }
-    let source = sqlx::query("SELECT s.content,s.revision FROM source_texts s JOIN captures c ON c.id=s.capture_id AND c.owner_id=s.owner_id WHERE c.id=$1 AND c.owner_id=$2 AND c.kind='voice' AND s.kind='transcript' FOR UPDATE OF s")
+    let source = sqlx::query("SELECT s.content,s.revision,c.auto_processing FROM source_texts s JOIN captures c ON c.id=s.capture_id AND c.owner_id=s.owner_id WHERE c.id=$1 AND c.owner_id=$2 AND c.kind='voice' AND s.kind='transcript' FOR UPDATE OF s")
         .bind(capture_id).bind(owner_id).fetch_optional(&mut *tx).await?
         .ok_or_else(|| ApiError::not_found("Private transcript not found"))?;
+    if expected_generation
+        .is_some_and(|expected| expected != generation || !source.get::<bool, _>("auto_processing"))
+    {
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "processing_changed",
+            "Automatic processing was cancelled",
+        ));
+    }
     let transcript: String = source.try_get("content")?;
     if transcript.chars().count() > 6_000 {
         return Err(ApiError::new(
@@ -698,6 +739,236 @@ async fn transcribe_voice(
     audio: Bytes,
 ) -> ApiResult {
     let owner_id = owner(&state, &headers, true).await?;
+    transcribe_for_owner(&state, owner_id, headers, draft_id, audio, None).await
+}
+
+async fn remember_receipt(pool: &PgPool, owner_id: Uuid, draft_id: &str) -> ApiResult {
+    let row = sqlx::query("SELECT u.status,u.capture_id,CASE WHEN c.status='transcript_ready' AND (NOT c.auto_processing OR NOT EXISTS(SELECT 1 FROM source_texts s WHERE s.capture_id=c.id)) THEN 'failed' ELSE c.status END capture_status,EXISTS(SELECT 1 FROM source_texts s WHERE s.capture_id=u.capture_id AND s.owner_id=u.account_id) transcript_saved FROM voice_uploads u LEFT JOIN captures c ON c.id=u.capture_id WHERE u.account_id=$1 AND u.draft_id=$2")
+        .bind(owner_id).bind(draft_id).fetch_optional(pool).await?
+        .ok_or_else(|| ApiError::not_found("Recording not found"))?;
+    Ok(ok(json!({"remember":{
+        "draft_id":draft_id,
+        "status":row.get::<String,_>("status"),
+        "capture_id":row.get::<Option<Uuid>,_>("capture_id"),
+        "capture_status":row.get::<Option<String>,_>("capture_status"),
+        "transcript_saved":row.get::<bool,_>("transcript_saved")
+    }})))
+}
+
+async fn cancel_remember(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(draft_id): Path<String>,
+) -> ApiResult {
+    let owner_id = owner(&state, &headers, true).await?;
+    if !(16..=64).contains(&draft_id.len()) {
+        return Err(ApiError::bad("Invalid recording ID"));
+    }
+    let mut tx = state.pool.begin().await?;
+    sqlx::query("SELECT 1 FROM voice_transcription_permissions WHERE account_id=$1 FOR UPDATE")
+        .bind(owner_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+    sqlx::query("SELECT 1 FROM transcript_extraction_permissions WHERE account_id=$1 FOR UPDATE")
+        .bind(owner_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+    // A tombstone also fences uploads that arrive after cancellation.
+    sqlx::query("INSERT INTO voice_uploads(account_id,draft_id,audio_sha256,captured_ms,voice_generation,extraction_generation,status) VALUES($1,$2,'',0,0,0,'cancelled') ON CONFLICT DO NOTHING")
+        .bind(owner_id).bind(&draft_id).execute(&mut *tx).await?;
+    let row=sqlx::query("UPDATE voice_uploads SET status='cancelled',audio=NULL WHERE account_id=$1 AND draft_id=$2 RETURNING capture_id")
+        .bind(owner_id).bind(&draft_id).fetch_optional(&mut *tx).await?;
+    sqlx::query("UPDATE voice_transcription_jobs SET status='cancelled' WHERE account_id=$1 AND draft_id=$2 AND status!='completed'")
+        .bind(owner_id).bind(draft_id).execute(&mut *tx).await?;
+    if let Some(capture_id) = row.and_then(|r| r.get::<Option<Uuid>, _>("capture_id")) {
+        sqlx::query("UPDATE captures SET auto_processing=false WHERE id=$1")
+            .bind(capture_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("UPDATE transcript_extraction_jobs SET status='cancelled' WHERE capture_id=$1 AND status!='completed'").bind(capture_id).execute(&mut *tx).await?;
+    }
+    tx.commit().await?;
+    Ok(no_content())
+}
+
+async fn remember_status(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(draft_id): Path<String>,
+) -> ApiResult {
+    let owner_id = owner(&state, &headers, true).await?;
+    remember_receipt(&state.pool, owner_id, &draft_id).await
+}
+
+async fn queue_voice(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(draft_id): Path<String>,
+    audio: Bytes,
+) -> ApiResult {
+    let owner_id = owner(&state, &headers, true).await?;
+    let captured_ms = validate_voice_input(&headers, &draft_id, &audio)?;
+    let audio_hash = hash(&audio);
+    let mut tx = state.pool.begin().await?;
+    // Use the same permission lock order as withdrawal and transcription.
+    let voice = sqlx::query("SELECT enabled,generation FROM voice_transcription_permissions WHERE account_id=$1 FOR UPDATE")
+        .bind(owner_id).fetch_optional(&mut *tx).await?;
+    let extraction = sqlx::query("SELECT enabled,generation FROM transcript_extraction_permissions WHERE account_id=$1 FOR UPDATE")
+        .bind(owner_id).fetch_optional(&mut *tx).await?;
+    if !voice.as_ref().is_some_and(|r| r.get::<bool, _>("enabled"))
+        || !extraction
+            .as_ref()
+            .is_some_and(|r| r.get::<bool, _>("enabled"))
+    {
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "processing_permission_required",
+            "Turn on voice processing in settings",
+        ));
+    }
+    let withdrawn: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM processing_permissions WHERE account_id=$1 AND enabled=false)",
+    )
+    .bind(owner_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if withdrawn {
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "processing_withdrawn",
+            "Processing was turned off",
+        ));
+    }
+    let prior = sqlx::query(
+        "SELECT audio_sha256,status FROM voice_uploads WHERE account_id=$1 AND draft_id=$2",
+    )
+    .bind(owner_id)
+    .bind(&draft_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if let Some(prior) = prior {
+        if prior.get::<String, _>("status") != "cancelled"
+            && prior.get::<String, _>("audio_sha256") != audio_hash
+        {
+            return Err(ApiError::conflict("Draft ID belongs to different audio"));
+        }
+        tx.commit().await?;
+        return remember_receipt(&state.pool, owner_id, &draft_id).await;
+    }
+    if !state.transcriber.available() || !state.extractor.available() {
+        return Err(ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "processing_unavailable",
+            "Processing is temporarily unavailable",
+        ));
+    }
+    sqlx::query("SELECT pg_advisory_xact_lock(732784)")
+        .execute(&mut *tx)
+        .await?;
+    let account_count: i64 = sqlx::query_scalar("SELECT count(*) FROM voice_uploads WHERE account_id=$1 AND created_at>now()-interval '24 hours'")
+        .bind(owner_id).fetch_one(&mut *tx).await?;
+    let global_count: i64 = sqlx::query_scalar("SELECT count(*) FROM voice_uploads WHERE created_at>now()-interval '24 hours' OR audio IS NOT NULL")
+        .fetch_one(&mut *tx).await?;
+    if account_count >= 12 || global_count >= 100 {
+        return Err(ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "voice_budget_reached",
+            "Processing limit reached. Your recording is safe on this phone",
+        ));
+    }
+    sqlx::query("INSERT INTO voice_uploads(account_id,draft_id,audio,audio_sha256,captured_ms,voice_generation,extraction_generation) VALUES($1,$2,$3,$4,$5,$6,$7)")
+        .bind(owner_id).bind(&draft_id).bind(audio.as_ref()).bind(audio_hash).bind(captured_ms)
+        .bind(voice.unwrap().get::<i64,_>("generation")).bind(extraction.unwrap().get::<i64,_>("generation"))
+        .execute(&mut *tx).await?;
+    tx.commit().await?;
+    let mut response = remember_receipt(&state.pool, owner_id, &draft_id).await?;
+    *response.status_mut() = StatusCode::ACCEPTED;
+    Ok(response)
+}
+
+/// One bounded worker tick. Metadata and leases persist across API restarts;
+/// no user session token is stored in the work queue.
+pub async fn process_pending_voice(
+    state: &AppState,
+    owner_filter: Option<Uuid>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE captures c SET status='failed',auto_processing=false WHERE ($1::uuid IS NULL OR c.owner_id=$1) AND c.auto_processing AND c.status='transcript_ready' AND EXISTS(SELECT 1 FROM transcript_extraction_jobs j WHERE j.capture_id=c.id AND j.attempts>=3 AND j.status IN ('failed','processing') AND j.lease_until<=now())")
+        .bind(owner_filter).execute(&state.pool).await?;
+    sqlx::query("UPDATE voice_uploads SET audio=NULL,status='expired' WHERE ($1::uuid IS NULL OR account_id=$1) AND audio IS NOT NULL AND captured_ms < (extract(epoch FROM now()-interval '7 days')*1000)::bigint")
+        .bind(owner_filter).execute(&state.pool).await?;
+    sqlx::query("UPDATE voice_uploads u SET audio=NULL,status='cancelled' WHERE ($1::uuid IS NULL OR u.account_id=$1) AND u.audio IS NOT NULL AND (NOT EXISTS(SELECT 1 FROM voice_transcription_permissions p WHERE p.account_id=u.account_id AND p.enabled AND p.generation=u.voice_generation) OR NOT EXISTS(SELECT 1 FROM transcript_extraction_permissions p WHERE p.account_id=u.account_id AND p.enabled AND p.generation=u.extraction_generation))")
+        .bind(owner_filter).execute(&state.pool).await?;
+    // A worker crash on the final attempt must not retain unprocessable audio.
+    sqlx::query("UPDATE voice_uploads SET status='failed',audio=NULL WHERE ($1::uuid IS NULL OR account_id=$1) AND status='processing' AND attempts>=3 AND next_attempt_at<=now()")
+        .bind(owner_filter).execute(&state.pool).await?;
+    if state.transcriber.available() {
+        let upload = sqlx::query("UPDATE voice_uploads SET status='processing',attempts=attempts+1,next_attempt_at=now()+interval '3 minutes' WHERE (account_id,draft_id) IN (SELECT account_id,draft_id FROM voice_uploads WHERE ($1::uuid IS NULL OR account_id=$1) AND status IN ('queued','processing') AND audio IS NOT NULL AND attempts<3 AND next_attempt_at<=now() ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING account_id,draft_id,audio,captured_ms,voice_generation,attempts")
+            .bind(owner_filter).fetch_optional(&state.pool).await?;
+        if let Some(upload) = upload {
+            let owner_id: Uuid = upload.get("account_id");
+            let draft_id: String = upload.get("draft_id");
+            let mut headers = HeaderMap::new();
+            headers.insert("content-type", "audio/mp4".parse().unwrap());
+            headers.insert(
+                "x-captured-at-ms",
+                upload
+                    .get::<i64, _>("captured_ms")
+                    .to_string()
+                    .parse()
+                    .unwrap(),
+            );
+            let result = transcribe_for_owner(
+                state,
+                owner_id,
+                headers,
+                draft_id.clone(),
+                Bytes::from(upload.get::<Vec<u8>, _>("audio")),
+                Some(upload.get("voice_generation")),
+            )
+            .await;
+            if let Err(error) = result {
+                let terminal = error.status.is_client_error()
+                    && error.status != StatusCode::TOO_MANY_REQUESTS
+                    && error.status != StatusCode::CONFLICT
+                    || upload.get::<i32, _>("attempts") >= 3;
+                sqlx::query("UPDATE voice_uploads SET status=CASE WHEN $3 THEN 'failed' ELSE 'queued' END,audio=CASE WHEN $3 THEN NULL ELSE audio END,next_attempt_at=now()+interval '30 seconds' WHERE account_id=$1 AND draft_id=$2 AND status='processing'")
+                    .bind(owner_id).bind(draft_id).bind(terminal).execute(&state.pool).await?;
+            }
+        }
+    }
+    if state.extractor.available() {
+        let capture=sqlx::query("UPDATE captures SET auto_next_attempt_at=now()+interval '3 minutes' WHERE id IN (SELECT c.id FROM captures c JOIN source_texts s ON s.capture_id=c.id JOIN transcript_extraction_permissions p ON p.account_id=c.owner_id LEFT JOIN transcript_extraction_jobs j ON j.capture_id=c.id WHERE ($1::uuid IS NULL OR c.owner_id=$1) AND c.auto_processing AND c.status='transcript_ready' AND c.auto_next_attempt_at<=now() AND p.enabled AND p.generation=c.auto_permission_generation AND (j.capture_id IS NULL OR (j.status IN ('processing','failed') AND j.attempts<3 AND j.lease_until<=now())) ORDER BY c.created_at FOR UPDATE OF c SKIP LOCKED LIMIT 1) RETURNING id,owner_id,auto_permission_generation")
+            .bind(owner_filter).fetch_optional(&state.pool).await?;
+        if let Some(capture) = capture {
+            let id: Uuid = capture.get("id");
+            let owner_id: Uuid = capture.get("owner_id");
+            if let Err(error) = process_voice_capture(
+                state,
+                owner_id,
+                id,
+                capture.get("auto_permission_generation"),
+            )
+            .await
+                && (error.status == StatusCode::UNPROCESSABLE_ENTITY
+                    || error.status == StatusCode::FORBIDDEN)
+            {
+                sqlx::query(
+                    "UPDATE captures SET auto_processing=false,status='failed' WHERE id=$1 AND status='transcript_ready'",
+                )
+                .bind(id)
+                .execute(&state.pool)
+                .await?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_voice_input(
+    headers: &HeaderMap,
+    draft_id: &str,
+    audio: &Bytes,
+) -> Result<i64, ApiError> {
     if !(16..=64).contains(&draft_id.len())
         || !draft_id
             .bytes()
@@ -705,7 +976,7 @@ async fn transcribe_voice(
     {
         return Err(ApiError::bad("Invalid voice draft ID"));
     }
-    let captured_ms = header(&headers, "x-captured-at-ms")
+    let captured_ms = header(headers, "x-captured-at-ms")
         .and_then(|value| value.parse::<i64>().ok())
         .ok_or_else(|| ApiError::bad("Capture timestamp is required"))?;
     let now_ms = Utc::now().timestamp_millis();
@@ -719,13 +990,25 @@ async fn transcribe_voice(
             "Voice draft is no longer eligible for transcription",
         ));
     }
-    if header(&headers, "content-type").and_then(|value| value.split(';').next())
+    if header(headers, "content-type").and_then(|value| value.split(';').next())
         != Some("audio/mp4")
         || !(128..=5 * 1024 * 1024).contains(&audio.len())
         || audio.get(4..8) != Some(b"ftyp".as_slice())
     {
         return Err(ApiError::bad("A valid M4A recording is required"));
     }
+    Ok(captured_ms)
+}
+
+async fn transcribe_for_owner(
+    state: &AppState,
+    owner_id: Uuid,
+    headers: HeaderMap,
+    draft_id: String,
+    audio: Bytes,
+    expected_generation: Option<i64>,
+) -> ApiResult {
+    validate_voice_input(&headers, &draft_id, &audio)?;
     if !state.transcriber.available() {
         return Err(ApiError::new(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -753,6 +1036,15 @@ async fn transcribe_voice(
                 "Allow voice transcription before uploading audio",
             )
         })?;
+    if expected_generation.is_some_and(|expected| expected != generation) {
+        return Err(ApiError::conflict("Voice permission changed"));
+    }
+    let cancelled: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM voice_uploads WHERE account_id=$1 AND draft_id=$2 AND status IN ('cancelled','expired','failed'))")
+        .bind(owner_id).bind(&draft_id).fetch_one(&mut *tx).await?;
+    if cancelled {
+        return Err(ApiError::conflict("Recording processing was cancelled"));
+    }
+
     let withdrawn =
         sqlx::query("SELECT 1 FROM processing_permissions WHERE account_id=$1 AND enabled=false")
             .bind(owner_id)
@@ -830,6 +1122,8 @@ async fn transcribe_voice(
                     "Capture is missing",
                 )
             })?;
+        sqlx::query("UPDATE voice_uploads SET status='transcribed',audio=NULL,capture_id=$3 WHERE account_id=$1 AND draft_id=$2 AND status IN ('queued','processing')")
+            .bind(owner_id).bind(&draft_id).bind(capture_id).execute(&mut *tx).await?;
         tx.commit().await?;
         return voice_result(&state.pool, owner_id, capture_id).await;
     }
@@ -916,13 +1210,26 @@ async fn transcribe_voice(
             "Voice permission changed before transcription could be saved",
         ));
     }
+    let upload = sqlx::query("SELECT extraction_generation,status FROM voice_uploads WHERE account_id=$1 AND draft_id=$2 FOR UPDATE")
+        .bind(owner_id).bind(&draft_id).fetch_optional(&mut *tx).await?;
+    if upload
+        .as_ref()
+        .is_some_and(|u| u.get::<String, _>("status") == "cancelled")
+    {
+        return Err(ApiError::conflict("Recording processing was cancelled"));
+    }
     let capture_id = Uuid::new_v4();
-    sqlx::query("INSERT INTO captures(id,owner_id,kind,status,desired_visibility) VALUES ($1,$2,'voice','transcript_ready','private')")
-        .bind(capture_id).bind(owner_id).execute(&mut *tx).await?;
+    let extraction_generation = upload
+        .as_ref()
+        .map(|u| u.get::<i64, _>("extraction_generation"));
+    sqlx::query("INSERT INTO captures(id,owner_id,kind,status,desired_visibility,auto_processing,auto_permission_generation) VALUES ($1,$2,'voice','transcript_ready','private',$3,$4)")
+        .bind(capture_id).bind(owner_id).bind(upload.is_some()).bind(extraction_generation).execute(&mut *tx).await?;
     sqlx::query("INSERT INTO source_texts(id,capture_id,owner_id,kind,content) VALUES ($1,$2,$3,'transcript',$4)")
         .bind(Uuid::new_v4()).bind(capture_id).bind(owner_id).bind(&transcript)
         .execute(&mut *tx).await?;
     sqlx::query("UPDATE voice_transcription_jobs SET status='completed',capture_id=$3,updated_at=now() WHERE account_id=$1 AND draft_id=$2")
+        .bind(owner_id).bind(&draft_id).bind(capture_id).execute(&mut *tx).await?;
+    sqlx::query("UPDATE voice_uploads SET status='transcribed',audio=NULL,capture_id=$3 WHERE account_id=$1 AND draft_id=$2")
         .bind(owner_id).bind(&draft_id).bind(capture_id).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(created(json!({"capture":{
@@ -976,9 +1283,11 @@ struct ItemRow {
     visibility: String,
     revision: i32,
     created_at: DateTime<Utc>,
+    #[sqlx(default)]
+    needs_review: bool,
 }
 fn item_json(row: &ItemRow) -> Value {
-    json!({"id":row.id,"capture_id":row.capture_id,"subject":row.subject,"body":row.body,"visibility":row.visibility,"revision":row.revision,"created_at":iso(row.created_at)})
+    json!({"id":row.id,"capture_id":row.capture_id,"subject":row.subject,"body":row.body,"visibility":row.visibility,"revision":row.revision,"created_at":iso(row.created_at),"needs_review":row.needs_review})
 }
 fn iso(date: DateTime<Utc>) -> String {
     date.to_rfc3339_opts(SecondsFormat::Micros, true)
@@ -1021,7 +1330,7 @@ async fn save_item(State(state): State<AppState>, headers: HeaderMap, body: Byte
             .as_str()
             .and_then(|s| Uuid::parse_str(s).ok())
             .ok_or_else(|| ApiError::from(sqlx::Error::RowNotFound))?;
-        let live: Option<ItemRow> = sqlx::query_as("SELECT id,capture_id,subject,body,visibility,revision,created_at FROM knowledge_items WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL")
+        let live: Option<ItemRow> = sqlx::query_as("SELECT id,capture_id,subject,body,visibility,revision,created_at,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review FROM knowledge_items WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL")
             .bind(item_id).bind(owner_id).fetch_optional(&mut *transaction).await?;
         transaction.commit().await?;
         return match live {
@@ -1079,7 +1388,7 @@ async fn list_items(
 ) -> ApiResult {
     let owner_id = owner(&state, &headers, true).await?;
     let cursor: Option<ItemCursor> = query.cursor.as_deref().map(decode).transpose()?;
-    let rows: Vec<ItemRow> = sqlx::query_as("SELECT id,capture_id,subject,body,visibility,revision,created_at FROM knowledge_items WHERE owner_id=$1 AND deleted_at IS NULL AND ($2::timestamptz IS NULL OR (created_at,id)<($2::timestamptz,$3::uuid)) ORDER BY created_at DESC,id DESC LIMIT 21")
+    let rows: Vec<ItemRow> = sqlx::query_as("SELECT id,capture_id,subject,body,visibility,revision,created_at,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review FROM knowledge_items WHERE owner_id=$1 AND deleted_at IS NULL AND ($2::timestamptz IS NULL OR (created_at,id)<($2::timestamptz,$3::uuid)) ORDER BY created_at DESC,id DESC LIMIT 21")
         .bind(owner_id).bind(cursor.as_ref().map(|c| c.created_at)).bind(cursor.as_ref().map(|c| c.id))
         .fetch_all(&state.pool).await?;
     let next_cursor = if rows.len() > 20 {

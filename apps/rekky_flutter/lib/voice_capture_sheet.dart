@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'rekky_api.dart';
 import 'voice_drafts.dart';
@@ -11,11 +12,13 @@ class VoiceCaptureSheet extends StatefulWidget {
     required this.ownerId,
     required this.store,
     required this.onChanged,
+    required this.onCaptured,
   });
 
   final String ownerId;
   final VoiceDraftStore store;
   final Future<void> Function() onChanged;
+  final VoidCallback onCaptured;
 
   @override
   State<VoiceCaptureSheet> createState() => _VoiceCaptureSheetState();
@@ -24,9 +27,10 @@ class VoiceCaptureSheet extends StatefulWidget {
 class _VoiceCaptureSheetState extends State<VoiceCaptureSheet>
     with WidgetsBindingObserver {
   bool starting = true, recording = false, finishing = false;
-  VoiceDraft? saved;
   String? issue;
   Timer? limit;
+  Timer? elapsedTimer;
+  final elapsed = Stopwatch();
 
   @override
   void initState() {
@@ -38,6 +42,7 @@ class _VoiceCaptureSheetState extends State<VoiceCaptureSheet>
   @override
   void dispose() {
     limit?.cancel();
+    elapsedTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -62,6 +67,11 @@ class _VoiceCaptureSheetState extends State<VoiceCaptureSheet>
         starting = false;
         recording = true;
       });
+      unawaited(HapticFeedback.lightImpact());
+      elapsed.start();
+      elapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) setState(() {});
+      });
       limit = Timer(const Duration(minutes: 2), () => unawaited(_finish()));
     } catch (error) {
       if (mounted) {
@@ -76,17 +86,15 @@ class _VoiceCaptureSheetState extends State<VoiceCaptureSheet>
   Future<void> _finish() async {
     if (!recording || finishing) return;
     limit?.cancel();
+    elapsedTimer?.cancel();
+    elapsed.stop();
     setState(() => finishing = true);
     try {
       final draft = await widget.store.finish(widget.ownerId);
       await widget.onChanged();
-      if (mounted) {
-        setState(() {
-          recording = false;
-          finishing = false;
-          saved = draft;
-        });
-      }
+      widget.onCaptured();
+      unawaited(HapticFeedback.lightImpact());
+      if (mounted) Navigator.pop(context, draft.status == 'ready');
     } catch (error) {
       if (mounted) {
         setState(() {
@@ -101,74 +109,93 @@ class _VoiceCaptureSheetState extends State<VoiceCaptureSheet>
 
   Future<void> _discard() async {
     if (finishing || starting) return;
+    setState(() => finishing = true);
+    limit?.cancel();
+    elapsedTimer?.cancel();
     try {
-      if (saved case final draft?) {
-        await widget.store.delete(widget.ownerId, draft.id);
-      } else {
-        await widget.store.cancel(widget.ownerId);
-      }
+      await widget.store.cancel(widget.ownerId);
       await widget.onChanged();
       if (mounted) Navigator.pop(context, false);
     } catch (error) {
-      if (mounted) setState(() => issue = '$error');
+      if (mounted) {
+        setState(() {
+          issue = '$error';
+          finishing = false;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) => PopScope(
     canPop: false,
-    child: Padding(
-      padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              saved != null
-                  ? 'Voice draft on this device'
-                  : recording
-                  ? 'Recording your thought'
-                  : 'Record a thought',
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              saved != null
-                  ? 'The recording is saved on this device. Open Voice drafts to choose whether to transcribe it. It is not a Library item yet.'
-                  : 'Audio stays on this device until you choose to transcribe it. Drafts become ineligible after seven days and are removed when the app next runs.',
-            ),
-            const SizedBox(height: 24),
-            if (starting || finishing) const LinearProgressIndicator(),
-            if (recording)
-              const Center(
-                child: Icon(Icons.mic, size: 72, semanticLabel: 'Recording'),
-              ),
-            if (issue != null)
-              Text(
-                issue!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            const SizedBox(height: 20),
-            if (recording)
-              FilledButton(
-                onPressed: finishing ? null : _finish,
-                child: const Text('Done'),
-              ),
-            if (saved != null)
-              FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Close'),
-              ),
-            if (!starting && !finishing)
-              TextButton(
-                onPressed: _discard,
-                child: Text(
-                  saved != null ? 'Delete draft' : 'Discard / Type instead',
+    child: Scaffold(
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: IntrinsicHeight(
+                child: Padding(
+                  padding: const EdgeInsets.all(28),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Spacer(),
+                      Text(
+                        issue != null
+                            ? 'Couldn’t record'
+                            : recording
+                            ? 'Tell us about your experience'
+                            : 'Getting ready',
+                        style: Theme.of(context).textTheme.headlineMedium,
+                      ),
+                      const SizedBox(height: 12),
+                      const Text('What was good? What should someone know?'),
+                      const Spacer(),
+                      if (starting || finishing)
+                        const LinearProgressIndicator(),
+                      if (recording)
+                        const Center(
+                          child: Icon(
+                            Icons.mic,
+                            size: 80,
+                            semanticLabel: 'Recording',
+                          ),
+                        ),
+                      if (recording) ...[
+                        const SizedBox(height: 16),
+                        Text(
+                          '${elapsed.elapsed.inMinutes}:${(elapsed.elapsed.inSeconds % 60).toString().padLeft(2, '0')}',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        const Text('Recording', textAlign: TextAlign.center),
+                      ],
+                      if (issue != null)
+                        Text(
+                          issue!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      const Spacer(),
+                      if (recording)
+                        FilledButton(
+                          onPressed: finishing ? null : _finish,
+                          child: const Text('Done'),
+                        ),
+                      if (!starting && !finishing)
+                        TextButton(
+                          onPressed: _discard,
+                          child: Text(recording ? 'Discard' : 'Close'),
+                        ),
+                    ],
+                  ),
                 ),
               ),
-          ],
+            ),
+          ),
         ),
       ),
     ),
@@ -457,6 +484,10 @@ class _VoiceDraftsSheetState extends State<VoiceDraftsSheet> {
 
   Future<void> _delete(VoiceDraft draft) async {
     try {
+      if (draft.autoProcess) {
+        await widget.api.cancelRemember(draft.id);
+        await widget.store.acknowledgeRemember(widget.ownerId, draft.id);
+      }
       await widget.store.delete(widget.ownerId, draft.id);
       await widget.onChanged();
       await _load();
@@ -487,7 +518,7 @@ class _VoiceDraftsSheetState extends State<VoiceDraftsSheet> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Draft audio stays on this device until you choose Transcribe. Transcripts are private and separate from Library.',
+                  'New recordings are processed automatically. Older drafts need an explicit Transcribe action. Source transcripts are visible only to you.',
                 ),
                 const SizedBox(height: 16),
                 if (working) const LinearProgressIndicator(),
@@ -506,7 +537,7 @@ class _VoiceDraftsSheetState extends State<VoiceDraftsSheet> {
                   ),
                 if (!providerAvailable && drafts.isNotEmpty)
                   const Text(
-                    'Transcription is paused while the provider settings are reviewed. Your drafts remain on this device.',
+                    'Voice processing is temporarily unavailable. Your recordings remain on this device.',
                   ),
                 if (drafts.isEmpty)
                   const Text('No voice drafts on this device.'),
@@ -524,7 +555,7 @@ class _VoiceDraftsSheetState extends State<VoiceDraftsSheet> {
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (draft.status == 'ready')
+                        if (draft.status == 'ready' && !draft.autoProcess)
                           TextButton(
                             onPressed: working || !providerAvailable
                                 ? null

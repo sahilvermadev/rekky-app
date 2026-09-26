@@ -22,8 +22,10 @@ class RekkyItem {
     required this.visibility,
     required this.revision,
     required this.createdAt,
+    this.needsReview = false,
   });
   final String id, captureId, subject, body, visibility, createdAt;
+  final bool needsReview;
   final int revision;
   factory RekkyItem.fromJson(Map<String, dynamic> json) => RekkyItem(
     id: json['id'] as String,
@@ -33,6 +35,7 @@ class RekkyItem {
     visibility: json['visibility'] as String,
     revision: json['revision'] as int,
     createdAt: json['created_at'] as String,
+    needsReview: json['needs_review'] as bool? ?? false,
   );
 }
 
@@ -174,6 +177,34 @@ class RekkyApi {
     '/v1/voice-captures/$captureId/extract',
     timeout: const Duration(seconds: 90),
   );
+
+  Future<Map<String, dynamic>> rememberStatus(String draftId) async {
+    final result = await request('GET', '/v1/remember/$draftId');
+    return result['remember'] as Map<String, dynamic>;
+  }
+
+  Future<void> cancelRemember(String draftId) async {
+    await request('DELETE', '/v1/remember/$draftId');
+  }
+
+  Future<Map<String, dynamic>> rememberVoice(
+    String draftId,
+    int capturedAtMs,
+    File audioFile,
+  ) async {
+    final request = http.Request('POST', _uri('/v1/remember/$draftId'));
+    request.headers.addAll({
+      'accept': 'application/json',
+      'content-type': 'audio/mp4',
+      'x-captured-at-ms': '$capturedAtMs',
+      if (token != null) 'authorization': 'Bearer $token',
+    });
+    request.bodyBytes = await audioFile.readAsBytes();
+    final response = await http.Response.fromStream(
+      await _client.send(request).timeout(const Duration(seconds: 30)),
+    ).timeout(const Duration(seconds: 30));
+    return _decode(response)['remember'] as Map<String, dynamic>;
+  }
 
   Future<String> transcribeVoice(
     String draftId,

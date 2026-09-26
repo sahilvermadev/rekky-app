@@ -23,20 +23,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let verifier = Arc::new(OidcVerifier::from_env());
     let transcriber = Arc::new(OpenAiTranscriber::from_env());
     let extractor = Arc::new(OpenAiExtractor::from_env());
+    let state = AppState {
+        pool,
+        verifier,
+        transcriber,
+        extractor,
+    };
     let listener = tokio::net::TcpListener::bind(address).await?;
+    let worker_state = state.clone();
+    let worker = tokio::spawn(async move {
+        loop {
+            if let Err(error) = rekky_backend::app::process_pending_voice(&worker_state, None).await
+            {
+                eprintln!("Voice worker database error: {error}");
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        }
+    });
     println!("Rekky backend listening on {address}");
-    axum::serve(
-        listener,
-        router(AppState {
-            pool,
-            verifier,
-            transcriber,
-            extractor,
-        }),
-    )
-    .with_graceful_shutdown(async {
-        let _ = tokio::signal::ctrl_c().await;
-    })
-    .await?;
+    axum::serve(listener, router(state))
+        .with_graceful_shutdown(async {
+            let _ = tokio::signal::ctrl_c().await;
+        })
+        .await?;
+    worker.abort();
     Ok(())
 }

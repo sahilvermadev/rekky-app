@@ -1,7 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:rekky_flutter/rekky_api.dart';
 import 'package:rekky_flutter/voice_drafts.dart';
+import 'package:rekky_flutter/voice_processing.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 class _FakeRecorder implements VoiceRecorder {
@@ -33,6 +35,38 @@ class _FakeRecorder implements VoiceRecorder {
 
   @override
   Future<void> dispose() async {}
+}
+
+class _FakeProcessingApi extends RekkyApi {
+  _FakeProcessingApi() : super('https://example.invalid');
+  int uploads = 0;
+  String captureStatus = 'transcript_ready';
+  final uploaded = <String>{};
+
+  @override
+  Future<Map<String, dynamic>> rememberStatus(String id) async {
+    if (!uploaded.contains(id)) {
+      throw const ApiFailure('not_found', 'Not found', 404);
+    }
+    return {
+      'status': 'transcribed',
+      'capture_id': 'capture-$id',
+      'capture_status': captureStatus,
+      'transcript_saved': true,
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> rememberVoice(
+    String id,
+    int capturedAtMs,
+    File file,
+  ) async {
+    expect(await file.exists(), isTrue);
+    uploads += 1;
+    uploaded.add(id);
+    return rememberStatus(id);
+  }
 }
 
 void main() {
@@ -246,7 +280,47 @@ void main() {
       'created_at_ms': DateTime.now().millisecondsSinceEpoch,
     });
     await legacy.close();
-    expect((await store.forOwner('owner-a')).single.id, 'old-draft');
+    final old = (await store.forOwner('owner-a')).single;
+    expect(old.id, 'old-draft');
+    expect(old.autoProcess, isFalse);
     expect(await file.exists(), isTrue);
   });
+
+  test(
+    'automatic save resumes extraction after restart without audio',
+    () async {
+      await store.start('owner-a');
+      final draft = await store.finish('owner-a');
+      expect(draft.autoProcess, isTrue);
+      final api = _FakeProcessingApi();
+      final processing = VoiceProcessingCoordinator(
+        ownerId: 'owner-a',
+        store: store,
+        api: api,
+        onChanged: () async {},
+        onStatus: (_) {},
+      );
+      await processing.process();
+      expect(api.uploads, 1);
+      processing.stop();
+      expect(await store.forOwner('owner-a'), isEmpty);
+      expect(await store.pendingRemembers('owner-a'), [draft.id]);
+      expect(await store.pendingRemembers('owner-b'), isEmpty);
+
+      await store.dispose();
+      store = createStore(_FakeRecorder());
+      api.captureStatus = 'completed';
+      final resumed = VoiceProcessingCoordinator(
+        ownerId: 'owner-a',
+        store: store,
+        api: api,
+        onChanged: () async {},
+        onStatus: (_) {},
+      );
+      await resumed.process();
+      expect(api.uploads, 1);
+      resumed.stop();
+      expect(await store.pendingRemembers('owner-a'), isEmpty);
+    },
+  );
 }

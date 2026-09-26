@@ -5,3 +5,5 @@
 Start with signed-in account sessions, captures, owner-only source transcripts, knowledge items, visibility acknowledgement and own-knowledge Ask. Include audio-deleted/text-retained states, source revisions, processing withdrawal without knowledge loss and pending offline privacy/deletion writes. No guest contract is required. Include success/error, optional/null, IDs, timestamps, large cursors, idempotency and revision-conflict examples. Verify the same fixtures in Dart and Rust before dependent implementation.
 
 Legacy Zod definitions are reference material only. Domain models must remain independent of generated transport models.
+
+The one-tap flow adds `POST/GET/DELETE /v1/remember/{draft_id}` and queued/saved/partial/cancelled receipt fixtures. POST returns 202 after durable upload acceptance, not after extraction. Poll GET for `transcribed` to delete local audio and `capture_status` completed/partial to refresh Library. Item lists include `needs_review` for partial captures. See [one-tap contract and limits](../../docs/ONE_TAP_REMEMBER.md).

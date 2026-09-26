@@ -27,6 +27,23 @@ void main() {
       (examples['private_override_ack'] as Map<String, dynamic>)['body']['item']
           as Map<String, dynamic>,
     );
+    expect(examples['remember_queued']!['status'], 202);
+    expect(
+      examples['remember_queued']!['body']['remember']['transcript_saved'],
+      false,
+    );
+    expect(
+      examples['remember_saved']!['body']['remember']['capture_status'],
+      'completed',
+    );
+    expect(
+      examples['remember_partial']!['body']['remember']['capture_status'],
+      'partial',
+    );
+    expect(
+      examples['remember_cancelled']!['body']['remember']['status'],
+      'cancelled',
+    );
     expect(saved.visibility, 'friends');
     expect(private.visibility, 'private');
     expect(private.revision, saved.revision + 1);
