@@ -37,6 +37,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "009_category_search.sql",
         include_str!("../migrations/009_category_search.sql"),
     ),
+    (
+        "010_readable_source.sql",
+        include_str!("../migrations/010_readable_source.sql"),
+    ),
 ];
 
 pub async fn run(pool: &PgPool) -> Result<(), sqlx::Error> {

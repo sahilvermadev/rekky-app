@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'rekky_api.dart';
+import 'original_note_view.dart';
 import 'recommendation_view.dart';
 
 // Hallmark · component: reading sheet · existing warm Material tokens.
@@ -334,19 +335,7 @@ class _RecommendationDetailSheetState extends State<RecommendationDetailSheet> {
                         if (sourceLoaded && source == null)
                           const Text('Original note removed.'),
                         if (source != null) ...[
-                          Text(
-                            source!.kind == 'transcript'
-                                ? 'Machine transcript'
-                                : 'Original text',
-                            style: theme.textTheme.labelMedium,
-                          ),
-                          const SizedBox(height: 8),
-                          SelectableText(
-                            source!.text,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              height: 1.5,
-                            ),
-                          ),
+                          OriginalNoteView(source: source!),
                           const SizedBox(height: 8),
                           if (source!.kind == 'transcript' &&
                               item.recommendation == null)

@@ -4,7 +4,9 @@ use serde_json::{Value, json};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
-    let seed = if std::env::args().any(|arg| arg == "--taxonomy") {
+    let seed = if std::env::args().any(|arg| arg == "--readable") {
+        include_str!("../../../docs/evaluation/readable_source_seed_v1.json")
+    } else if std::env::args().any(|arg| arg == "--taxonomy") {
         include_str!("../../../docs/evaluation/taxonomy_seed_v1.json")
     } else {
         include_str!("../../../docs/evaluation/understanding_v2_seed.json")
@@ -21,7 +23,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(proposal) => {
                 match validate(proposal.clone(), case["transcript"].as_str().unwrap()) {
                     Ok((items, partial)) => {
-                        json!({"status":"valid","partial":partial,"items":items.iter().map(|i|json!({"subject":i.subject,"recommendation":i.recommendation,"proposed_classification":i.evidence["proposal"]["classification"]})).collect::<Vec<_>>()})
+                        json!({"status":"valid","partial":partial,"proposed_readable_source":proposal.readable_source,"readable_source":rekky_backend::readable_source::from_proposal(&proposal, case["transcript"].as_str().unwrap()),"items":items.iter().map(|i|json!({"subject":i.subject,"recommendation":i.recommendation,"proposed_classification":i.evidence["proposal"]["classification"]})).collect::<Vec<_>>()})
                     }
                     Err(_) => json!({"status":"validation_failed","synthetic_proposal":proposal}),
                 }

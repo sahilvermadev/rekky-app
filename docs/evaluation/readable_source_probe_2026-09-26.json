@@ -1,0 +1,226 @@
+[
+  {
+    "elapsed_ms": 4027,
+    "id": "light_english",
+    "output": {
+      "items": [
+        {
+          "proposed_classification": {
+            "descriptors": [],
+            "facets": [],
+            "types": [
+              {
+                "concept_id": "place.cafe",
+                "evidence": [
+                  1,
+                  2,
+                  3,
+                  4
+                ],
+                "source_phrase": "Cedar Cafe"
+              }
+            ]
+          },
+          "recommendation": {
+            "classification": {
+              "descriptors": [],
+              "display_label": null,
+              "facets": [],
+              "origin": "extracted",
+              "search_ids": [],
+              "search_terms": "",
+              "types": [],
+              "vocabulary_version": 1
+            },
+            "entity_kind": "place",
+            "experience": "firsthand",
+            "locations": [
+              {
+                "role": "venue",
+                "text": "Pune"
+              }
+            ],
+            "observations": [
+              {
+                "kind": "caution",
+                "text": "Tables were small but manageable."
+              },
+              {
+                "kind": "praise",
+                "text": "Liked the coffee."
+              },
+              {
+                "kind": "price",
+                "text": "Coffee cost about 120 bucks, maybe a bit more."
+              }
+            ],
+            "shelf": "Places",
+            "summary": "Comfortable café with small tables and good coffee, priced around 120 rupees.",
+            "use_cases": [],
+            "version": 2
+          },
+          "subject": "Cedar Cafe"
+        }
+      ],
+      "partial": false,
+      "proposed_readable_source": [
+        {
+          "corrections": [
+            {
+              "after": "I recommend Cedar Cafe in Pune.",
+              "before": "i recommend Cedar Cafe in Pune."
+            }
+          ],
+          "paragraph_start": true,
+          "unit_id": 1
+        },
+        {
+          "corrections": [
+            {
+              "after": "The tables were small but I didn't mind.",
+              "before": "the tables was small but i didnt mind."
+            }
+          ],
+          "paragraph_start": false,
+          "unit_id": 2
+        },
+        {
+          "corrections": [
+            {
+              "after": "I liked the coffee.",
+              "before": "I liked teh coffee."
+            }
+          ],
+          "paragraph_start": false,
+          "unit_id": 3
+        },
+        {
+          "corrections": [],
+          "paragraph_start": false,
+          "unit_id": 4
+        }
+      ],
+      "readable_source": "I recommend Cedar Cafe in Pune. The tables were small but I didn't mind. I liked the coffee. It was about 120 bucks, maybe a bit more.",
+      "status": "valid"
+    }
+  },
+  {
+    "elapsed_ms": 3264,
+    "id": "mixed_language",
+    "output": {
+      "items": [
+        {
+          "proposed_classification": {
+            "descriptors": [
+              {
+                "evidence": [
+                  1,
+                  2,
+                  3,
+                  4
+                ],
+                "text": "cafe"
+              }
+            ],
+            "facets": [],
+            "types": [
+              {
+                "concept_id": "place.cafe",
+                "evidence": [
+                  1,
+                  2,
+                  3,
+                  4
+                ],
+                "source_phrase": "cafe"
+              }
+            ]
+          },
+          "recommendation": {
+            "classification": {
+              "descriptors": [],
+              "display_label": "Café",
+              "facets": [],
+              "origin": "extracted",
+              "search_ids": [
+                "place.cafe"
+              ],
+              "search_terms": "Café cafe cafes café cafés coffee shop coffee shops कैफ़े कैफे",
+              "types": [
+                {
+                  "dimension": "type",
+                  "dimension_label": "Type",
+                  "id": "place.cafe",
+                  "label": "Café"
+                }
+              ],
+              "vocabulary_version": 1
+            },
+            "entity_kind": "place",
+            "experience": "firsthand",
+            "locations": [
+              {
+                "role": "venue",
+                "text": "Jaipur"
+              }
+            ],
+            "observations": [
+              {
+                "kind": "praise",
+                "text": "Coffee अच्छी थी"
+              },
+              {
+                "kind": "caution",
+                "text": "service slow thi"
+              },
+              {
+                "kind": "caution",
+                "text": "Suitable for visiting with two friends, not a big group"
+              }
+            ],
+            "shelf": "Places",
+            "summary": "Mango Cafe in Jaipur has good coffee but slow service. Best for visiting with a couple of friends, not large groups.",
+            "use_cases": [],
+            "version": 2
+          },
+          "subject": "Mango Cafe"
+        }
+      ],
+      "partial": false,
+      "proposed_readable_source": [
+        {
+          "corrections": [],
+          "paragraph_start": true,
+          "unit_id": 1
+        },
+        {
+          "corrections": [
+            {
+              "after": "Yeh cafe really अच्छा है, maybe फिर जाऊंगा.",
+              "before": "Yeh cafe really अच्छा है, maybe phir jaunga."
+            }
+          ],
+          "paragraph_start": false,
+          "unit_id": 2
+        },
+        {
+          "corrections": [
+            {
+              "after": "Coffee अच्छी थी but service slow थी.",
+              "before": "Coffee अच्छी थी but service slow thi."
+            }
+          ],
+          "paragraph_start": false,
+          "unit_id": 3
+        },
+        {
+          "corrections": [],
+          "paragraph_start": false,
+          "unit_id": 4
+        }
+      ],
+      "readable_source": null,
+      "status": "valid"
+    }
+  }
+]

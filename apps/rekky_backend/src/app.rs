@@ -659,6 +659,7 @@ async fn process_voice_capture(
             ));
         }
     };
+    let readable_source = crate::readable_source::from_proposal(&proposal, &transcript);
     let (items, partial) = match validate(proposal.clone(), &transcript).or_else(|_| {
         preserve_unresolved(proposal, &transcript).ok_or(crate::extraction::ExtractionError::Failed)
     }) {
@@ -695,6 +696,10 @@ async fn process_voice_capture(
         return Err(ApiError::conflict(
             "Processing permission or transcript changed before knowledge could be saved",
         ));
+    }
+    if let Some(readable) = readable_source {
+        sqlx::query("UPDATE source_texts SET readable_content=$1,readable_source_revision=revision,readable_version=1 WHERE id=$2 AND revision=$3 AND readable_content IS NULL")
+            .bind(readable).bind(source_id).bind(source_revision).execute(&mut *tx).await?;
     }
     for item in items {
         let item_id = Uuid::new_v4();
@@ -839,11 +844,12 @@ async fn refine_item(
             .bind(id).bind(owner_id).bind(attempt_id).bind(generation).bind(source_revision).bind(expected_revision).execute(&mut *tx).await?;
     }
     tx.commit().await?;
-    let result = state
-        .extractor
-        .extract(&transcript)
-        .await
-        .and_then(|p| validate(p, &transcript));
+    let proposal = state.extractor.extract(&transcript).await;
+    let readable_source = proposal
+        .as_ref()
+        .ok()
+        .and_then(|p| crate::readable_source::from_proposal(p, &transcript));
+    let result = proposal.and_then(|p| validate(p, &transcript));
     let (mut items, partial) = match result {
         Ok((items, partial))
             if items.len() == 1
@@ -897,6 +903,10 @@ async fn refine_item(
         return Err(ApiError::conflict(
             "The item, source or processing permission changed before the update could be saved",
         ));
+    }
+    if let Some(readable) = readable_source {
+        sqlx::query("UPDATE source_texts SET readable_content=$1,readable_source_revision=revision,readable_version=1 WHERE id=$2 AND revision=$3 AND readable_content IS NULL")
+            .bind(readable).bind(source_id).bind(source_revision).execute(&mut *tx).await?;
     }
     // Same item ID and audience; the caller's revision fences edits and deletion.
     sqlx::query("UPDATE knowledge_items SET subject=$2,body=$3,recommendation=$4,revision=revision+1 WHERE id=$1")
@@ -1636,13 +1646,13 @@ async fn capture(
 ) -> ApiResult {
     let owner_id = owner(&state, &headers, true).await?;
     let id = uuid(&id)?;
-    let row = sqlx::query("SELECT c.id,c.status,c.revision,s.kind source_kind,s.content source_content,s.revision source_revision FROM captures c LEFT JOIN source_texts s ON s.capture_id=c.id AND s.owner_id=c.owner_id WHERE c.id=$1 AND c.owner_id=$2 AND EXISTS (SELECT 1 FROM knowledge_items i WHERE i.capture_id=c.id AND i.owner_id=c.owner_id AND i.deleted_at IS NULL)")
+    let row = sqlx::query("SELECT c.id,c.status,c.revision,s.kind source_kind,s.content source_content,s.revision source_revision,CASE WHEN s.readable_source_revision=s.revision THEN s.readable_content END readable_content FROM captures c LEFT JOIN source_texts s ON s.capture_id=c.id AND s.owner_id=c.owner_id WHERE c.id=$1 AND c.owner_id=$2 AND EXISTS (SELECT 1 FROM knowledge_items i WHERE i.capture_id=c.id AND i.owner_id=c.owner_id AND i.deleted_at IS NULL)")
         .bind(id).bind(owner_id).fetch_optional(&state.pool).await?
         .ok_or_else(|| ApiError::not_found("Capture not found"))?;
     let content: Option<String> = row.try_get("source_content")?;
     let source = match content {
         Some(text) => {
-            json!({"kind":row.try_get::<Option<String>,_>("source_kind")?,"text":text,"revision":row.try_get::<Option<i32>,_>("source_revision")?})
+            json!({"kind":row.try_get::<Option<String>,_>("source_kind")?,"text":text,"readable_text":row.try_get::<Option<String>,_>("readable_content")?,"revision":row.try_get::<Option<i32>,_>("source_revision")?})
         }
         None => Value::Null,
     };

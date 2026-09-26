@@ -51,6 +51,8 @@ pub struct ProposedItem {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Proposal {
+    #[serde(default)]
+    pub readable_source: Value,
     pub items: Vec<ProposedItem>,
     pub ignored_unit_ids: Vec<usize>,
     pub unresolved_unit_ids: Vec<usize>,
@@ -174,7 +176,8 @@ pub fn schema() -> Value {
             "use_cases":array(claim.clone()),
             "classification":object(json!({"types":array(assignment(true)),"facets":array(assignment(false)),"descriptors":array(claim)}))
         }))),
-        "ignored_unit_ids":evidence_schema(),"unresolved_unit_ids":evidence_schema()
+        "ignored_unit_ids":evidence_schema(),"unresolved_unit_ids":evidence_schema(),
+        "readable_source":array(object(json!({"unit_id":{"type":"integer"},"corrections":array(object(json!({"before":text_schema(),"after":text_schema()}))),"paragraph_start":{"type":"boolean"}})))
     }))
 }
 #[async_trait]

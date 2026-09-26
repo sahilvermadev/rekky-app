@@ -179,11 +179,14 @@ class RekkySource {
     required this.text,
     required this.kind,
     required this.revision,
+    this.readableText,
   });
   final String text, kind;
+  final String? readableText;
   final int revision;
   factory RekkySource.fromJson(Map<String, dynamic> json) => RekkySource(
     text: json['text'] as String,
+    readableText: json['readable_text'] as String?,
     kind: json['kind'] as String,
     revision: json['revision'] as int,
   );

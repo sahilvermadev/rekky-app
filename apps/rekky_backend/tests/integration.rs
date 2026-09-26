@@ -321,7 +321,10 @@ impl TranscriptExtractor for TestExtractor {
             "items":[{"subject":transcript.split_whitespace().next().unwrap_or_default(),
                 "subject_evidence":ids,"entity_kind":"person_service","experience":"firsthand",
                 "summary":{"text":transcript,"evidence":ids},"observations":[],"locations":[],"use_cases":[]}],
-            "ignored_unit_ids":[],"unresolved_unit_ids":[]
+            "ignored_unit_ids":[],"unresolved_unit_ids":[],
+            "readable_source":source_units(transcript).iter().map(|u|json!({
+                "unit_id":u.id,"corrections":[{"before":u.text,"after":u.text.replace(".", "!")}],"paragraph_start":false
+            })).collect::<Vec<_>>()
         })).unwrap())
     }
 }
@@ -1794,6 +1797,40 @@ async fn explicit_refinement_preserves_identity_privacy_and_source_deletion_remo
         "firsthand"
     );
     assert!(!result.to_string().contains("subject_evidence"));
+    let capture_path = format!("/v1/captures/{capture}");
+    let (_, source) = t
+        .call(Method::GET, &capture_path, Some(&token), None, &[])
+        .await;
+    assert_eq!(
+        source["capture"]["source"]["text"],
+        "Ravi fixed the kitchen tap."
+    );
+    assert_eq!(
+        source["capture"]["source"]["readable_text"],
+        "Ravi fixed the kitchen tap!"
+    );
+    assert!(!result.to_string().contains("readable_text"));
+    let (_, other_token) = t.sign_in("google", "valid-b").await;
+    assert_ne!(
+        t.call(Method::GET, &capture_path, Some(&other_token), None, &[])
+            .await
+            .0,
+        StatusCode::OK
+    );
+    sqlx::query("UPDATE source_texts SET readable_source_revision=0 WHERE capture_id=$1")
+        .bind(Uuid::parse_str(&capture).unwrap())
+        .execute(&t.pool)
+        .await
+        .unwrap();
+    let (_, stale) = t
+        .call(Method::GET, &capture_path, Some(&token), None, &[])
+        .await;
+    assert!(stale["capture"]["source"]["readable_text"].is_null());
+    sqlx::query("UPDATE source_texts SET readable_source_revision=revision WHERE capture_id=$1")
+        .bind(Uuid::parse_str(&capture).unwrap())
+        .execute(&t.pool)
+        .await
+        .unwrap();
     // Lost-response recovery is free and doesn't create a second item.
     assert_eq!(
         t.call(

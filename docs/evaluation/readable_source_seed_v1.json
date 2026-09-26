@@ -1,0 +1,4 @@
+[
+  {"id":"light_english","transcript":"i recommend Cedar Cafe in Pune. the tables was small but i didnt mind. I liked teh coffee. It was about 120 bucks, maybe a bit more.","expected":"First-person voice, only small corrections; preserve amount and uncertainty."},
+  {"id":"mixed_language","transcript":"Mango Cafe in Jaipur is good. Yeh cafe really अच्छा है, maybe phir jaunga. Coffee अच्छी थी but service slow thi. I would go with two friends, not a big group.","expected":"Preserve Hindi/English mixture, caveat and group-size qualification; no translation."}
+]
