@@ -53,7 +53,7 @@ void main() {
   });
   for (final type in ['inferred', 'spoken', 'user', 'unrated']) {
     testWidgets(
-      'detail rating $type fits large text and compact card stays small',
+      'rating $type appears in detail and card without overflow at large text',
       (tester) async {
         tester.view.physicalSize = const Size(320, 640);
         tester.view.devicePixelRatio = 1;
@@ -69,7 +69,9 @@ void main() {
                   child: SingleChildScrollView(
                     child: Padding(
                       padding: const EdgeInsets.all(20),
-                      child: RecommendationView(item: item, expanded: expanded),
+                      child: expanded
+                          ? RecommendationView(item: item, expanded: true)
+                          : RecommendationCard(item: item, onTap: () {}),
                     ),
                   ),
                 ),
@@ -78,17 +80,21 @@ void main() {
           );
           expect(
             find.text('Estimated'),
-            expanded && type == 'inferred' ? findsOneWidget : findsNothing,
+            type == 'inferred' ? findsOneWidget : findsNothing,
           );
           expect(
             find.byIcon(Icons.star_rounded),
-            expanded && type != 'unrated' ? findsOneWidget : findsNothing,
+            type != 'unrated' ? findsOneWidget : findsNothing,
           );
-          if (expanded && type != 'unrated') {
+          if (type != 'unrated') {
             expect(
               find.text('${item.recommendation!.rating!.label}/10'),
               findsOneWidget,
             );
+          }
+          if (!expanded) {
+            expect(find.text(item.recommendation!.summary), findsNothing);
+            expect(find.text('Caution'), findsOneWidget);
           }
           expect(tester.takeException(), isNull);
         }

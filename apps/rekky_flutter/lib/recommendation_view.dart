@@ -74,8 +74,20 @@ class RecommendationView extends StatelessWidget {
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
-          if (signals.isNotEmpty)
-            Text(signals.join(' · '), style: theme.textTheme.labelSmall),
+          if (recommendation?.rating != null || signals.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 10,
+              runSpacing: 4,
+              children: [
+                if (recommendation?.rating case final rating?)
+                  _RatingView(rating: rating, compact: true),
+                if (signals.isNotEmpty)
+                  Text(signals.join(' · '), style: theme.textTheme.labelSmall),
+              ],
+            ),
+          ],
         ],
       );
     }
@@ -207,7 +219,8 @@ class RecommendationView extends StatelessWidget {
 }
 
 class _RatingView extends StatelessWidget {
-  const _RatingView({required this.rating});
+  const _RatingView({required this.rating, this.compact = false});
+  final bool compact;
   final RecommendationRating rating;
   @override
   Widget build(BuildContext context) {
@@ -227,14 +240,19 @@ class _RatingView extends StatelessWidget {
         child: ExcludeSemantics(
           child: Wrap(
             crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 8,
+            spacing: compact ? 4 : 8,
             children: [
               Icon(
                 Icons.star_rounded,
-                size: 20,
+                size: compact ? 16 : 20,
                 color: theme.colorScheme.primary,
               ),
-              Text('${rating.label}/10', style: theme.textTheme.titleSmall),
+              Text(
+                '${rating.label}/10',
+                style: compact
+                    ? theme.textTheme.labelMedium
+                    : theme.textTheme.titleSmall,
+              ),
               if (rating.estimated)
                 Text(
                   'Estimated',
