@@ -7,7 +7,9 @@ import 'rekky_api.dart';
 /// Only a place name and its stated venue location leave Rekky, on a tap.
 Uri? recommendationMapsSearch(RekkyItem item) {
   final recommendation = item.recommendation;
-  if (recommendation == null || recommendation.entityKind != 'place') {
+  if (recommendation == null ||
+      recommendation.destinationMode != 'auto' ||
+      recommendation.entityKind != 'place') {
     return null;
   }
   final locations = recommendation.locations
@@ -22,6 +24,19 @@ Uri? recommendationMapsSearch(RekkyItem item) {
     'query': '${item.subject.trim()}, ${locations.single}',
   });
   return uri.toString().length <= 2048 ? uri : null;
+}
+
+Uri? recommendationDestination(RekkyItem item) {
+  final r = item.recommendation;
+  if (r?.destinationMode != 'custom') return recommendationMapsSearch(item);
+  final uri = Uri.tryParse(r!.destinationUrl);
+  if (uri == null ||
+      uri.scheme != 'https' ||
+      uri.host.isEmpty ||
+      uri.userInfo.isNotEmpty) {
+    return null;
+  }
+  return uri;
 }
 
 Future<bool> _openMaps(Uri uri) =>
@@ -67,7 +82,8 @@ class _RecommendationMapsActionState extends State<RecommendationMapsAction> {
 
   @override
   Widget build(BuildContext context) {
-    final uri = recommendationMapsSearch(widget.item);
+    final uri = recommendationDestination(widget.item);
+    final custom = widget.item.recommendation?.destinationMode == 'custom';
     if (uri == null) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(top: 12),
@@ -81,14 +97,22 @@ class _RecommendationMapsActionState extends State<RecommendationMapsAction> {
                     dimension: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.map_outlined),
-            label: Text(opening ? 'Opening Maps…' : 'Search Maps'),
+                : Icon(custom ? Icons.open_in_new : Icons.map_outlined),
+            label: Text(
+              opening
+                  ? (custom ? 'Opening…' : 'Opening Maps…')
+                  : (custom
+                        ? widget.item.recommendation!.destinationLabel
+                        : 'Search Maps'),
+            ),
           ),
           if (failed)
             Semantics(
               liveRegion: true,
               child: Text(
-                'Couldn’t open Maps. Try again.',
+                custom
+                    ? 'Couldn’t open the link. Try again.'
+                    : 'Couldn’t open Maps. Try again.',
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ),

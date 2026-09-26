@@ -111,15 +111,26 @@ class RekkyRecommendation {
     required this.useCases,
     this.entityKind = 'unspecified',
     this.classification,
+    this.attribution = '',
+    this.origin = 'extracted',
+    this.destinationMode = 'auto',
+    this.destinationUrl = '',
+    this.destinationLabel = '',
   });
   final String summary, shelf, experience, entityKind;
+  final String attribution,
+      origin,
+      destinationMode,
+      destinationUrl,
+      destinationLabel;
   final List<RecommendationDetail> observations, locations;
   final List<String> useCases;
   final RekkyClassification? classification;
   String get categoryLabel => classification?.displayLabel ?? shelf;
   String get experienceLabel => switch (experience) {
     'firsthand' => 'Your experience',
-    'secondhand' => 'Heard from others',
+    'secondhand' =>
+      attribution.isEmpty ? 'Heard from others' : 'Heard from $attribution',
     'interest' => 'Not tried yet',
     _ => 'From your note',
   };
@@ -138,6 +149,12 @@ class RekkyRecommendation {
     shelf: json['shelf'] as String,
     experience: json['experience'] as String,
     entityKind: json['entity_kind'] as String? ?? 'unspecified',
+    attribution: json['attribution'] as String? ?? '',
+    origin: json['origin'] as String? ?? 'extracted',
+    destinationMode:
+        (json['destination'] as Map?)?['mode'] as String? ?? 'auto',
+    destinationUrl: (json['destination'] as Map?)?['url'] as String? ?? '',
+    destinationLabel: (json['destination'] as Map?)?['label'] as String? ?? '',
     classification: json['classification'] is Map<String, dynamic>
         ? RekkyClassification.fromJson(
             json['classification'] as Map<String, dynamic>,
@@ -443,6 +460,19 @@ class RekkyApi {
     return (response['concepts'] as List)
         .map((c) => CategoryConcept.fromJson(c as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<RekkyItem> editRecommendation(
+    RekkyItem item,
+    Map<String, dynamic> content,
+  ) async {
+    final response = await request(
+      'PATCH',
+      '/v1/items/${item.id}/content',
+      body: content,
+      headers: {'if-match': '${item.revision}'},
+    );
+    return RekkyItem.fromJson(response['item'] as Map<String, dynamic>);
   }
 
   Future<RekkyItem> changeClassification(

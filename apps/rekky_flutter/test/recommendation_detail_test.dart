@@ -61,7 +61,7 @@ Future<void> openSheet(
                       audience ?? (item, value) async => revised(item, value),
                   deleteSource: deleteSource ?? (_, _) async {},
                   deleteItem: deleteItem ?? (_) async {},
-                  editCategory: (_) {},
+                  editRecommendation: (_) {},
                   refineItem: (_) {},
                 ),
               ),

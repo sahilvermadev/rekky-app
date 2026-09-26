@@ -13,7 +13,7 @@ class RecommendationDetailSheet extends StatefulWidget {
     required this.changeAudience,
     required this.deleteItem,
     required this.deleteSource,
-    required this.editCategory,
+    required this.editRecommendation,
     required this.refineItem,
   });
   final RekkyItem item;
@@ -21,7 +21,7 @@ class RecommendationDetailSheet extends StatefulWidget {
   final Future<RekkyItem> Function(RekkyItem, String) changeAudience;
   final Future<void> Function(RekkyItem) deleteItem;
   final Future<void> Function(RekkyItem, RekkySource) deleteSource;
-  final void Function(RekkyItem) editCategory, refineItem;
+  final void Function(RekkyItem) editRecommendation, refineItem;
 
   @override
   State<RecommendationDetailSheet> createState() =>
@@ -228,14 +228,13 @@ class _RecommendationDetailSheetState extends State<RecommendationDetailSheet> {
                       return;
                     }
                     Navigator.pop(context);
-                    widget.editCategory(item);
+                    widget.editRecommendation(item);
                   },
                   itemBuilder: (_) => [
-                    if (item.recommendation != null)
-                      const PopupMenuItem(
-                        value: 'category',
-                        child: Text('Edit category'),
-                      ),
+                    const PopupMenuItem(
+                      value: 'edit',
+                      child: Text('Edit recommendation'),
+                    ),
                     PopupMenuItem(
                       value: 'delete',
                       child: Text(

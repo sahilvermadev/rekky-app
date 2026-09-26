@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'identity.dart';
-import 'category_editor.dart';
+import 'recommendation_editor.dart';
 import 'recommendation_view.dart';
 import 'recommendation_detail.dart';
 import 'rekky_api.dart';
@@ -457,9 +457,9 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
             await scopedApi.deleteSource(current, source);
             checkAccount();
           },
-          editCategory: (current) {
+          editRecommendation: (current) {
             if (mounted && signedIn && accountId == owner) {
-              unawaited(_editCategory(current));
+              unawaited(_editRecommendation(current));
             }
           },
           refineItem: (current) {
@@ -472,37 +472,55 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _editCategory(RekkyItem item) async {
+  Future<void> _editRecommendation(RekkyItem item) async {
     final owner = accountId;
     final scopedApi = RekkyApi(apiBaseUrl)..token = api.token;
-    try {
-      final concepts = await scopedApi.categoryConcepts();
-      if (!mounted || !signedIn || accountId != owner) return;
-      final changed = await showModalBottomSheet<bool>(
-        context: context,
-        isScrollControlled: true,
-        showDragHandle: true,
-        builder: (context) => ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * .8,
-          ),
-          child: CategoryEditor(
-            item: item,
-            concepts: concepts,
-            onSave: (types, facets) async {
-              if (!signedIn || accountId != owner) {
-                throw StateError('Account changed');
-              }
-              await scopedApi.changeClassification(item, types, facets);
-            },
-          ),
-        ),
-      );
-      if (changed == true && mounted && signedIn && accountId == owner) {
-        await _reload();
+    void checkAccount() {
+      if (!mounted || !signedIn || accountId != owner) {
+        throw StateError('Account changed');
       }
-    } catch (error) {
-      if (mounted && accountId == owner) setState(() => issue = '$error');
+    }
+
+    final updated = await Navigator.push<RekkyItem>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RecommendationEditor(
+          item: item,
+          loadConcepts: () async {
+            checkAccount();
+            final concepts = await scopedApi.categoryConcepts();
+            checkAccount();
+            return concepts;
+          },
+          onSave: (content) async {
+            checkAccount();
+            final updated = await scopedApi.editRecommendation(item, content);
+            checkAccount();
+            setState(() {
+              library = library
+                  .map((i) => i.id == updated.id ? updated : i)
+                  .toList();
+              matches = matches
+                  .map(
+                    (m) => m['item_id'] == updated.id
+                        ? {
+                            ...m,
+                            'subject': updated.subject,
+                            'body': updated.body,
+                            'visibility': updated.visibility,
+                            'revision': updated.revision,
+                          }
+                        : m,
+                  )
+                  .toList();
+            });
+            return updated;
+          },
+        ),
+      ),
+    );
+    if (updated != null && mounted && signedIn && accountId == owner) {
+      unawaited(_openItem(updated));
     }
   }
 

@@ -69,6 +69,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/v1/items", post(save_item).get(list_items))
         .route("/v1/taxonomy", get(taxonomy_catalog))
+        .route("/v1/items/{id}/content", axum::routing::patch(edit_content))
         .route(
             "/v1/items/{id}/classification",
             axum::routing::patch(correct_classification),
@@ -757,7 +758,7 @@ async fn refine_item(
     let capture_id: Uuid = row.get("capture_id");
     if row
         .get::<Option<Value>, _>("recommendation")
-        .is_some_and(|v| v["version"] == UNDERSTANDING_VERSION)
+        .is_some_and(|v| v["origin"] == "user" || v["version"] == UNDERSTANDING_VERSION)
     {
         tx.commit().await?;
         let partial: bool = sqlx::query_scalar("SELECT status='partial' FROM captures WHERE id=$1")
@@ -1733,6 +1734,47 @@ async fn correct_classification(
     tx.commit().await?;
     Ok(ok(json!({"item":item_json(&updated)})))
 }
+async fn edit_content(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> ApiResult {
+    let owner_id = owner(&state, &headers, true).await?;
+    let id = uuid(&id)?;
+    let expected = revision(&headers)?;
+    let input: crate::editing::EditInput = parse(&body)?;
+    let input = input.normalized().map_err(ApiError::bad)?;
+    let (recommendation, body) = input.build().map_err(ApiError::bad)?;
+    let mut tx = state.pool.begin().await?;
+    let previous = sqlx::query("SELECT subject,recommendation,revision FROM knowledge_items WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL FOR UPDATE")
+        .bind(id).bind(owner_id).fetch_optional(&mut *tx).await?
+        .ok_or_else(|| ApiError::not_found("Item not found"))?;
+    if previous.get::<i32, _>("revision") != expected {
+        return Err(ApiError::conflict(
+            "This recommendation changed. Reopen it before editing; your draft has not been saved.",
+        ));
+    }
+    if input.must_check_destination(
+        &previous.get::<String, _>("subject"),
+        &previous
+            .get::<Option<Value>, _>("recommendation")
+            .unwrap_or(Value::Null),
+    ) {
+        return Err(ApiError::bad(
+            "The name or location changed. Confirm or remove the existing link.",
+        ));
+    }
+    let updated: ItemRow = sqlx::query_as("UPDATE knowledge_items SET subject=$1,body=$2,visibility=$3,recommendation=$4,revision=revision+1 WHERE id=$5 RETURNING id,capture_id,subject,body,visibility,revision,created_at,recommendation,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review")
+        .bind(input.subject).bind(body).bind(input.visibility).bind(recommendation).bind(id).fetch_one(&mut *tx).await?;
+    // Keep original evidence for recovery, but never describe it as support for
+    // the owner's replacement. No undisclosed copy of old public prose is made.
+    sqlx::query("UPDATE item_source_support SET support=jsonb_set(support,'{superseded_by_user_revision}',to_jsonb($2::integer)) WHERE item_id=$1")
+        .bind(id).bind(updated.revision).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(ok(json!({"item":item_json(&updated)})))
+}
+
 async fn change_visibility(
     State(state): State<AppState>,
     headers: HeaderMap,

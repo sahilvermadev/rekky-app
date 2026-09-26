@@ -1848,7 +1848,7 @@ async fn explicit_refinement_preserves_identity_privacy_and_source_deletion_remo
 }
 #[tokio::test]
 async fn refinement_rejects_late_results_after_source_delete_withdrawal_or_item_edit() {
-    for action in ["source", "permission", "item"] {
+    for action in ["source", "permission", "item", "content"] {
         let Some(mut t) = TestApp::new().await else {
             return;
         };
@@ -1883,6 +1883,24 @@ async fn refinement_rejects_late_results_after_source_delete_withdrawal_or_item_
         .await
         .unwrap();
         match action {
+            "content" => {
+                let input: Value = serde_json::from_str(include_str!(
+                    "../../../contracts/rekky/v1/fixtures/recommendation_edit.json"
+                ))
+                .unwrap();
+                assert_eq!(
+                    t.call(
+                        Method::PATCH,
+                        &format!("/v1/items/{item}/content"),
+                        Some(&token),
+                        Some(input),
+                        &[("if-match", "1")]
+                    )
+                    .await
+                    .0,
+                    StatusCode::OK
+                );
+            }
             "source" => {
                 t.call(
                     Method::DELETE,
@@ -1928,7 +1946,220 @@ async fn refinement_rejects_late_results_after_source_delete_withdrawal_or_item_
                 .fetch_one(&t.pool)
                 .await
                 .unwrap();
-        assert!(value.is_none());
+        if action == "content" {
+            assert_eq!(value.unwrap()["origin"], "user");
+        } else {
+            assert!(value.is_none());
+        }
         t.cleanup().await;
     }
+}
+
+#[tokio::test]
+async fn full_edits_are_atomic_searchable_owner_fenced_and_preserve_sources() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    let (_owner, token, item, capture) = legacy_voice_item(&mut t).await;
+    let original_source: String =
+        sqlx::query_scalar("SELECT content FROM source_texts WHERE capture_id=$1")
+            .bind(Uuid::parse_str(&capture).unwrap())
+            .fetch_one(&t.pool)
+            .await
+            .unwrap();
+    let path = format!("/v1/items/{item}/content");
+    let input: Value = serde_json::from_str(include_str!(
+        "../../../contracts/rekky/v1/fixtures/recommendation_edit.json"
+    ))
+    .unwrap();
+    let (_, other) = t.sign_in("google", "valid-b").await;
+    t.call(
+        Method::POST,
+        "/v1/me/visibility-disclosure",
+        Some(&other),
+        Some(json!({"accept":true})),
+        &[],
+    )
+    .await;
+    assert_eq!(
+        t.call(
+            Method::PATCH,
+            &path,
+            Some(&other),
+            Some(input.clone()),
+            &[("if-match", "1")]
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    let mut invalid = input.clone();
+    invalid["facets"] = json!(["invented"]);
+    invalid["visibility"] = json!("friends");
+    assert_eq!(
+        t.call(
+            Method::PATCH,
+            &path,
+            Some(&token),
+            Some(invalid),
+            &[("if-match", "1")]
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    let (status, edited) = t
+        .call(
+            Method::PATCH,
+            &path,
+            Some(&token),
+            Some(input.clone()),
+            &[("if-match", "1")],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{edited}");
+    assert_eq!(edited["item"]["revision"], 2);
+    assert_eq!(edited["item"]["visibility"], "private");
+    assert_eq!(edited["item"]["subject"], "Lantern Cafe");
+    assert_eq!(edited["item"]["recommendation"]["attribution"], "Priya");
+    assert_eq!(edited["item"]["recommendation"]["origin"], "user");
+    assert_eq!(
+        edited["item"]["recommendation"]["classification"]["origin"],
+        "user"
+    );
+    assert!(!edited["item"]["body"].as_str().unwrap().contains("Tuesday"));
+    let source: String = sqlx::query_scalar("SELECT content FROM source_texts WHERE capture_id=$1")
+        .bind(Uuid::parse_str(&capture).unwrap())
+        .fetch_one(&t.pool)
+        .await
+        .unwrap();
+    assert_eq!(source, original_source);
+    assert_eq!(
+        t.call(
+            Method::PATCH,
+            &path,
+            Some(&token),
+            Some(input.clone()),
+            &[("if-match", "1")]
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    let (_, found) = t
+        .call(
+            Method::POST,
+            "/v1/ask",
+            Some(&token),
+            Some(json!({"question":"Italian restaurant mushroom"})),
+            &[],
+        )
+        .await;
+    assert_eq!(found["results"][0]["item_id"], item);
+    let (_, hidden) = t
+        .call(
+            Method::POST,
+            "/v1/ask",
+            Some(&other),
+            Some(json!({"question":"mushroom"})),
+            &[],
+        )
+        .await;
+    assert!(hidden["results"].as_array().unwrap().is_empty());
+    // A future pipeline version must still leave owner-authored replacements alone.
+    sqlx::query("UPDATE knowledge_items SET recommendation=jsonb_set(recommendation,'{version}','1'::jsonb) WHERE id=$1")
+        .bind(Uuid::parse_str(&item).unwrap()).execute(&t.pool).await.unwrap();
+    assert_eq!(
+        t.call(
+            Method::POST,
+            &format!("/v1/items/{item}/refine"),
+            Some(&token),
+            None,
+            &[("if-match", "2")]
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let jobs: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM recommendation_refinement_jobs WHERE item_id=$1")
+            .bind(Uuid::parse_str(&item).unwrap())
+            .fetch_one(&t.pool)
+            .await
+            .unwrap();
+    assert_eq!(jobs, 0);
+    let mut changed = input.clone();
+    changed["subject"] = json!("Lantern Annex");
+    assert_eq!(
+        t.call(
+            Method::PATCH,
+            &path,
+            Some(&token),
+            Some(changed.clone()),
+            &[("if-match", "2")]
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    changed["destination_confirmed"] = json!(true);
+    changed["visibility"] = json!("friends");
+    assert_eq!(
+        t.call(
+            Method::PATCH,
+            &path,
+            Some(&token),
+            Some(changed),
+            &[("if-match", "2")]
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        t.call(
+            Method::DELETE,
+            &format!("/v1/captures/{capture}/source"),
+            Some(&token),
+            None,
+            &[("if-match", "1")]
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    let mut after_removal = input.clone();
+    after_removal["destination"]["mode"] = json!("none");
+    let (status, saved) = t
+        .call(
+            Method::PATCH,
+            &path,
+            Some(&token),
+            Some(after_removal),
+            &[("if-match", "3")],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(saved["item"]["recommendation"]["destination"]["url"], "");
+    t.call(
+        Method::DELETE,
+        &format!("/v1/items/{item}"),
+        Some(&token),
+        None,
+        &[("if-match", "4")],
+    )
+    .await;
+    assert_eq!(
+        t.call(
+            Method::PATCH,
+            &path,
+            Some(&token),
+            Some(input),
+            &[("if-match", "4")]
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    t.cleanup().await;
 }

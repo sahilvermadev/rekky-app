@@ -175,6 +175,9 @@ class RecommendationView extends StatelessWidget {
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
+        if (recommendation.attribution.isNotEmpty &&
+            recommendation.experience != 'secondhand')
+          Text('Source: ${recommendation.attribution}', style: secondary),
         const SizedBox(height: 8),
         Text(
           recommendation.summary,

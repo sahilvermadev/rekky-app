@@ -1,0 +1,19 @@
+{
+  "subject": "Lantern Cafe",
+  "visibility": "private",
+  "entity_kind": "place",
+  "summary": "A relaxed stop for mushroom noodles. Portions are small.",
+  "experience": "secondhand",
+  "attribution": "Priya",
+  "observations": [
+    {"kind": "suggestion", "text": "Try the mushroom noodles."},
+    {"kind": "caution", "text": "Small portions; order a few plates."}
+  ],
+  "locations": [{"role": "venue", "text": "Pune"}],
+  "use_cases": ["An afternoon meal"],
+  "types": ["place.restaurant"],
+  "facets": ["cuisine.italian"],
+  "descriptors": [],
+  "destination": {"mode": "custom", "url": "https://example.com/lantern", "label": "Website"},
+  "destination_confirmed": false
+}

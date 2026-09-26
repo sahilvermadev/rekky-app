@@ -8,8 +8,10 @@ class CategoryEditor extends StatefulWidget {
     required this.item,
     required this.concepts,
     required this.onSave,
+    this.saveLabel = 'Save',
   });
   final RekkyItem item;
+  final String saveLabel;
   final List<CategoryConcept> concepts;
   final Future<void> Function(List<String>, List<String>) onSave;
   @override
@@ -150,7 +152,7 @@ class _CategoryEditorState extends State<CategoryEditor> {
             const SizedBox(height: 16),
             FilledButton(
               onPressed: saving ? null : save,
-              child: Text(saving ? 'Saving…' : 'Save'),
+              child: Text(saving ? 'Saving…' : widget.saveLabel),
             ),
           ],
         ),
