@@ -308,11 +308,9 @@ class _VoiceDraftsSheetState extends State<VoiceDraftsSheet> {
         showLibraryAction = items.isNotEmpty;
         receipt = items.isEmpty
             ? 'No saved recommendations remain for this transcript.'
+            : result['partial'] == true
+            ? '${items.length} private memory${items.length == 1 ? '' : 's'} saved. Review the source details in Library before relying on ${items.length == 1 ? 'it' : 'them'}.'
             : '${items.length} private recommendation${items.length == 1 ? '' : 's'} saved. You can find ${items.length == 1 ? 'it' : 'them'} in Library and Ask.';
-        if (result['partial'] == true) {
-          receipt =
-              '${receipt!} Some transcript details may still need review.';
-        }
       });
     }
   }
@@ -561,7 +559,7 @@ class _VoiceDraftsSheetState extends State<VoiceDraftsSheet> {
                         Text('Saved ${capture.createdAt}'),
                         if (capture.itemCount > 0)
                           Text(
-                            '${capture.itemCount} private recommendation${capture.itemCount == 1 ? '' : 's'} saved${capture.partial == true ? ' · review details' : ''}',
+                            '${capture.itemCount} private ${capture.partial == true ? 'memory' : 'recommendation'}${capture.itemCount == 1 ? '' : 's'} saved${capture.partial == true ? ' · review details' : ''}',
                           ),
                         if (capture.itemCount == 0 &&
                             capture.extractionStatus != 'completed')
