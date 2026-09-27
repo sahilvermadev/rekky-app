@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'rekky_haptics.dart';
 import 'contact_matching.dart';
 import 'library_collection.dart';
 import 'library_style.dart';
@@ -147,6 +148,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   );
 
   Future<void> pinMenu(RekkyItem item) async {
+    RekkyHaptics.confirm();
     final pin = await showModalBottomSheet<bool>(
       context: context,
       showDragHandle: true,
@@ -173,8 +175,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
     setState(() => pendingPins.add(item.id));
     try {
       await widget.onPin(item, pin);
+      if (mounted) RekkyHaptics.selection();
     } catch (error) {
       if (mounted) {
+        RekkyHaptics.warning();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -867,6 +871,7 @@ class _LibraryRowState extends State<_LibraryRow> {
     if (!mounted) return;
     setState(() => opening = false);
     if (!success) {
+      RekkyHaptics.warning();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Couldn’t open this action. Try again.')),
       );
@@ -905,6 +910,7 @@ class _LibraryRowState extends State<_LibraryRow> {
         child: InkWell(
           onTap: widget.onOpen,
           onLongPress: widget.pinBusy ? null : widget.onPin,
+          enableFeedback: false,
           borderRadius: BorderRadius.circular(12),
           child: Padding(
             padding: const EdgeInsets.all(12),

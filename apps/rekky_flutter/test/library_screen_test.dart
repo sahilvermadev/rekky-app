@@ -353,6 +353,16 @@ void main() {
   testWidgets('pins wait for acknowledgement and a failure stays visible', (
     tester,
   ) async {
+    final haptics = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'HapticFeedback.vibrate') {
+          haptics.add(call.arguments as String);
+        }
+        return null;
+      },
+    );
     final result = Completer<RekkyItem>();
     await tester.pumpWidget(
       app(
@@ -369,9 +379,14 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.byIcon(Icons.push_pin), findsNothing);
+    expect(haptics, ['HapticFeedbackType.lightImpact']);
     result.completeError(StateError('offline'));
     await tester.pumpAndSettle();
     expect(find.text('Couldn’t save the pin. Try again.'), findsOneWidget);
+    expect(haptics, [
+      'HapticFeedbackType.lightImpact',
+      'HapticFeedbackType.mediumImpact',
+    ]);
   });
 
   testWidgets(

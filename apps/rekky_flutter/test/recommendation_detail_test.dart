@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
+
 import 'package:flutter/material.dart';
 import 'package:rekky_flutter/rekky_theme.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -210,6 +212,16 @@ void main() {
   testWidgets(
     'audience waits for acknowledgement, then uses returned revision for deletion',
     (tester) async {
+      final haptics = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'HapticFeedback.vibrate') {
+            haptics.add(call.arguments as String);
+          }
+          return null;
+        },
+      );
       final pending = Completer<RekkyItem>();
       final item = fixture('categorized_recommendation');
       int? deletedRevision;
@@ -232,9 +244,11 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
       await tester.pump(const Duration(milliseconds: 500));
       expect(find.text('Only me'), findsOneWidget);
+      expect(haptics, isEmpty);
       pending.complete(revised(item, 'friends'));
       await tester.pumpAndSettle();
       expect(find.text('Friends'), findsOneWidget);
+      expect(haptics, ['HapticFeedbackType.lightImpact']);
       expect(find.text('Delete recommendation'), findsNothing);
       await tester.tap(find.byTooltip('Recommendation options'));
       await tester.pumpAndSettle();

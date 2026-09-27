@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'rekky_haptics.dart';
 import 'identity.dart';
 import 'appearance.dart';
 import 'contact_matching.dart';
@@ -565,7 +566,10 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
       final found = await api.ask(q);
       if (mounted) setState(() => matches = found);
     } catch (error) {
-      if (mounted) setState(() => issue = '$error');
+      if (mounted) {
+        RekkyHaptics.warning();
+        setState(() => issue = '$error');
+      }
     }
     if (mounted) setState(() => searching = false);
   }
@@ -583,7 +587,10 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
         );
       }
     } catch (error) {
-      if (mounted) setState(() => issue = '$error');
+      if (mounted) {
+        RekkyHaptics.warning();
+        setState(() => issue = '$error');
+      }
     } finally {
       recordingScreenOpen = false;
     }

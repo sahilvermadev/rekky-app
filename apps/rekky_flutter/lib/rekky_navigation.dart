@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'rekky_haptics.dart';
 import 'rekky_theme.dart';
 
 // Hallmark · component: three-part navigation · flat primary colours.
@@ -79,8 +80,12 @@ class _RekkyNavigationState extends State<RekkyNavigation> {
           selected: selected,
           child: TextButton(
             statesController: states,
-            onPressed: () => widget.onSelect(index),
+            onPressed: () {
+              if (!selected) RekkyHaptics.selection();
+              widget.onSelect(index);
+            },
             style: TextButton.styleFrom(
+              enableFeedback: false,
               foregroundColor: foreground,
               overlayColor: Colors.transparent,
               splashFactory: NoSplash.splashFactory,
@@ -139,6 +144,7 @@ class _RekkyNavigationState extends State<RekkyNavigation> {
             statesController: _recommendStates,
             onPressed: widget.onRemember,
             style: FilledButton.styleFrom(
+              enableFeedback: false,
               backgroundColor: RekkyTheme.capture,
               foregroundColor: RekkyTheme.onCapture,
               textStyle: labelStyle.copyWith(fontWeight: FontWeight.w700),

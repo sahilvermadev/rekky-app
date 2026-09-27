@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 
+import 'rekky_haptics.dart';
 import 'rekky_api.dart';
 import 'library_style.dart';
 import 'original_note_view.dart';
@@ -124,9 +125,13 @@ class _RecommendationDetailSheetState extends State<RecommendationDetailSheet> {
     });
     try {
       final updated = await widget.changeAudience(item, value);
-      if (mounted) setState(() => item = updated);
+      if (mounted) {
+        setState(() => item = updated);
+        RekkyHaptics.confirm();
+      }
     } catch (error) {
       if (mounted) {
+        RekkyHaptics.warning();
         setState(() {
           actionError = errorText(
             error,
@@ -147,9 +152,13 @@ class _RecommendationDetailSheetState extends State<RecommendationDetailSheet> {
     });
     try {
       final updated = await widget.changePin!(item, !item.pinned);
-      if (mounted) setState(() => item = updated);
+      if (mounted) {
+        setState(() => item = updated);
+        RekkyHaptics.selection();
+      }
     } catch (error) {
       if (mounted) {
+        RekkyHaptics.warning();
         setState(
           () => actionError = errorText(
             error,
@@ -196,6 +205,7 @@ class _RecommendationDetailSheetState extends State<RecommendationDetailSheet> {
       if (mounted) Navigator.pop(context);
     } catch (error) {
       if (mounted) {
+        RekkyHaptics.warning();
         setState(() {
           actionError = errorText(error, 'Couldn’t delete it. Try again.');
         });

@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import 'rekky_api.dart';
+import 'rekky_haptics.dart';
 import 'library_style.dart';
 import 'rekky_theme.dart';
 import 'voice_drafts.dart';
@@ -29,6 +29,7 @@ class VoiceCaptureSheet extends StatefulWidget {
 class _VoiceCaptureSheetState extends State<VoiceCaptureSheet>
     with WidgetsBindingObserver {
   bool starting = true, recording = false, finishing = false;
+  bool cancelRequested = false;
   String? issue;
   Timer? limit;
   Timer? elapsedTimer;
@@ -38,7 +39,7 @@ class _VoiceCaptureSheetState extends State<VoiceCaptureSheet>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _start());
+    unawaited(_start());
   }
 
   @override
@@ -53,7 +54,7 @@ class _VoiceCaptureSheetState extends State<VoiceCaptureSheet>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused) {
-      if (recording && !finishing) unawaited(_finish());
+      if (recording && !finishing) unawaited(_finish(userInitiated: false));
     }
   }
 
@@ -61,31 +62,41 @@ class _VoiceCaptureSheetState extends State<VoiceCaptureSheet>
     if (!mounted) return;
     try {
       await widget.store.start(widget.ownerId);
-      if (!mounted) {
+      final lifecycle = WidgetsBinding.instance.lifecycleState;
+      if (!mounted ||
+          cancelRequested ||
+          lifecycle == AppLifecycleState.paused ||
+          lifecycle == AppLifecycleState.hidden) {
         await widget.store.cancel(widget.ownerId);
+        if (mounted) Navigator.pop(context, false);
         return;
       }
       setState(() {
         starting = false;
         recording = true;
       });
-      unawaited(HapticFeedback.lightImpact());
+      RekkyHaptics.confirm();
       elapsed.start();
       elapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (mounted) setState(() {});
       });
-      limit = Timer(const Duration(minutes: 2), () => unawaited(_finish()));
+      limit = Timer(
+        const Duration(minutes: 2),
+        () => unawaited(_finish(userInitiated: false)),
+      );
     } catch (error) {
       if (mounted) {
+        RekkyHaptics.warning();
         setState(() {
           starting = false;
+          finishing = false;
           issue = '$error';
         });
       }
     }
   }
 
-  Future<void> _finish() async {
+  Future<void> _finish({bool userInitiated = true}) async {
     if (!recording || finishing) return;
     limit?.cancel();
     elapsedTimer?.cancel();
@@ -95,10 +106,13 @@ class _VoiceCaptureSheetState extends State<VoiceCaptureSheet>
       final draft = await widget.store.finish(widget.ownerId);
       await widget.onChanged();
       widget.onCaptured();
-      unawaited(HapticFeedback.lightImpact());
-      if (mounted) Navigator.pop(context, draft.status == 'ready');
+      if (mounted) {
+        if (userInitiated) RekkyHaptics.confirm();
+        Navigator.pop(context, draft.status == 'ready');
+      }
     } catch (error) {
       if (mounted) {
+        RekkyHaptics.warning();
         setState(() {
           recording = false;
           finishing = false;
@@ -110,7 +124,16 @@ class _VoiceCaptureSheetState extends State<VoiceCaptureSheet>
   }
 
   Future<void> _discard() async {
-    if (finishing || starting) return;
+    if (finishing) return;
+    if (starting) {
+      // Wait for start to settle before cancelling, so a late platform reply
+      // cannot leave a recorder active or race the next capture.
+      setState(() {
+        cancelRequested = true;
+        finishing = true;
+      });
+      return;
+    }
     setState(() => finishing = true);
     limit?.cancel();
     elapsedTimer?.cancel();
@@ -120,6 +143,7 @@ class _VoiceCaptureSheetState extends State<VoiceCaptureSheet>
       if (mounted) Navigator.pop(context, false);
     } catch (error) {
       if (mounted) {
+        RekkyHaptics.warning();
         setState(() {
           issue = '$error';
           finishing = false;
@@ -147,50 +171,67 @@ class _VoiceCaptureSheetState extends State<VoiceCaptureSheet>
                       Text(
                         issue != null
                             ? 'Couldn’t record'
-                            : recording
-                            ? 'Tell us about your experience'
-                            : 'Getting ready',
+                            : 'Tell us about your experience',
                         style: LibraryStyle.heading(context, 32),
                       ),
                       const SizedBox(height: 12),
                       const Text('What was good? What should someone know?'),
                       const Spacer(),
-                      if (starting || finishing)
-                        const LinearProgressIndicator(),
-                      if (recording)
-                        Center(
-                          child: Container(
-                            width: 88,
-                            height: 104,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: RekkyTheme.capture,
-                              borderRadius: BorderRadius.circular(32),
-                            ),
-                            child: Icon(
-                              Icons.mic_none_rounded,
-                              size: 44,
-                              color: RekkyTheme.onCapture,
-                              semanticLabel: 'Recording',
-                            ),
+                      Center(
+                        child: AnimatedContainer(
+                          duration: MediaQuery.disableAnimationsOf(context)
+                              ? Duration.zero
+                              : const Duration(milliseconds: 180),
+                          width: 88,
+                          height: 104,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: recording && !finishing
+                                ? RekkyTheme.capture
+                                : Theme.of(context)
+                                      .colorScheme
+                                      .surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(32),
+                          ),
+                          child: Icon(
+                            Icons.mic_none_rounded,
+                            size: 44,
+                            color: recording && !finishing
+                                ? RekkyTheme.onCapture
+                                : Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
                           ),
                         ),
-                      if (recording) ...[
-                        const SizedBox(height: 16),
-                        Text(
-                          '${elapsed.elapsed.inMinutes}:${(elapsed.elapsed.inSeconds % 60).toString().padLeft(2, '0')}',
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        '${elapsed.elapsed.inMinutes}:${(elapsed.elapsed.inSeconds % 60).toString().padLeft(2, '0')}',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.headlineMedium
+                            ?.copyWith(
+                              fontFamily: 'Manrope',
+                              fontWeight: FontWeight.w500,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
+                      ),
+                      Semantics(
+                        liveRegion: true,
+                        child: Text(
+                          cancelRequested && finishing
+                              ? 'Closing…'
+                              : finishing
+                              ? 'Saving recording…'
+                              : issue != null
+                              ? 'Microphone off'
+                              : starting
+                              ? 'Starting microphone…'
+                              : 'Recording',
                           textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.headlineMedium
-                              ?.copyWith(
-                                fontFamily: 'Manrope',
-                                fontWeight: FontWeight.w500,
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures(),
-                                ],
-                              ),
                         ),
-                        const Text('Recording', textAlign: TextAlign.center),
-                      ],
+                      ),
                       if (issue != null)
                         Text(
                           issue!,
@@ -199,16 +240,22 @@ class _VoiceCaptureSheetState extends State<VoiceCaptureSheet>
                           ),
                         ),
                       const Spacer(),
-                      if (recording)
-                        FilledButton(
-                          onPressed: finishing ? null : _finish,
-                          child: const Text('Done'),
+                      FilledButton(
+                        onPressed: recording && !finishing
+                            ? () => _finish()
+                            : null,
+                        child: const Text('Done'),
+                      ),
+                      TextButton(
+                        onPressed: finishing ? null : _discard,
+                        child: Text(
+                          starting
+                              ? 'Cancel'
+                              : recording
+                              ? 'Discard'
+                              : 'Close',
                         ),
-                      if (!starting && !finishing)
-                        TextButton(
-                          onPressed: _discard,
-                          child: Text(recording ? 'Discard' : 'Close'),
-                        ),
+                      ),
                     ],
                   ),
                 ),

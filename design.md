@@ -33,3 +33,9 @@ Bottom navigation follows the user's drawn three-part capsule: Ask at the left, 
 ## Acceptance
 
 Inspect native light and dark screens and compare to the previous version at the same viewport. Verify Library top/end, filters, detail, Ask, menu, empty/long lists, 320/375/414/768 widths, 200% text and keyboard-visible filters/search. Touch targets must not overlap. Contrast floors: 4.5:1 ordinary text and 3:1 meaningful icons/focus. Report functional tests and visual inspection separately; neither proves the other's quality. No backend data changes are part of this design system.
+
+## Tactile feedback and recording entry
+
+Haptics mark deliberate transitions: a light impact for microphone readiness, durably queued Done, a long-press action menu and acknowledged visibility change; a selection tick for pin changes and switching Ask/Library; a medium impact with visible failures. The current tab, normal browsing and automatic background work stay silent. Delegate to platform haptic APIs, suppress feedback when backgrounded, and tolerate unavailable hardware.
+
+Recording uses one stable layout from its first frame. Keep the prompt, microphone emblem, tabular timer and controls mounted through startup and local saving. A neutral microphone and Starting microphone status accurately precede red/Recording; Done activates only once the recorder is ready. No separate loading page, progress stripe or fake waveform. Allow cancellation during startup without racing a late platform response. Fade only the emblem colour over 180 ms, or immediately under reduced motion, and announce status changes through accessibility semantics.

@@ -13,6 +13,46 @@ void main() {
     }
     await fonts.load();
   });
+  testWidgets('only destination changes tick; Recommend waits for microphone', (
+    tester,
+  ) async {
+    final haptics = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'HapticFeedback.vibrate') {
+          haptics.add(call.arguments as String);
+        }
+        return null;
+      },
+    );
+    var destination = 1;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) => Scaffold(
+            bottomNavigationBar: RekkyNavigation(
+              destination: destination,
+              onSelect: (value) => setState(() => destination = value),
+              onRemember: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Library'));
+    await tester.tap(find.text('Recommend'));
+    expect(haptics, isEmpty);
+    await tester.tap(find.text('Ask'));
+    await tester.pumpAndSettle();
+    expect(haptics, ['HapticFeedbackType.selectionClick']);
+    await tester.tap(find.text('Ask'));
+    expect(haptics.length, 1);
+    await tester.tap(find.text('Library'));
+    await tester.pumpAndSettle();
+    expect(haptics.length, 2);
+  });
+
   for (final width in [320.0, 375.0, 414.0, 768.0]) {
     for (final scale in [1.0, 2.0]) {
       testWidgets('navigation stays readable and one-tap at $width / $scale', (
