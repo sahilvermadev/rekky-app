@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 // Hallmark · curated native collection · neutral canvas, purposeful colour.
 // Pre-emit critique: P5 H5 E4 S5 R5 V4. Shared tokens for both brightness modes.
 abstract final class RekkyTheme {
-  static const paper = Color(0xfff7f8fa);
-  static const ink = Color(0xff20252d);
-  static const charcoal = Color(0xff171a20);
+  static const paper = Color(0xfff6f7f9);
+  static const ink = Color(0xff222832);
+  static const charcoal = Color(0xff15181d);
   static const blue = Color(0xff355bbb);
   static const plum = Color(0xff854b91);
   static const jade = Color(0xff24765f);
@@ -25,8 +25,8 @@ abstract final class RekkyTheme {
               ? const Color(0xff12151a)
               : const Color(0xffffffff),
           surfaceContainerLow: dark
-              ? const Color(0xff20252d)
-              : const Color(0xffeef0f4),
+              ? const Color(0xff20242b)
+              : const Color(0xffffffff),
           surfaceContainer: dark
               ? const Color(0xff272d37)
               : const Color(0xffe8ebf1),
@@ -56,6 +56,63 @@ abstract final class RekkyTheme {
         );
     return ThemeData(
       useMaterial3: true,
+      fontFamily: 'Manrope',
+      textTheme: TextTheme(
+        headlineLarge: TextStyle(
+          fontFamily: 'Fraunces',
+          fontWeight: FontWeight.w500,
+          fontSize: 32,
+          height: 1.12,
+          letterSpacing: -.5,
+          color: colors.onSurface,
+        ),
+        headlineMedium: TextStyle(
+          fontFamily: 'Fraunces',
+          fontWeight: FontWeight.w500,
+          fontSize: 30,
+          height: 1.12,
+          letterSpacing: -.5,
+          color: colors.onSurface,
+        ),
+        headlineSmall: TextStyle(
+          fontFamily: 'Fraunces',
+          fontWeight: FontWeight.w500,
+          fontSize: 26,
+          height: 1.2,
+          color: colors.onSurface,
+        ),
+        titleMedium: const TextStyle(
+          fontSize: 17,
+          fontWeight: FontWeight.w600,
+          height: 1.25,
+          letterSpacing: -.2,
+        ),
+        bodyLarge: const TextStyle(fontSize: 16, height: 1.55),
+        bodyMedium: const TextStyle(fontSize: 14, height: 1.45),
+        bodySmall: const TextStyle(fontSize: 13, height: 1.4),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: colors.surfaceContainerLow,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: colors.outlineVariant),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(
+            color: colors.outlineVariant.withValues(alpha: .5),
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: colors.primary, width: 2),
+        ),
+      ),
       colorScheme: colors,
       scaffoldBackgroundColor: colors.surface,
       appBarTheme: AppBarTheme(

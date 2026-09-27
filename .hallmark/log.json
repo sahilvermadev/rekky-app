@@ -1,6 +1,15 @@
 [
   {
     "date": "2026-09-27",
+    "scope": "native-app",
+    "macrostructure": "Personal field guide",
+    "theme": "custom",
+    "enrichment": "none",
+    "brief": "Fraunces and Manrope, neutral collected-entry cards, collection markers, unified filters and matching reading/recording surfaces",
+    "theme_axes": "neutral / expressive display and geometric sans / multicolour collection accents"
+  },
+  {
+    "date": "2026-09-27",
     "scope": "native-library",
     "macrostructure": "Open collection list",
     "theme": "custom",

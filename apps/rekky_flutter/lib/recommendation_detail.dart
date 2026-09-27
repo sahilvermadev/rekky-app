@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 
 import 'rekky_api.dart';
+import 'library_style.dart';
+import 'library_collection.dart';
 import 'original_note_view.dart';
 import 'recommendation_view.dart';
 import 'recommendation_review.dart';
 
-// Hallmark · component: reading sheet · existing warm Material tokens.
+// Hallmark · personal field guide · shared type and collection emblems.
 // Pre-emit critique: P4 H5 E4 S4 R5 V4. Native focus/interaction states.
 class RecommendationDetailSheet extends StatefulWidget {
   const RecommendationDetailSheet({
@@ -332,13 +334,39 @@ class _RecommendationDetailSheetState extends State<RecommendationDetailSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    item.subject,
-                    style: theme.textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      height: 1.15,
-                      letterSpacing: -.5,
-                    ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          item.subject,
+                          style: LibraryStyle.heading(context, 30),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      ExcludeSemantics(
+                        child: Container(
+                          width: 44,
+                          height: 48,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: LibraryStyle.tint(
+                              context,
+                              LibraryShelf.of(item),
+                            ),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Icon(
+                            LibraryStyle.itemIcon(item),
+                            size: 24,
+                            color: LibraryStyle.accent(
+                              context,
+                              LibraryShelf.of(item),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 10),
                   RecommendationView(

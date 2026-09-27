@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:rekky_flutter/rekky_theme.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rekky_flutter/recommendation_detail.dart';
 import 'package:rekky_flutter/rekky_api.dart';
@@ -37,7 +38,7 @@ Future<void> openSheet(
 }) async {
   await tester.pumpWidget(
     MaterialApp(
-      theme: ThemeData(useMaterial3: true),
+      theme: RekkyTheme.build(Brightness.light),
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context)
             .copyWith(textScaler: TextScaler.linear(scale)),

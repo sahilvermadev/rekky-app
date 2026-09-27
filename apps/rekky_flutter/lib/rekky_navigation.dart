@@ -71,7 +71,7 @@ class RekkyNavigation extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Container(
-                        width: 64,
+                        width: 56,
                         height: 36,
                         decoration: BoxDecoration(
                           color: colors.primary,

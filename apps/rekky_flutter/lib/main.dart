@@ -9,6 +9,7 @@ import 'contact_matching.dart';
 import 'contact_sheet.dart';
 import 'recommendation_editor.dart';
 import 'library_screen.dart';
+import 'ask_screen.dart';
 import 'rekky_theme.dart';
 import 'rekky_navigation.dart';
 import 'recommendation_detail.dart';
@@ -20,6 +21,11 @@ import 'voice_processing.dart';
 const apiBaseUrl = String.fromEnvironment('API_BASE_URL');
 void main() {
   LicenseRegistry.addLicense(() async* {
+    for (final family in ['Fraunces', 'Manrope']) {
+      yield LicenseEntryWithLineBreaks([
+        family,
+      ], await rootBundle.loadString('assets/fonts/LICENSE-$family.txt'));
+    }
     yield LicenseEntryWithLineBreaks([
       'Liberation Serif',
     ], await rootBundle.loadString('assets/fonts/LICENSE-Liberation.txt'));
@@ -895,67 +901,15 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
     ],
   );
 
-  Widget _askPage() => Padding(
-    padding: const EdgeInsets.all(20),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'What are you trying to remember?',
-          style: Theme.of(context).textTheme.headlineSmall,
-        ),
-        const SizedBox(height: 16),
-        TextField(
-          controller: question,
-          textInputAction: TextInputAction.search,
-          onSubmitted: (_) => _ask(),
-          decoration: InputDecoration(
-            hintText: 'Who fixed our kitchen tap?',
-            suffixIcon: IconButton(
-              tooltip: 'Search',
-              onPressed: _ask,
-              icon: const Icon(Icons.arrow_forward),
-            ),
-            border: const OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Searching your own saved memories. Friend answers come later.',
-        ),
-        const SizedBox(height: 20),
-        if (searching) const LinearProgressIndicator(),
-        Expanded(
-          child: matches.isEmpty
-              ? Center(
-                  child: Text(
-                    question.text.isEmpty
-                        ? 'Ask about something you saved.'
-                        : 'No matching memory yet.',
-                  ),
-                )
-              : ListView.builder(
-                  itemCount: matches.length,
-                  itemBuilder: (context, index) {
-                    final match = matches[index];
-                    return Card(
-                      child: ListTile(
-                        title: Text(match['subject'] as String),
-                        subtitle: Text(match['body'] as String),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () {
-                          final item = library
-                              .where((item) => item.id == match['item_id'])
-                              .firstOrNull;
-                          if (item != null) _openItem(item);
-                        },
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ],
-    ),
+  Widget _askPage() => AskScreen(
+    controller: question,
+    matches: matches,
+    searching: searching,
+    onAsk: _ask,
+    onOpen: (id) {
+      final item = library.where((item) => item.id == id).firstOrNull;
+      if (item != null) _openItem(item);
+    },
   );
 
   Widget _libraryPage() => LibraryScreen(

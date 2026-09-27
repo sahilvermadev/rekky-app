@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rekky_flutter/voice_capture_sheet.dart';
+import 'package:rekky_flutter/rekky_theme.dart';
 import 'package:rekky_flutter/voice_drafts.dart';
 
 class CaptureStore extends VoiceDraftStore {
@@ -45,6 +46,7 @@ void main() {
         bool? saved;
         await tester.pumpWidget(
           MaterialApp(
+            theme: RekkyTheme.build(Brightness.light),
             builder: (context, child) => MediaQuery(
               data: MediaQuery.of(context)
                   .copyWith(textScaler: TextScaler.linear(scale)),

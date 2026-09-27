@@ -1,25 +1,33 @@
-# Rekky design system
+# Rekky design system — personal field guide
 
-A curated personal collection: neutral surfaces, readable content, and purposeful colour. This replaces the warm brown Library palette. It applies to Flutter; executable tokens live in `apps/rekky_flutter/lib/rekky_theme.dart` and collection accents in `library_style.dart`.
+A contemporary personal collection, with expressive display typography, compact neutral cards, and small collection-coloured emblems and heading markers. Implemented from `docs/CURATED_LIBRARY_DESIGN_BRIEF.md`. Native tokens live in `lib/rekky_theme.dart` and `lib/library_style.dart` under the Flutter app.
 
-## Structure
+## Composition
 
-The Library is a compact, open list grouped into collections. Combine the title, saved count and account menu in one header; follow with search, location/collection filters, and Browse/Recent/Pins. Keep summaries in the recommendation detail. Rows prioritise the name, category/locality, then rating/audience/review state. Maps and Call are explicit separate actions. Preserve one-tap Remember in the bottom navigation.
+Library combines its title, count and menu in one header. The count shares the title baseline when they fit; they stack naturally at large text sizes. Search and a separate Filters action share the next row. All / Recent / Pinned use ink, weight and a short underline. Active category, type, city and neighbourhood filters appear as removable tokens.
 
-## Colour
+Filters share one sheet. Collections, optional specific types, destination search, broader Regions and optional neighbourhood choices apply immediately. Closing dismisses the sheet without a save/apply step. Clear all resets filtering while preserving the current Library view and query. Geographic identity and coverage semantics remain unchanged.
 
-Light canvas: soft neutral #F7F8FA; primary text: ink #20252D. Dark canvas: charcoal #171A20 with neutral slate elevations. Neither mode inherits a brown surface tint. Collection accents have fixed meanings: Places blue, People & services plum, Things jade, Activities apricot, Ideas gold, Notes neutral. Use accent ink over pale or dark translucent washes for icons. Text labels and icon shapes always supplement colour. Functional actions use blue; errors retain their distinct semantic colour. Do not assign random colours to individual records or use full coloured card backgrounds.
+Collections have a short rounded colour marker, a small sans-serif heading and scoped count. Individual entries use neutral cards with a faint outline, 16-point corners, 12-point inset and 8-point separation. Names dominate; category/locality and rating/audience follow. Omit duplicate broad shelf text where a group already communicates it. Maps, Call and review actions retain separate accessible targets. No summaries in Library cards. Natural height takes priority over a fixed density target.
 
-Shared native tokens include surfaces, text, outline, primary/secondary states and button shapes. The palette is defined centrally rather than locally in feature screens. Collection accents have explicit light/dark variants. Icons are from the existing Material family. Recognised saved category labels choose a specific icon; unknown categories fall back to the shelf icon without changing stored data.
+## Typography
 
-## Typography and spacing
+Bundled static Fraunces Medium (500, optical size 30, SOFT 20, WONK 1) is the display face. Bundled Manrope 400/500/600/700 is the interface and reading face. Licences and source/instance details are under `assets/fonts`. No runtime font downloads. Preserve platform fallback for other scripts.
 
-Use bundled LibrarySerif in roman style for the Library title and empty-state invitation. Use the native sans-serif for controls, row titles and shelf headings. Library title 30, shelf/row titles 16, row metadata 13, navigation labels 12 logical pixels; respect system text scaling. Use a 4-point spacing rhythm, 20-point content gutters, 12-point row gaps, 44-point category tiles and 48-point interactive targets. Long content and large text wrap; avoid fixed row heights. Large-text layouts omit decorative category tiles to keep usable text width.
+Display 30/1.12, recommendation title 17/1.25 at weight 600, shelf heading 14–15 bold, body 16/1.55, metadata 13/1.4, navigation label 12. Display text is roman. Respect system text scaling; wrap or reflow instead of reducing its effect.
 
-## Interaction
+## Colour and shape
 
-Rows open detail; long press exposes pinning. Keep privacy and caution states visible but quiet; the review icon opens the specific explanation. Remember starts the existing recording flow with one tap. Selected navigation uses icon/weight/colour instead of a second large filled pill. The central microphone has the sole filled navigation accent. Preserve native keyboard focus, pressed and disabled states. No decorative motion or background imagery.
+Light canvas #F6F7F9, white card; dark canvas #15181D, card #20242B. Neutral surfaces stay independent of seeded accent tint. Blue Places, plum People & services, jade Things, apricot Activities, gold Ideas, slate Notes. Explicit light/dark accent pairs and subtle washes are in LibraryStyle. Ratings use a gold star and neutral number. Colour always accompanies an icon or label.
 
-## Verification
+Inputs use 12-point corners, cards 16, category emblems 10–14. Use one Material outline icon family. Existing category metadata selects the emblem; unknown types have a shelf fallback. Do not guess classification from the entity name. Dark elevation uses surface lightness without coloured glow. Error, disabled and focus styles remain functional semantic states.
 
-Check light/dark surfaces, 320/375/414/768 widths, 200% text, keyboard-visible filters, empty and long collections, launch failures, and the recording action. A native screenshot is the final visual check; widget previews do not prove device font fallback or iOS layout.
+## Shared surfaces
+
+Detail: collection emblem beside the expressive title; category/location/rating and Maps/Call precede the reading account. Original text remains the collapsed neutral quotation view. Ask: matching display, input and result cards, with a scrollable layout for keyboard and large text. Recording: expressive prompt, honest static microphone/elapsed-time state in the activity accent, clear finish action, automatic processing unchanged. Never display fabricated waveform activity.
+
+Bottom navigation aligns Ask and Library and uses one compact filled microphone (56 × 36 visual area) inside the larger Remember target. Remember remains one tap. Safe areas and end-of-list padding keep content reachable. Native pressed/focus/disabled states; no decorative motion.
+
+## Acceptance
+
+Inspect native light and dark screens and compare to the previous version at the same viewport. Verify Library top/end, filters, detail, Ask, menu, empty/long lists, 320/375/414/768 widths, 200% text and keyboard-visible filters/search. Touch targets must not overlap. Contrast floors: 4.5:1 ordinary text and 3:1 meaningful icons/focus. Report functional tests and visual inspection separately; neither proves the other's quality. No backend data changes are part of this design system.

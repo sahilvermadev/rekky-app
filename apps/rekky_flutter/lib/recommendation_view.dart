@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'rekky_api.dart';
 import 'contact_action.dart';
 import 'recommendation_maps_action.dart';
+import 'library_collection.dart';
+import 'library_style.dart';
 
 // Hallmark · component scope; existing warm Material tokens, compact list/detail.
 // Pre-emit critique: Philosophy 4, Hierarchy 5, Execution 4,
@@ -280,7 +282,7 @@ class _RatingView extends StatelessWidget {
               Icon(
                 Icons.star_rounded,
                 size: compact ? 16 : 20,
-                color: theme.colorScheme.primary,
+                color: LibraryStyle.accent(context, LibraryShelf.ideas),
               ),
               Text(
                 '${rating.label}/10',

@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'contact_matching.dart';
 import 'library_collection.dart';
 import 'library_style.dart';
+import 'library_filters.dart';
 import 'recommendation_maps_action.dart';
 import 'recommendation_review.dart';
 import 'rekky_api.dart';
@@ -56,87 +57,31 @@ class _LibraryScreenState extends State<LibraryScreen> {
     if (scroll.hasClients) scroll.jumpTo(0);
   }
 
-  Future<void> chooseShelf() async {
-    final available = LibraryShelf.values.where(
-      (s) => widget.items.any((i) => LibraryShelf.of(i) == s),
-    );
-    final choice = await _choose(context, 'Collections', [
-      const LibraryArea('all', 'All collections'),
-      ...available.map((s) => LibraryArea(s.name, s.label)),
-    ], shelf?.name ?? 'all');
-    if (!mounted || choice == null) return;
-    change(() {
-      shelf = LibraryShelf.values.where((s) => s.name == choice).firstOrNull;
-      typeId = null;
-    });
-  }
-
-  List<RekkyItem> get locationScope => librarySelection(
-    widget.items,
-    query: search.text,
-    shelf: shelf,
-    typeId: typeId,
-    order: order,
-  );
-
-  Future<void> chooseArea() async {
-    final scope = locationScope;
-    final areas = [
-      LibraryArea('all', 'All locations', count: scope.length),
-      ...libraryAreas(scope),
-      if (scope.any((i) => libraryInArea(i, 'unresolved')))
-        LibraryArea(
-          'unresolved',
-          'No confirmed location',
-          count: scope.where((i) => libraryInArea(i, 'unresolved')).length,
-        ),
-    ];
-    final regions = libraryAreas(scope, regions: true);
-    final choice = await _choose(
-      context,
-      'Location',
-      areas,
-      areaId ?? 'all',
-      regions: regions,
-      searchable: true,
-    );
-    if (!mounted || choice == null) return;
-    change(() {
-      areaId = choice == 'all' ? null : choice;
-      areaLabel = [
-        ...areas,
-        ...regions,
-      ].firstWhere((a) => a.id == choice).label;
-      neighbourhoodId = null;
-      neighbourhoodLabel = null;
-    });
-  }
-
-  Future<void> chooseNeighbourhood() async {
-    final city = areaId;
-    if (city == null) return;
-    final scope = locationScope;
-    final options = [
-      LibraryArea(
-        'all',
-        'All neighbourhoods',
-        count: scope.where((i) => libraryInArea(i, city)).length,
+  Future<void> chooseFilters() => showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    showDragHandle: true,
+    builder: (_) => LibraryFilterSheet(
+      items: librarySelection(widget.items, query: search.text, order: order),
+      initial: LibraryFilters(
+        shelf: shelf,
+        typeId: typeId,
+        areaId: areaId,
+        areaLabel: areaLabel,
+        neighbourhoodId: neighbourhoodId,
+        neighbourhoodLabel: neighbourhoodLabel,
       ),
-      ...libraryAreas(scope, cityId: city),
-    ];
-    final choice = await _choose(
-      context,
-      areaLabel ?? 'Neighbourhood',
-      options,
-      neighbourhoodId ?? 'all',
-      searchable: options.length > 8,
-    );
-    if (!mounted || choice == null) return;
-    change(() {
-      neighbourhoodId = choice == 'all' ? null : choice;
-      neighbourhoodLabel = options.firstWhere((a) => a.id == choice).label;
-    });
-  }
+      onChanged: (value) => change(() {
+        shelf = value.shelf;
+        typeId = value.typeId;
+        areaId = value.areaId;
+        areaLabel = value.areaLabel;
+        neighbourhoodId = value.neighbourhoodId;
+        neighbourhoodLabel = value.neighbourhoodLabel;
+      }),
+    ),
+  );
 
   Future<void> pinMenu(RekkyItem item) async {
     final pin = await showModalBottomSheet<bool>(
@@ -190,7 +135,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
     areaLabel = null;
     neighbourhoodId = null;
     neighbourhoodLabel = null;
-    order = LibraryOrder.browse;
   });
 
   @override
@@ -216,18 +160,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
         if (items.isNotEmpty) groups[s.label] = items;
       }
     }
-    final types = <String, String>{};
-    if (shelf != null) {
-      for (final item in widget.items.where(
-        (i) => LibraryShelf.of(i) == shelf,
-      )) {
-        for (final type
-            in item.recommendation?.classification?.types ??
-                <CategoryConcept>[]) {
-          types[type.id] = type.label;
-        }
-      }
-    }
     final filtered =
         shelf != null ||
         areaId != null ||
@@ -250,97 +182,127 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Expanded(
-                        child: Wrap(
-                          spacing: 12,
-                          runSpacing: 4,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            Text(
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final titleStyle = LibraryStyle.heading(
+                              context,
+                              30,
+                            );
+                            final countStyle = Theme.of(context)
+                                .textTheme
+                                .bodySmall!
+                                .copyWith(color: colors.onSurfaceVariant);
+                            final label = '${widget.items.length} saved';
+                            double measure(String text, TextStyle style) {
+                              final painter = TextPainter(
+                                text: TextSpan(text: text, style: style),
+                                textDirection: Directionality.of(context),
+                                textScaler: MediaQuery.textScalerOf(context),
+                              )..layout();
+                              final width = painter.width;
+                              painter.dispose();
+                              return width;
+                            }
+
+                            final fits =
+                                measure('Your Library', titleStyle) +
+                                    measure(label, countStyle) +
+                                    12 <=
+                                constraints.maxWidth;
+                            final title = Text(
                               'Your Library',
-                              style: LibraryStyle.heading(context, 30),
-                            ),
-                            Text(
-                              '${widget.items.length} saved',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: colors.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
+                              style: titleStyle,
+                            );
+                            final count = Text(label, style: countStyle);
+                            return fits
+                                ? Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.baseline,
+                                    textBaseline: TextBaseline.alphabetic,
+                                    children: [
+                                      title,
+                                      const SizedBox(width: 12),
+                                      count,
+                                    ],
+                                  )
+                                : Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      title,
+                                      const SizedBox(height: 4),
+                                      count,
+                                    ],
+                                  );
+                          },
                         ),
                       ),
                       if (widget.headerAction != null) widget.headerAction!,
                     ],
                   ),
                   const SizedBox(height: 16),
-                  TextField(
-                    controller: search,
-                    onChanged: (_) => setState(() {}),
-                    textInputAction: TextInputAction.search,
-                    onSubmitted: (_) => FocusScope.of(context).unfocus(),
-                    decoration: InputDecoration(
-                      hintText: 'Search your library',
-                      prefixIcon: const Icon(Icons.search, size: 22),
-                      suffixIcon: search.text.isEmpty
-                          ? null
-                          : IconButton(
-                              tooltip: 'Clear search',
-                              icon: const Icon(Icons.close),
-                              onPressed: () => setState(search.clear),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: search,
+                          onChanged: (_) => setState(() {}),
+                          textInputAction: TextInputAction.search,
+                          onSubmitted: (_) => FocusScope.of(context).unfocus(),
+                          decoration: InputDecoration(
+                            hintText: 'Search your library',
+                            prefixIcon: const Icon(Icons.search, size: 22),
+                            suffixIcon: search.text.isEmpty
+                                ? null
+                                : IconButton(
+                                    tooltip: 'Clear search',
+                                    icon: const Icon(Icons.close),
+                                    onPressed: () => setState(search.clear),
+                                  ),
+                            filled: true,
+                            fillColor: colors.surfaceContainerLow,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
                             ),
-                      filled: true,
-                      fillColor: colors.surfaceContainerLow,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(
-                          LibraryStyle.radius,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
                         ),
-                        borderSide: BorderSide.none,
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: IconButton.filledTonal(
+                          tooltip: 'Filters',
+                          onPressed: chooseFilters,
+                          icon: Badge(
+                            backgroundColor: colors.primary,
+                            isLabelVisible:
+                                shelf != null ||
+                                areaId != null ||
+                                typeId != null,
+                            child: const Icon(Icons.tune, size: 22),
+                          ),
+                          style: IconButton.styleFrom(
+                            backgroundColor: colors.surfaceContainerLow,
+                            foregroundColor: colors.onSurface,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   if (widget.items.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     Wrap(
-                      spacing: 8,
-                      children: [
-                        _Filter(
-                          label: shelf?.label ?? 'All collections',
-                          icon: Icons.grid_view_outlined,
-                          active: shelf != null,
-                          onTap: chooseShelf,
-                        ),
-                        _Filter(
-                          label: areaId == null
-                              ? 'All locations'
-                              : areaLabel ?? 'Saved location',
-                          icon: Icons.location_on_outlined,
-                          active: areaId != null,
-                          onTap: chooseArea,
-                        ),
-                        if (areaId != null &&
-                            areaId != 'unresolved' &&
-                            (neighbourhoodId != null ||
-                                libraryAreas(
-                                  locationScope,
-                                  cityId: areaId,
-                                ).isNotEmpty))
-                          _Filter(
-                            label: neighbourhoodId == null
-                                ? 'All neighbourhoods'
-                                : neighbourhoodLabel!,
-                            icon: Icons.near_me_outlined,
-                            active: neighbourhoodId != null,
-                            onTap: chooseNeighbourhood,
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
+                      spacing: 20,
                       children: [
                         for (final mode in LibraryOrder.values)
                           Semantics(
@@ -348,46 +310,104 @@ class _LibraryScreenState extends State<LibraryScreen> {
                             child: TextButton(
                               onPressed: () => change(() => order = mode),
                               style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                ),
+                                minimumSize: const Size(48, 48),
                                 foregroundColor: order == mode
                                     ? colors.onSurface
                                     : colors.onSurfaceVariant,
-                                backgroundColor: order == mode
-                                    ? colors.secondaryContainer
-                                    : null,
+                                shape: const RoundedRectangleBorder(),
+                              ),
+                              child: Container(
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
+                                  vertical: 10,
+                                ),
+                                decoration: BoxDecoration(
+                                  border: Border(
+                                    bottom: BorderSide(
+                                      color: order == mode
+                                          ? colors.onSurface
+                                          : Colors.transparent,
+                                      width: 2,
+                                    ),
+                                  ),
+                                ),
+                                child: Text(
+                                  switch (mode) {
+                                    LibraryOrder.browse => 'All',
+                                    LibraryOrder.recent => 'Recent',
+                                    LibraryOrder.pinned => 'Pinned',
+                                  },
+                                  style: TextStyle(
+                                    fontWeight: order == mode
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                  ),
                                 ),
                               ),
-                              child: Text(switch (mode) {
-                                LibraryOrder.browse => 'Browse',
-                                LibraryOrder.recent => 'Recent',
-                                LibraryOrder.pinned => 'Pins',
-                              }, softWrap: false),
                             ),
                           ),
                       ],
                     ),
-                    if (shelf != null && types.length > 1) ...[
-                      const SizedBox(height: 8),
+                    if (filtered)
                       Wrap(
                         spacing: 8,
                         runSpacing: 4,
                         children: [
-                          ChoiceChip(
-                            label: const Text('All types'),
-                            selected: typeId == null,
-                            onSelected: (_) => change(() => typeId = null),
-                          ),
-                          for (final type in types.entries)
-                            ChoiceChip(
-                              label: Text(type.value),
-                              selected: typeId == type.key,
-                              onSelected: (_) =>
-                                  change(() => typeId = type.key),
+                          if (shelf != null)
+                            InputChip(
+                              label: Text(shelf!.label),
+                              onPressed: chooseFilters,
+                              onDeleted: () => change(() {
+                                shelf = null;
+                                typeId = null;
+                              }),
+                            ),
+                          if (typeId != null)
+                            InputChip(
+                              label: Text(
+                                widget.items
+                                        .expand(
+                                          (i) =>
+                                              i
+                                                  .recommendation
+                                                  ?.classification
+                                                  ?.types ??
+                                              <CategoryConcept>[],
+                                        )
+                                        .where((t) => t.id == typeId)
+                                        .firstOrNull
+                                        ?.label ??
+                                    'Selected type',
+                              ),
+                              onPressed: chooseFilters,
+                              onDeleted: () => change(() => typeId = null),
+                            ),
+                          if (areaId != null)
+                            InputChip(
+                              label: Text(areaLabel ?? 'Selected location'),
+                              onPressed: chooseFilters,
+                              onDeleted: () => change(() {
+                                areaId = null;
+                                areaLabel = null;
+                                neighbourhoodId = null;
+                                neighbourhoodLabel = null;
+                              }),
+                            ),
+                          if (neighbourhoodId != null)
+                            InputChip(
+                              label: Text(
+                                neighbourhoodLabel ?? 'Selected neighbourhood',
+                              ),
+                              onPressed: chooseFilters,
+                              onDeleted: () => change(() {
+                                neighbourhoodId = null;
+                                neighbourhoodLabel = null;
+                              }),
                             ),
                         ],
                       ),
-                    ],
                   ],
                   if (widget.processingMessage case final message?)
                     Padding(
@@ -467,10 +487,22 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ),
           for (final group in groups.entries) ...[
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 12, 4),
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
               sliver: SliverToBoxAdapter(
                 child: Row(
                   children: [
+                    Container(
+                      width: 16,
+                      height: 6,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: LibraryStyle.accent(
+                          context,
+                          LibraryShelf.of(group.value.first),
+                        ),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    ),
                     Expanded(
                       child: Semantics(
                         header: true,
@@ -480,9 +512,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
                                     ? group.key
                                     : 'Saved in ${group.key}')
                               : group.key,
-                          style: Theme.of(context).textTheme.titleMedium
+                          style: Theme.of(context).textTheme.titleSmall
                               ?.copyWith(fontWeight: FontWeight.w700),
                         ),
+                      ),
+                    ),
+                    Text(
+                      '${group.value.length}',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: colors.onSurfaceVariant,
                       ),
                     ),
                     if (order == LibraryOrder.browse &&
@@ -530,205 +569,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ],
           const SliverToBoxAdapter(child: SizedBox(height: 32)),
         ],
-      ),
-    );
-  }
-}
-
-class _Filter extends StatelessWidget {
-  const _Filter({
-    required this.label,
-    required this.icon,
-    required this.active,
-    required this.onTap,
-  });
-  final String label;
-  final IconData icon;
-  final bool active;
-  final VoidCallback onTap;
-  @override
-  Widget build(BuildContext context) => TextButton.icon(
-    onPressed: onTap,
-    icon: Icon(icon, size: 16),
-    label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-    style: TextButton.styleFrom(
-      foregroundColor: active
-          ? Theme.of(context).colorScheme.primary
-          : Theme.of(context).colorScheme.onSurfaceVariant,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-    ),
-  );
-}
-
-Future<String?> _choose(
-  BuildContext context,
-  String title,
-  List<LibraryArea> options,
-  String selected, {
-  String? description,
-  List<LibraryArea> regions = const [],
-  bool searchable = false,
-}) => showModalBottomSheet<String>(
-  context: context,
-  isScrollControlled: true,
-  useSafeArea: true,
-  showDragHandle: true,
-  builder: (_) => _Choices(
-    title: title,
-    options: options,
-    selected: selected,
-    description: description,
-    regions: regions,
-    searchable: searchable,
-  ),
-);
-
-class _Choices extends StatefulWidget {
-  const _Choices({
-    required this.title,
-    required this.options,
-    required this.selected,
-    this.description,
-    this.regions = const [],
-    this.searchable = false,
-  });
-  final List<LibraryArea> regions;
-  final bool searchable;
-  final String title, selected;
-  final String? description;
-  final List<LibraryArea> options;
-  @override
-  State<_Choices> createState() => _ChoicesState();
-}
-
-class _ChoicesState extends State<_Choices> {
-  String query = '';
-  bool showRegions = false;
-  @override
-  void initState() {
-    super.initState();
-    showRegions =
-        !widget.options.any((o) => o.id == widget.selected) &&
-        widget.regions.any((o) => o.id == widget.selected);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final source = showRegions ? widget.regions : widget.options;
-    final options = source.where((o) => o.matches(query)).toList();
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: SizedBox(
-        height: MediaQuery.sizeOf(context).height * .65,
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            widget.title,
-                            style: LibraryStyle.heading(context, 28),
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: 'Close',
-                          onPressed: () => Navigator.pop(context),
-                          icon: const Icon(Icons.close),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (widget.description != null)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 8,
-                      ),
-                      child: Text(widget.description!),
-                    ),
-                  if (widget.regions.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                      child: Wrap(
-                        spacing: 8,
-                        children: [
-                          ChoiceChip(
-                            label: const Text('Cities & places'),
-                            selected: !showRegions,
-                            onSelected: (_) =>
-                                setState(() => showRegions = false),
-                          ),
-                          ChoiceChip(
-                            label: const Text('Regions'),
-                            selected: showRegions,
-                            onSelected: (_) =>
-                                setState(() => showRegions = true),
-                          ),
-                        ],
-                      ),
-                    ),
-                  if (widget.searchable || widget.options.length > 8)
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: TextField(
-                        onChanged: (value) => setState(() => query = value),
-                        decoration: const InputDecoration(
-                          hintText: 'Find a location',
-                          prefixIcon: Icon(Icons.search),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            SliverList.builder(
-              itemCount: options.length,
-              itemBuilder: (context, index) {
-                final option = options[index];
-                return ListTile(
-                  title: Text(option.label),
-                  selected: option.id == widget.selected,
-                  subtitle:
-                      source.where((o) => o.label == option.label).length > 1 &&
-                          option.context.isNotEmpty
-                      ? Text(option.context)
-                      : null,
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (option.count != null)
-                        Text(
-                          '${option.count}',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      if (option.id == widget.selected) ...[
-                        const SizedBox(width: 12),
-                        const Icon(Icons.check),
-                      ],
-                    ],
-                  ),
-                  onTap: () => Navigator.pop(context, option.id),
-                );
-              },
-            ),
-            if (options.isEmpty)
-              const SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Text('No matching locations.'),
-                ),
-              ),
-          ],
-        ),
       ),
     );
   }
@@ -785,173 +625,181 @@ class _LibraryRowState extends State<_LibraryRow> {
     final large = MediaQuery.textScalerOf(context).scale(14) > 20;
     final rating = rec?.rating;
     final metadata = [
-      rec?.categoryLabel ?? 'Saved note',
+      if (rec?.categoryLabel != null && rec!.categoryLabel != shelf.label)
+        rec.categoryLabel,
       if (rec?.primaryLocation != null) rec!.primaryLocation!,
     ].join(' · ');
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: colors.outlineVariant.withValues(alpha: .45),
-          ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: colors.surfaceContainerLow,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: colors.outlineVariant.withValues(alpha: .35)),
         ),
-      ),
-      child: InkWell(
-        onTap: widget.onOpen,
-        onLongPress: widget.pinBusy ? null : widget.onPin,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (!large) ...[
-                Container(
-                  width: 44,
-                  height: 44,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: LibraryStyle.tint(context, shelf),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    LibraryStyle.itemIcon(item),
-                    size: 22,
-                    color: LibraryStyle.accent(context, shelf),
-                  ),
-                ),
-                const SizedBox(width: 12),
-              ],
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.subject,
-                      maxLines: large ? null : 2,
-                      overflow: large ? null : TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w600, height: 1.25),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: widget.onOpen,
+          onLongPress: widget.pinBusy ? null : widget.onPin,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (!large) ...[
+                  Container(
+                    width: 36,
+                    height: 40,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: LibraryStyle.tint(context, shelf),
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      metadata,
-                      maxLines: large ? null : 2,
-                      overflow: large ? null : TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        fontSize: 13,
-                        color: colors.onSurfaceVariant,
-                        height: 1.4,
+                    child: Icon(
+                      LibraryStyle.itemIcon(item),
+                      size: 22,
+                      color: LibraryStyle.accent(context, shelf),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.subject,
+                        maxLines: large ? null : 2,
+                        overflow: large ? null : TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              height: 1.25,
+                            ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 0,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        if (rating != null)
-                          Tooltip(
-                            message: rating.estimated
-                                ? 'Estimated from your note'
-                                : 'Your rating',
-                            child: Semantics(
-                              label:
-                                  '${rating.label} out of 10${rating.estimated ? ', estimated from your note' : ''}',
-                              child: ExcludeSemantics(
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.star,
-                                      size: 15,
-                                      color: LibraryStyle.accent(
-                                        context,
-                                        LibraryShelf.ideas,
+                      const SizedBox(height: 4),
+                      Text(
+                        metadata,
+                        maxLines: large ? null : 2,
+                        overflow: large ? null : TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontSize: 13,
+                          color: colors.onSurfaceVariant,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 0,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          if (rating != null)
+                            Tooltip(
+                              message: rating.estimated
+                                  ? 'Estimated from your note'
+                                  : 'Your rating',
+                              child: Semantics(
+                                label:
+                                    '${rating.label} out of 10${rating.estimated ? ', estimated from your note' : ''}',
+                                child: ExcludeSemantics(
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.star,
+                                        size: 15,
+                                        color: LibraryStyle.accent(
+                                          context,
+                                          LibraryShelf.ideas,
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      '${rating.label}/10',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .labelMedium
-                                          ?.copyWith(
-                                            color: colors.onSurface,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                    ),
-                                  ],
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '${rating.label}/10',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelMedium
+                                            ?.copyWith(
+                                              color: colors.onSurface,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        Icon(
-                          item.visibility == 'private'
-                              ? Icons.lock_outline
-                              : Icons.people_outline,
-                          size: 14,
-                          color: colors.onSurfaceVariant,
-                          semanticLabel: item.visibility == 'private'
-                              ? 'Only me'
-                              : 'Friends',
-                        ),
-                        if (item.pinned)
                           Icon(
-                            Icons.push_pin,
+                            item.visibility == 'private'
+                                ? Icons.lock_outline
+                                : Icons.people_outline,
                             size: 14,
-                            color: colors.primary,
-                            semanticLabel: 'Pinned',
+                            color: colors.onSurfaceVariant,
+                            semanticLabel: item.visibility == 'private'
+                                ? 'Only me'
+                                : 'Friends',
                           ),
-                        if (RecommendationReviewButton.needed(item))
-                          RecommendationReviewButton(item: item),
-                        if (rec?.experience == 'interest')
-                          Text(
-                            'Not tried yet',
-                            style: Theme.of(context).textTheme.labelSmall,
-                          ),
-                        if (rec?.experience == 'secondhand')
-                          Text(
-                            'Heard from others',
-                            style: Theme.of(context).textTheme.labelSmall,
-                          ),
-                      ],
-                    ),
+                          if (item.pinned)
+                            Icon(
+                              Icons.push_pin,
+                              size: 14,
+                              color: colors.primary,
+                              semanticLabel: 'Pinned',
+                            ),
+                          if (RecommendationReviewButton.needed(item))
+                            RecommendationReviewButton(item: item),
+                          if (rec?.experience == 'interest')
+                            Text(
+                              'Not tried yet',
+                              style: Theme.of(context).textTheme.labelSmall,
+                            ),
+                          if (rec?.experience == 'secondhand')
+                            Text(
+                              'Heard from others',
+                              style: Theme.of(context).textTheme.labelSmall,
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Column(
+                  children: [
+                    if (action != null)
+                      IconButton(
+                        tooltip: phone != null
+                            ? 'Call ${item.subject}'
+                            : rec?.destinationMode == 'custom'
+                            ? 'Open link for ${item.subject}'
+                            : 'Search Maps for ${item.subject}',
+                        onPressed: opening ? null : () => open(action),
+                        icon: opening
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Icon(
+                                phone != null
+                                    ? Icons.call_outlined
+                                    : rec?.destinationMode == 'custom'
+                                    ? Icons.open_in_new
+                                    : Icons.map_outlined,
+                                size: 20,
+                              ),
+                      ),
+                    if (widget.pinBusy)
+                      const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
                   ],
                 ),
-              ),
-              Column(
-                children: [
-                  if (action != null)
-                    IconButton(
-                      tooltip: phone != null
-                          ? 'Call ${item.subject}'
-                          : rec?.destinationMode == 'custom'
-                          ? 'Open link for ${item.subject}'
-                          : 'Search Maps for ${item.subject}',
-                      onPressed: opening ? null : () => open(action),
-                      icon: opening
-                          ? const SizedBox.square(
-                              dimension: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Icon(
-                              phone != null
-                                  ? Icons.call_outlined
-                                  : rec?.destinationMode == 'custom'
-                                  ? Icons.open_in_new
-                                  : Icons.map_outlined,
-                              size: 20,
-                            ),
-                    ),
-                  if (widget.pinBusy)
-                    const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

@@ -11,7 +11,9 @@ abstract final class LibraryStyle {
   static const gap = 12.0;
   static const radius = 16.0;
   static TextStyle heading(BuildContext context, double size) => TextStyle(
-    fontFamily: 'LibrarySerif',
+    fontFamily: 'Fraunces',
+    fontWeight: FontWeight.w500,
+    letterSpacing: -.5,
     fontSize: size,
     height: 1.15,
     color: Theme.of(context).colorScheme.onSurface,

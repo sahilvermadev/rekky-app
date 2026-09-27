@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'rekky_api.dart';
+import 'library_style.dart';
+import 'library_collection.dart';
 import 'voice_drafts.dart';
 
 class VoiceCaptureSheet extends StatefulWidget {
@@ -148,7 +150,7 @@ class _VoiceCaptureSheetState extends State<VoiceCaptureSheet>
                             : recording
                             ? 'Tell us about your experience'
                             : 'Getting ready',
-                        style: Theme.of(context).textTheme.headlineMedium,
+                        style: LibraryStyle.heading(context, 32),
                       ),
                       const SizedBox(height: 12),
                       const Text('What was good? What should someone know?'),
@@ -156,11 +158,27 @@ class _VoiceCaptureSheetState extends State<VoiceCaptureSheet>
                       if (starting || finishing)
                         const LinearProgressIndicator(),
                       if (recording)
-                        const Center(
-                          child: Icon(
-                            Icons.mic,
-                            size: 80,
-                            semanticLabel: 'Recording',
+                        Center(
+                          child: Container(
+                            width: 88,
+                            height: 104,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: LibraryStyle.tint(
+                                context,
+                                LibraryShelf.activities,
+                              ),
+                              borderRadius: BorderRadius.circular(32),
+                            ),
+                            child: Icon(
+                              Icons.mic_none_rounded,
+                              size: 44,
+                              color: LibraryStyle.accent(
+                                context,
+                                LibraryShelf.activities,
+                              ),
+                              semanticLabel: 'Recording',
+                            ),
                           ),
                         ),
                       if (recording) ...[
@@ -168,7 +186,14 @@ class _VoiceCaptureSheetState extends State<VoiceCaptureSheet>
                         Text(
                           '${elapsed.elapsed.inMinutes}:${(elapsed.elapsed.inSeconds % 60).toString().padLeft(2, '0')}',
                           textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.titleLarge,
+                          style: Theme.of(context).textTheme.headlineMedium
+                              ?.copyWith(
+                                fontFamily: 'Manrope',
+                                fontWeight: FontWeight.w500,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
+                              ),
                         ),
                         const Text('Recording', textAlign: TextAlign.center),
                       ],

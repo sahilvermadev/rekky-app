@@ -118,21 +118,23 @@ void main() {
   setUpAll(() async {
     if (Platform.environment['LIBRARY_SCREENSHOTS'] == 'true') {
       TestWidgetsFlutterBinding.ensureInitialized();
-      await (FontLoader('LibrarySerif')
-            ..addFont(rootBundle.load('assets/fonts/LibrarySerif-Regular.ttf')))
-          .load();
       await (FontLoader('MaterialIcons')..addFont(
             File(
               '../../work/flutter-sdk/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
             ).readAsBytes().then((b) => ByteData.sublistView(b)),
           ))
           .load();
-      await (FontLoader('Roboto')..addFont(
-            File(
-              '../../work/flutter-sdk/bin/cache/artifacts/material_fonts/Roboto-Regular.ttf',
-            ).readAsBytes().then((b) => ByteData.sublistView(b)),
-          ))
-          .load();
+      for (final entry in {
+        'Fraunces': 'Fraunces-Medium.ttf',
+        'Manrope': 'Manrope-Regular.ttf',
+      }.entries) {
+        await (FontLoader(entry.key)..addFont(
+              File('assets/fonts/${entry.value}')
+                  .readAsBytes()
+                  .then((b) => ByteData.sublistView(b)),
+            ))
+            .load();
+      }
     }
   });
   test('filters use identity and roles, preserve unresolved and search useful content', () {
@@ -228,22 +230,28 @@ void main() {
         entry('2', 'City-only venue', geography: city),
       ]),
     );
-    await tester.tap(find.text('All locations'));
+    await tester.tap(find.byTooltip('Filters'));
     await tester.pumpAndSettle();
     expect(find.text('Karnataka'), findsNothing);
     expect(find.text('Indiranagar'), findsNothing);
     await tester.enterText(
-      find.widgetWithText(TextField, 'Find a location'),
+      find.widgetWithText(TextField, 'Search locations'),
       'Bangalore',
     );
     await tester.pump();
-    await tester.tap(find.text('Bengaluru'));
+    await tester.ensureVisible(find.text('Bengaluru').last);
+    await tester.tap(find.text('Bengaluru').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Close filters'));
     await tester.pumpAndSettle();
     expect(find.text('Local bar'), findsOneWidget);
     expect(find.text('City-only venue'), findsOneWidget);
-    await tester.tap(find.text('All neighbourhoods'));
+    await tester.tap(find.byTooltip('Filters'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Indiranagar'));
+    await tester.ensureVisible(find.text('Indiranagar').last);
+    await tester.tap(find.text('Indiranagar').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Close filters'));
     await tester.pumpAndSettle();
     expect(find.text('Local bar'), findsOneWidget);
     expect(find.text('City-only venue'), findsNothing);
@@ -278,23 +286,55 @@ void main() {
       );
       await tester.tap(find.byTooltip('Clear search'));
       await tester.pump();
-      await tester.tap(find.text('All locations'));
+      await tester.tap(find.byTooltip('Filters'));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Delhi').last);
       await tester.tap(find.text('Delhi').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Close filters'));
       await tester.pumpAndSettle();
       expect(find.text('Lantern'), findsOneWidget);
       expect(find.text('Fern'), findsNothing);
       await tester.tap(find.text('Delhi').first);
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('All locations'));
       await tester.tap(find.text('All locations'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Pins'));
+      await tester.tap(find.byTooltip('Close filters'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Pinned'));
       await tester.pump();
       expect(find.text('Fern'), findsNothing);
       await tester.tap(find.text('Recent'));
       await tester.pump();
       expect(find.text('Saved in September 2026'), findsOneWidget);
       expect(find.text('Saved in August 2026'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'filter changes apply immediately and clearing preserves Pinned',
+    (tester) async {
+      await tester.pumpWidget(
+        app([
+          entry('1', 'Pinned Delhi', pinned: true),
+          entry('2', 'Unpinned Pune', area: 'Pune'),
+        ]),
+      );
+      await tester.tap(find.text('Pinned'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Filters'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Delhi').last);
+      await tester.tap(find.text('Delhi').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Clear all'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Close filters'));
+      await tester.pumpAndSettle();
+      expect(find.text('Pinned Delhi'), findsOneWidget);
+      expect(find.text('Unpinned Pune'), findsNothing);
+      expect(find.byType(InputChip), findsNothing);
     },
   );
 
@@ -316,7 +356,7 @@ void main() {
     await tester.tap(find.text('Pin in Library'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.bySemanticsLabel('Pinned'), findsNothing);
+    expect(find.byIcon(Icons.push_pin), findsNothing);
     result.completeError(StateError('offline'));
     await tester.pumpAndSettle();
     expect(find.text('Couldn’t save the pin. Try again.'), findsOneWidget);
@@ -408,7 +448,7 @@ void main() {
                 .writeAsBytes(bytes!.buffer.asUint8List());
           });
         }
-        await tester.tap(find.text('All locations'));
+        await tester.tap(find.byTooltip('Filters'));
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
       });
@@ -428,15 +468,25 @@ void main() {
         scale: 2,
       ),
     );
-    await tester.ensureVisible(find.text('All locations'));
+    await tester.ensureVisible(find.byTooltip('Filters'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('All locations'));
+    await tester.tap(find.byTooltip('Filters'));
     await tester.pumpAndSettle();
     expect(find.text('Location'), findsOneWidget);
     tester.view.viewInsets = FakeViewPadding(bottom: 280);
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.widgetWithText(TextField, 'Search locations'),
+      100,
+      scrollable: find
+          .descendant(
+            of: find.byType(ListView).last,
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
     await tester.enterText(
-      find.widgetWithText(TextField, 'Find a location'),
+      find.widgetWithText(TextField, 'Search locations'),
       'Area 7',
     );
     await tester.pump();
@@ -449,7 +499,7 @@ void main() {
       100,
       scrollable: find
           .descendant(
-            of: find.byType(CustomScrollView).last,
+            of: find.byType(ListView).last,
             matching: find.byType(Scrollable),
           )
           .first,
@@ -458,6 +508,8 @@ void main() {
     await tester.tap(choice);
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+    await tester.tap(find.byTooltip('Close filters'));
+    await tester.pumpAndSettle();
     expect(find.text('Location'), findsNothing);
     expect(find.text('Area 7'), findsOneWidget);
   });
