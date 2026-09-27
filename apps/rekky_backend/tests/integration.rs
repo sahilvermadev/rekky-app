@@ -994,7 +994,7 @@ async fn voice_requires_separate_permission_and_retains_private_transcript() {
         .fetch_one(&t.pool)
         .await
         .unwrap(),
-        "private"
+        "friends"
     );
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM knowledge_items WHERE owner_id=$1")
@@ -1563,7 +1563,7 @@ async fn remember_finishes_without_a_session_and_purges_audio_atomically() {
     .unwrap();
     assert_eq!(status, "transcribed");
     assert!(audio_gone);
-    let count:i64=sqlx::query_scalar("SELECT count(*) FROM knowledge_items WHERE capture_id=$1 AND visibility='private' AND deleted_at IS NULL")
+    let count:i64=sqlx::query_scalar("SELECT count(*) FROM knowledge_items WHERE capture_id=$1 AND visibility='friends' AND deleted_at IS NULL")
         .bind(capture_id).fetch_one(&t.pool).await.unwrap();
     assert_eq!(count, 1);
     rekky_backend::app::process_pending_voice(&t.state, Some(owner))
@@ -1589,6 +1589,59 @@ async fn remember_finishes_without_a_session_and_purges_audio_atomically() {
         )
         .await;
     assert_eq!(answer["results"].as_array().unwrap().len(), 1);
+    let item = &answer["results"][0];
+    assert_eq!(item["visibility"], "friends");
+    // A Friends marker does not create cross-account access ahead of friendships.
+    assert_eq!(
+        t.call(
+            Method::GET,
+            &format!("/v1/captures/{capture_id}"),
+            Some(&other),
+            None,
+            &[]
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    assert!(
+        t.call(
+            Method::POST,
+            "/v1/ask",
+            Some(&other),
+            Some(json!({"question":"kitchen tap"})),
+            &[]
+        )
+        .await
+        .1["results"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let item_path = format!("/v1/items/{}", item["item_id"].as_str().unwrap());
+    let revision = item["revision"].to_string();
+    let (status, _) = t
+        .call(
+            Method::PATCH,
+            &item_path,
+            Some(&new_token),
+            Some(json!({"visibility":"private"})),
+            &[("if-match", &revision)],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    // Receipt recovery and repeated extraction must not reset an owner's choice.
+    let (_, repeated) = t
+        .call(
+            Method::POST,
+            &format!("/v1/voice-captures/{capture_id}/extract"),
+            Some(&new_token),
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(repeated["items"][0]["visibility"], "private");
+
     t.cleanup().await;
 }
 
@@ -2766,4 +2819,122 @@ async fn contact_label_backfill_cannot_replace_number_or_override_owner_label() 
         StatusCode::CONFLICT
     );
     t.cleanup().await;
+}
+
+struct IncompleteExtractor {
+    fallback: bool,
+}
+#[async_trait]
+impl TranscriptExtractor for IncompleteExtractor {
+    fn available(&self) -> bool {
+        true
+    }
+    async fn extract(&self, transcript: &str) -> Result<Proposal, ExtractionError> {
+        let mut p = TestExtractor.extract(transcript).await?;
+        if self.fallback {
+            p.items[0].summary.text = "Invented cost of 99999 rupees.".into();
+        } else {
+            p.unresolved_unit_ids = vec![1];
+        }
+        Ok(p)
+    }
+}
+#[tokio::test]
+async fn voice_default_preserves_legacy_work_and_keeps_partial_and_fallback_private() {
+    for scenario in 0..3 {
+        let Some(mut t) = TestApp::new().await else {
+            return;
+        };
+        if scenario > 0 {
+            t.state.extractor = Arc::new(IncompleteExtractor {
+                fallback: scenario == 2,
+            });
+            t.app = router(t.state.clone());
+        }
+        let (owner, token) = t.sign_in("google", "valid-a").await;
+        t.call(
+            Method::POST,
+            "/v1/me/visibility-disclosure",
+            Some(&token),
+            Some(json!({"accept":true})),
+            &[],
+        )
+        .await;
+        for permission in ["voice-transcription", "transcript-extraction"] {
+            t.call(
+                Method::POST,
+                &format!("/v1/me/{permission}-permission"),
+                Some(&token),
+                Some(json!({"enabled":true,"disclosure_version":1})),
+                &[],
+            )
+            .await;
+        }
+        let mut audio = vec![0u8; 256];
+        audio[4..8].copy_from_slice(b"ftyp");
+        let path = "/v1/remember/privacy-regression-001";
+        assert_eq!(
+            t.call_audio(path, &token, audio, chrono::Utc::now().timestamp_millis())
+                .await
+                .0,
+            StatusCode::ACCEPTED
+        );
+        if scenario == 0 {
+            // Simulate an upload accepted under the previous Private promise.
+            sqlx::query(
+                "UPDATE voice_uploads SET desired_visibility='private' WHERE account_id=$1",
+            )
+            .bind(owner)
+            .execute(&t.pool)
+            .await
+            .unwrap();
+        }
+        rekky_backend::app::process_pending_voice(&t.state, Some(owner))
+            .await
+            .unwrap();
+        let (audience, desired, status):(String,String,String) = sqlx::query_as("SELECT k.visibility,c.desired_visibility,c.status FROM knowledge_items k JOIN captures c ON c.id=k.capture_id WHERE k.owner_id=$1").bind(owner).fetch_one(&t.pool).await.unwrap();
+        assert_eq!(audience, "private");
+        assert_eq!(desired, if scenario == 0 { "private" } else { "friends" });
+        assert_eq!(
+            status,
+            if scenario == 0 {
+                "completed"
+            } else {
+                "partial"
+            }
+        );
+        t.cleanup().await;
+    }
+}
+#[tokio::test]
+async fn sharing_migration_preserves_existing_work_and_changes_only_new_defaults() {
+    let Ok(url) = std::env::var("DATABASE_URL") else {
+        return;
+    };
+    let pool = PgPool::connect(&url).await.unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query("SELECT pg_advisory_xact_lock(732785)")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    // Fixed test-only namespace, serialized across runs and removed by rollback.
+    sqlx::raw_sql("CREATE SCHEMA sharing_migration_test; SET LOCAL search_path TO sharing_migration_test; CREATE TABLE voice_uploads(id int); CREATE TABLE voice_transcription_jobs(id int); INSERT INTO voice_uploads VALUES(1); INSERT INTO voice_transcription_jobs VALUES(1);").execute(&mut *tx).await.unwrap();
+    sqlx::raw_sql(include_str!("../migrations/015_voice_sharing_default.sql"))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    sqlx::raw_sql("INSERT INTO voice_uploads(id) VALUES(2); INSERT INTO voice_transcription_jobs(id) VALUES(2);").execute(&mut *tx).await.unwrap();
+    let actual: Vec<String> =
+        sqlx::query_scalar("SELECT desired_visibility FROM voice_uploads ORDER BY id")
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+    assert_eq!(actual, ["private", "friends"]);
+    let actual: Vec<String> =
+        sqlx::query_scalar("SELECT desired_visibility FROM voice_transcription_jobs ORDER BY id")
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+    assert_eq!(actual, ["private", "friends"]);
+    tx.rollback().await.unwrap();
 }

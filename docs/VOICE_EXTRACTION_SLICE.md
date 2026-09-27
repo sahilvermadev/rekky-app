@@ -1,4 +1,6 @@
-# Transcript to private knowledge (F-01.2 pilot)
+# Transcript to saved knowledge (F-01.2 pilot history)
+
+Current audience behavior: new completed voice recommendations inherit Friends by default; legacy captures keep their stored audience and partial/fallback results initially stay Private. Transcripts stay owner-only. Actual friend-authorized reads remain a later F-03 slice. The historical checkpoint below describes the original private-only implementation.
 
 Historical record of the first preservation bridge. The current implementation is [understanding v2](./RECOMMENDATION_UNDERSTANDING.md); the word-for-word excerpt design below is superseded.
 

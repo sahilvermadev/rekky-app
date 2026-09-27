@@ -719,10 +719,22 @@ async fn process_voice_capture(
         sqlx::query("UPDATE source_texts SET readable_content=$1,readable_source_revision=revision,readable_version=1 WHERE id=$2 AND revision=$3 AND readable_content IS NULL")
             .bind(readable).bind(source_id).bind(source_revision).execute(&mut *tx).await?;
     }
+    // A known partial capture never publishes any of its provisional items.
+    let desired_visibility: String =
+        sqlx::query_scalar("SELECT desired_visibility FROM captures WHERE id=$1 AND owner_id=$2")
+            .bind(capture_id)
+            .bind(owner_id)
+            .fetch_one(&mut *tx)
+            .await?;
+    let visibility = if partial {
+        "private"
+    } else {
+        desired_visibility.as_str()
+    };
     for item in items {
         let item_id = Uuid::new_v4();
-        sqlx::query("INSERT INTO knowledge_items(id,capture_id,owner_id,subject,body,visibility,recommendation) VALUES ($1,$2,$3,$4,$5,'private',$6)")
-            .bind(item_id).bind(capture_id).bind(owner_id).bind(item.subject).bind(item.body).bind(item.recommendation)
+        sqlx::query("INSERT INTO knowledge_items(id,capture_id,owner_id,subject,body,visibility,recommendation) VALUES ($1,$2,$3,$4,$5,$7,$6)")
+            .bind(item_id).bind(capture_id).bind(owner_id).bind(item.subject).bind(item.body).bind(item.recommendation).bind(visibility)
             .execute(&mut *tx).await?;
         sqlx::query("INSERT INTO item_source_support(item_id,source_id,source_revision,pipeline_version,support) VALUES($1,$2,$3,$4,$5)")
             .bind(item_id).bind(source_id).bind(source_revision).bind(UNDERSTANDING_VERSION).bind(item.evidence).execute(&mut *tx).await?;
@@ -1351,8 +1363,8 @@ async fn transcribe_for_owner(
         }
     }
     sqlx::query(
-        "INSERT INTO voice_transcription_jobs(account_id,draft_id,audio_sha256,permission_generation,attempt_id,status,lease_until) \
-         VALUES ($1,$2,$3,$4,$5,'processing',now()+interval '3 minutes') ON CONFLICT DO NOTHING",
+        "INSERT INTO voice_transcription_jobs(account_id,draft_id,audio_sha256,permission_generation,attempt_id,status,lease_until,desired_visibility) \
+         VALUES ($1,$2,$3,$4,$5,'processing',now()+interval '3 minutes',COALESCE((SELECT desired_visibility FROM voice_uploads WHERE account_id=$1 AND draft_id=$2),'friends')) ON CONFLICT DO NOTHING",
     )
     .bind(owner_id)
     .bind(&draft_id)
@@ -1447,7 +1459,7 @@ async fn transcribe_for_owner(
     .fetch_one(&mut *tx)
     .await?;
     let job = sqlx::query(
-        "SELECT status,attempt_id FROM voice_transcription_jobs WHERE account_id=$1 AND draft_id=$2 FOR UPDATE",
+        "SELECT status,attempt_id,desired_visibility FROM voice_transcription_jobs WHERE account_id=$1 AND draft_id=$2 FOR UPDATE",
     )
     .bind(owner_id)
     .bind(&draft_id)
@@ -1483,8 +1495,8 @@ async fn transcribe_for_owner(
     let extraction_generation = upload
         .as_ref()
         .map(|u| u.get::<i64, _>("extraction_generation"));
-    sqlx::query("INSERT INTO captures(id,owner_id,kind,status,desired_visibility,auto_processing,auto_permission_generation) VALUES ($1,$2,'voice','transcript_ready','private',$3,$4)")
-        .bind(capture_id).bind(owner_id).bind(upload.is_some()).bind(extraction_generation).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO captures(id,owner_id,kind,status,desired_visibility,auto_processing,auto_permission_generation) VALUES ($1,$2,'voice','transcript_ready',$5,$3,$4)")
+        .bind(capture_id).bind(owner_id).bind(upload.is_some()).bind(extraction_generation).bind(job.get::<String,_>("desired_visibility")).execute(&mut *tx).await?;
     sqlx::query("INSERT INTO source_texts(id,capture_id,owner_id,kind,content) VALUES ($1,$2,$3,'transcript',$4)")
         .bind(Uuid::new_v4()).bind(capture_id).bind(owner_id).bind(&transcript)
         .execute(&mut *tx).await?;

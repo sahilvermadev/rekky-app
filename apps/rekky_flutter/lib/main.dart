@@ -475,7 +475,7 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
           content: Text(
             enabled
                 ? 'Turning this off stops new voice and transcript processing. Unprocessed recordings on this phone will be deleted; saved memories and transcripts remain.'
-                : 'Rekky will send new recordings and their private transcript text to OpenAI to make recommendations. Audio is deleted after a usable transcript is saved. Existing saved content remains private until you choose to share it.',
+                : 'Rekky will send new recordings and their private transcript text to OpenAI to make recommendations. Audio is deleted after a usable transcript is saved. New completed recommendations default to Friends; you can change them to Only me. Incomplete results and transcripts stay private. Existing recommendations keep their audience.',
           ),
           actions: [
             TextButton(

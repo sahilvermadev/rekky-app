@@ -293,7 +293,7 @@ class _VoiceDraftsSheetState extends State<VoiceDraftsSheet> {
           title: const Text('Save recommendations from transcripts?'),
           content: const SingleChildScrollView(
             child: Text(
-              'Rekky will send your private machine transcript text to OpenAI’s gpt-4.1-mini service to identify recommendations and their supporting words. OpenAI says API data is not used to train models by default unless the API account opts in. Its default abuse-monitoring logs may include content for up to 30 days, or longer when required by law or to protect services. Rekky saves grounded recommendations as Only me for now; the transcript stays private. You can turn off future transcript processing here. Saved recommendations remain until you delete them.',
+              'Rekky will send your private machine transcript text to OpenAI’s gpt-4.1-mini service to identify recommendations and their supporting words. OpenAI says API data is not used to train models by default unless the API account opts in. Its default abuse-monitoring logs may include content for up to 30 days, or longer when required by law or to protect services. New completed recommendations default to Friends and can be changed to Only me. Incomplete results and the transcript stay private; existing recordings keep their saved audience. You can turn off future transcript processing here. Saved recommendations remain until you delete them.',
             ),
           ),
           actions: [
@@ -337,7 +337,7 @@ class _VoiceDraftsSheetState extends State<VoiceDraftsSheet> {
             ? 'No saved recommendations remain for this transcript.'
             : result['partial'] == true
             ? '${items.length} private memory${items.length == 1 ? '' : 's'} saved. Review the source details in Library before relying on ${items.length == 1 ? 'it' : 'them'}.'
-            : '${items.length} private recommendation${items.length == 1 ? '' : 's'} saved. You can find ${items.length == 1 ? 'it' : 'them'} in Library and Ask.';
+            : '${items.length} recommendation${items.length == 1 ? '' : 's'} saved. You can find ${items.length == 1 ? 'it' : 'them'} in Library and Ask.';
       });
     }
   }
@@ -590,7 +590,7 @@ class _VoiceDraftsSheetState extends State<VoiceDraftsSheet> {
                         Text('Saved ${capture.createdAt}'),
                         if (capture.itemCount > 0)
                           Text(
-                            '${capture.itemCount} private ${capture.partial == true ? 'memory' : 'recommendation'}${capture.itemCount == 1 ? '' : 's'} saved${capture.partial == true ? ' · review details' : ''}',
+                            '${capture.itemCount} ${capture.partial == true ? 'private memory' : 'recommendation'}${capture.itemCount == 1 ? '' : 's'} saved${capture.partial == true ? ' · review details' : ''}',
                           ),
                         if (capture.itemCount == 0 &&
                             capture.extractionStatus != 'completed')
