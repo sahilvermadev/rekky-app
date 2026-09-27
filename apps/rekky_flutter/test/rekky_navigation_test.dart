@@ -60,30 +60,98 @@ void main() {
         expect(action.height, greaterThanOrEqualTo(60));
         expect(ask.height, greaterThanOrEqualTo(60));
         expect(library.height, greaterThanOrEqualTo(60));
-        expect(action.overlaps(ask), isFalse);
-        expect(action.overlaps(library), isFalse);
         expect(action.left, greaterThanOrEqualTo(0));
         expect(action.right, lessThanOrEqualTo(width));
         // The additional height must be tappable, not decorative padding.
         await tester.tapAt(Offset(action.center.dx, action.top + 5));
         expect(records, 2);
-        await tester.tapAt(Offset(ask.center.dx, ask.bottom - 5));
+        await tester.tapAt(
+          Offset(tester.getCenter(find.text('Ask')).dx, ask.bottom - 5),
+        );
         expect(selected, 0);
-        await tester.tapAt(Offset(library.center.dx, library.top + 5));
+        await tester.tapAt(
+          Offset(tester.getCenter(find.text('Library')).dx, library.top + 5),
+        );
         expect(selected, 1);
         expect(find.byType(Icon), findsNothing);
         if (scale == 1) {
           expect(action.center.dy, closeTo(ask.center.dy, 1));
           expect(action.center.dy, closeTo(library.center.dy, 1));
-          expect(action.left, greaterThanOrEqualTo(ask.right));
-          expect(action.right, lessThanOrEqualTo(library.left));
+          // The side buttons extend behind the centre's rounded ends.
+          expect(action.left, lessThan(ask.right));
+          expect(action.right, greaterThan(library.left));
           expect(action.height, lessThanOrEqualTo(64));
+          await tester.tapAt(Offset(action.left + 2, action.top + 2));
+          expect(selected, 0);
+          await tester.tapAt(Offset(action.right - 2, action.top + 2));
+          expect(selected, 1);
+          await tester.tapAt(Offset(ask.left + 2, ask.top + 2));
+          expect(selected, 1);
+          expect(records, 2);
           if (width <= 414) {
             expect(ask.left, closeTo(12, 1));
             expect(library.right, closeTo(width - 12, 1));
           }
         }
+        await tester.pumpAndSettle();
       });
     }
   }
+
+  testWidgets(
+    'side press animates the whole colour and respects reduced motion',
+    (tester) async {
+      Widget app({bool reduceMotion = false}) => MaterialApp(
+        theme: RekkyTheme.build(Brightness.dark),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context)
+              .copyWith(disableAnimations: reduceMotion),
+          child: child!,
+        ),
+        home: Scaffold(
+          bottomNavigationBar: RekkyNavigation(
+            destination: 1,
+            onSelect: (_) {},
+            onRemember: () {},
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(app());
+      final side = find.byKey(const ValueKey('nav-side-1'));
+      final before =
+          (tester.widget<AnimatedContainer>(side).decoration! as BoxDecoration)
+              .color;
+      final press = await tester.startGesture(
+        tester.getCenter(find.text('Library')),
+      );
+      await tester.pump();
+      expect(
+        (tester.widget<AnimatedContainer>(side).decoration! as BoxDecoration)
+            .color,
+        isNot(before),
+      );
+      expect(
+        tester.widget<AnimatedContainer>(side).duration,
+        const Duration(milliseconds: 220),
+      );
+      await press.up();
+      await tester.pumpAndSettle();
+
+      await tester.pumpWidget(app(reduceMotion: true));
+      await tester.pumpAndSettle();
+      expect(tester.widget<AnimatedContainer>(side).duration, Duration.zero);
+      expect(
+        tester.widget<AnimatedScale>(find.byType(AnimatedScale)).duration,
+        Duration.zero,
+      );
+      final still = await tester.startGesture(
+        tester.getCenter(find.text('Recommend')),
+      );
+      await tester.pump();
+      expect(tester.widget<AnimatedScale>(find.byType(AnimatedScale)).scale, 1);
+      await still.up();
+      await tester.pumpAndSettle();
+    },
+  );
 }

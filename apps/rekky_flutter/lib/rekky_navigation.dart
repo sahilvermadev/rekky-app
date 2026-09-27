@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'rekky_theme.dart';
 
-// Hallmark · user-sketched three-part capsule · flat, text-only navigation.
-// Pre-emit critique: P5 H5 E4 S5 R5 V4.
-class RekkyNavigation extends StatelessWidget {
+// Hallmark · component: three-part navigation · flat primary colours.
+// Pre-emit critique: P5 H5 E5 S5 R5 V4.
+class RekkyNavigation extends StatefulWidget {
   const RekkyNavigation({
     super.key,
     required this.destination,
@@ -16,48 +16,139 @@ class RekkyNavigation extends StatelessWidget {
   final VoidCallback onRemember;
 
   @override
+  State<RekkyNavigation> createState() => _RekkyNavigationState();
+}
+
+class _RekkyNavigationState extends State<RekkyNavigation> {
+  final _askStates = WidgetStatesController();
+  final _libraryStates = WidgetStatesController();
+  final _recommendStates = WidgetStatesController();
+
+  @override
+  void initState() {
+    super.initState();
+    for (final controller in [_askStates, _libraryStates, _recommendStates]) {
+      controller.addListener(_refreshStates);
+    }
+  }
+
+  void _refreshStates() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _askStates.dispose();
+    _libraryStates.dispose();
+    _recommendStates.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    final reducedMotion = MediaQuery.disableAnimationsOf(context);
+    Duration motion(int milliseconds) =>
+        reducedMotion ? Duration.zero : Duration(milliseconds: milliseconds);
     final labelStyle = theme.textTheme.labelLarge!.copyWith(
       fontSize: 15,
       fontWeight: FontWeight.w600,
       letterSpacing: 0,
     );
-    Widget tab(int index, String label) => Semantics(
-      selected: destination == index,
-      child: TextButton(
-        onPressed: () => onSelect(index),
-        style: TextButton.styleFrom(
-          foregroundColor: index == 0
-              ? RekkyTheme.onNavAsk
-              : RekkyTheme.onNavLibrary,
-          backgroundColor: Colors.transparent,
-          textStyle: labelStyle.copyWith(
-            fontWeight: destination == index
-                ? FontWeight.w700
-                : FontWeight.w500,
+    Widget tab(int index, String label, double labelWidth) {
+      final selected = widget.destination == index;
+      final states = index == 0 ? _askStates : _libraryStates;
+      final base = index == 0 ? RekkyTheme.navAsk : RekkyTheme.navLibrary;
+      final foreground = index == 0
+          ? RekkyTheme.onNavAsk
+          : RekkyTheme.onNavLibrary;
+      final amount = states.value.contains(WidgetState.pressed)
+          ? .16
+          : states.value.contains(WidgetState.focused)
+          ? .12
+          : selected
+          ? .06
+          : 0.0;
+      return AnimatedContainer(
+        key: ValueKey('nav-side-$index'),
+        duration: motion(220),
+        curve: Curves.easeOutCubic,
+        color: Color.lerp(base, foreground, amount),
+        child: Semantics(
+          selected: selected,
+          child: TextButton(
+            statesController: states,
+            onPressed: () => widget.onSelect(index),
+            style: TextButton.styleFrom(
+              foregroundColor: foreground,
+              overlayColor: Colors.transparent,
+              splashFactory: NoSplash.splashFactory,
+              minimumSize: const Size(48, 60),
+              padding: EdgeInsets.zero,
+              shape: const RoundedRectangleBorder(),
+            ),
+            child: Align(
+              alignment: index == 0
+                  ? Alignment.centerLeft
+                  : Alignment.centerRight,
+              child: SizedBox(
+                width: labelWidth,
+                child: Center(
+                  child: AnimatedSlide(
+                    duration: motion(200),
+                    curve: Curves.easeOutCubic,
+                    offset: selected && !reducedMotion
+                        ? const Offset(0, -.025)
+                        : Offset.zero,
+                    child: AnimatedDefaultTextStyle(
+                      duration: motion(200),
+                      curve: Curves.easeOutCubic,
+                      style: labelStyle.copyWith(
+                        color: foreground,
+                        fontWeight: selected
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                      ),
+                      child: Text(label, maxLines: 1),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
-          minimumSize: const Size(48, 60),
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          shape: const RoundedRectangleBorder(),
         ),
-        child: Text(label, maxLines: 1),
-      ),
-    );
+      );
+    }
+
     Widget recommend() => Semantics(
       hint: 'Start recording a recommendation',
-      child: FilledButton(
-        onPressed: onRemember,
-        style: FilledButton.styleFrom(
-          backgroundColor: RekkyTheme.capture,
-          foregroundColor: RekkyTheme.onCapture,
-          textStyle: labelStyle.copyWith(fontWeight: FontWeight.w700),
-          minimumSize: const Size(48, 60),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          shape: const StadiumBorder(),
+      child: ClipRRect(
+        clipper: const _CapsuleClipper(),
+        child: AnimatedScale(
+          scale:
+              !reducedMotion &&
+                  _recommendStates.value.contains(WidgetState.pressed)
+              ? .975
+              : 1,
+          duration: motion(
+            _recommendStates.value.contains(WidgetState.pressed) ? 100 : 190,
+          ),
+          curve: Curves.easeOutCubic,
+          child: FilledButton(
+            statesController: _recommendStates,
+            onPressed: widget.onRemember,
+            style: FilledButton.styleFrom(
+              backgroundColor: RekkyTheme.capture,
+              foregroundColor: RekkyTheme.onCapture,
+              textStyle: labelStyle.copyWith(fontWeight: FontWeight.w700),
+              minimumSize: const Size(48, 60),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              shape: const StadiumBorder(),
+            ),
+            child: const Text('Recommend', maxLines: 1),
+          ),
         ),
-        child: const Text('Recommend', maxLines: 1),
       ),
     );
     return ColoredBox(
@@ -94,48 +185,47 @@ class RekkyNavigation extends StatelessWidget {
                   final fits =
                       sideWidth * 2 + centreWidth <= constraints.maxWidth;
                   return ClipRRect(
-                    borderRadius: BorderRadius.circular(999),
-                    child: DecoratedBox(
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            RekkyTheme.navAsk,
-                            RekkyTheme.navAsk,
-                            RekkyTheme.navLibrary,
-                            RekkyTheme.navLibrary,
-                          ],
-                          stops: [0, .5, .5, 1],
-                        ),
-                      ),
-                      child: fits
-                          ? Row(
+                    clipper: const _CapsuleClipper(),
+                    child: fits
+                        ? SizedBox(
+                            height: 60,
+                            child: Stack(
+                              fit: StackFit.expand,
                               children: [
-                                SizedBox(
-                                  width: sideWidth,
-                                  child: tab(0, 'Ask'),
-                                ),
-                                Expanded(child: recommend()),
-                                SizedBox(
-                                  width: sideWidth,
-                                  child: tab(1, 'Library'),
-                                ),
-                              ],
-                            )
-                          : Column(
-                              // Reflow only when the scaled labels cannot fit in one row.
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                recommend(),
                                 Row(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
                                   children: [
-                                    Expanded(child: tab(0, 'Ask')),
-                                    Expanded(child: tab(1, 'Library')),
+                                    Expanded(child: tab(0, 'Ask', sideWidth)),
+                                    Expanded(
+                                      child: tab(1, 'Library', sideWidth),
+                                    ),
                                   ],
+                                ),
+                                Positioned(
+                                  left: sideWidth,
+                                  right: sideWidth,
+                                  top: 0,
+                                  bottom: 0,
+                                  child: recommend(),
                                 ),
                               ],
                             ),
-                    ),
+                          )
+                        : Column(
+                            // Reflow only when scaled labels cannot fit in one row.
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              recommend(),
+                              Row(
+                                children: [
+                                  Expanded(child: tab(0, 'Ask', sideWidth)),
+                                  Expanded(child: tab(1, 'Library', sideWidth)),
+                                ],
+                              ),
+                            ],
+                          ),
                   );
                 },
               ),
@@ -145,4 +235,18 @@ class RekkyNavigation extends StatelessWidget {
       ),
     );
   }
+}
+
+// An explicit clipper makes the visible curve the hit boundary as well.
+class _CapsuleClipper extends CustomClipper<RRect> {
+  const _CapsuleClipper();
+
+  @override
+  RRect getClip(Size size) => RRect.fromRectAndRadius(
+    Offset.zero & size,
+    Radius.circular(size.height / 2),
+  );
+
+  @override
+  bool shouldReclip(_CapsuleClipper oldClipper) => false;
 }
