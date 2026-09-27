@@ -12,11 +12,14 @@ class OriginalNoteView extends StatefulWidget {
 }
 
 class _OriginalNoteViewState extends State<OriginalNoteView> {
-  bool raw = false;
+  bool raw = false, expanded = false;
   @override
   void didUpdateWidget(covariant OriginalNoteView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.source != widget.source) raw = false;
+    if (oldWidget.source != widget.source) {
+      raw = false;
+      expanded = false;
+    }
   }
 
   @override
@@ -28,57 +31,87 @@ class _OriginalNoteViewState extends State<OriginalNoteView> {
         edited.trim().isNotEmpty &&
         edited != widget.source.text;
     final text = hasEdited && !raw ? edited : widget.source.text;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ExcludeSemantics(
-                child: Text(
-                  '“',
-                  style: theme.textTheme.displaySmall?.copyWith(
-                    color: theme.colorScheme.primary,
-                    height: .8,
-                  ),
-                ),
+    final style = theme.textTheme.bodyLarge?.copyWith(
+      height: 1.65,
+      letterSpacing: 0,
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final painter =
+            TextPainter(
+              text: TextSpan(text: text, style: style),
+              textDirection: Directionality.of(context),
+              textScaler: MediaQuery.textScalerOf(context),
+              locale: Localizations.maybeLocaleOf(context),
+              maxLines: 3,
+            )..layout(
+              maxWidth: (constraints.maxWidth - 40).clamp(0, double.infinity),
+            );
+        final overflows = painter.didExceedMaxLines;
+        painter.dispose();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(16),
               ),
-              const SizedBox(height: 8),
-              SelectableText(
-                text,
-                style: theme.textTheme.bodyLarge?.copyWith(
-                  height: 1.65,
-                  letterSpacing: 0,
-                ),
-              ),
-              Align(
-                alignment: Alignment.centerRight,
-                child: ExcludeSemantics(
-                  child: Text(
-                    '”',
-                    style: theme.textTheme.displaySmall?.copyWith(
-                      color: theme.colorScheme.primary,
-                      height: 1,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ExcludeSemantics(
+                    child: Text(
+                      '“',
+                      style: theme.textTheme.displaySmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                        height: .8,
+                      ),
                     ),
                   ),
-                ),
+                  const SizedBox(height: 8),
+                  if (overflows && !expanded)
+                    Text(
+                      text,
+                      style: style,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    )
+                  else
+                    SelectableText(text, style: style),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: ExcludeSemantics(
+                      child: Text(
+                        '”',
+                        style: theme.textTheme.displaySmall?.copyWith(
+                          color: theme.colorScheme.primary,
+                          height: 1,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (overflows)
+                    TextButton(
+                      onPressed: () => setState(() {
+                        expanded = !expanded;
+                        if (!expanded) raw = false;
+                      }),
+                      child: Text(expanded ? 'Show less' : 'Read more'),
+                    ),
+                ],
               ),
-            ],
-          ),
-        ),
-        if (hasEdited)
-          TextButton(
-            onPressed: () => setState(() => raw = !raw),
-            child: Text(raw ? 'Back to note' : 'Original transcript'),
-          ),
-      ],
+            ),
+            if (hasEdited && (!overflows || expanded))
+              TextButton(
+                onPressed: () => setState(() => raw = !raw),
+                child: Text(raw ? 'Back to note' : 'Original transcript'),
+              ),
+          ],
+        );
+      },
     );
   }
 }
