@@ -8,6 +8,7 @@ pub mod places;
 pub mod ratings;
 pub mod readable_source;
 pub mod taxonomy;
+pub mod understanding;
 pub mod voice;
 
 pub use app::{AppState, router};

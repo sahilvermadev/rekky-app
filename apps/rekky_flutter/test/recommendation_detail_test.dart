@@ -79,6 +79,21 @@ Future<void> openSheet(
 
 void main() {
   testWidgets(
+    'assessment explains the affected field without inline warnings',
+    (tester) async {
+      final saved = fixture('assessed_recommendation');
+      await openSheet(tester, item: saved);
+      expect(find.textContaining('A price or amount'), findsNothing);
+      await tester.tap(find.byTooltip('Needs review'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('A price or amount needs checking'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('can’t pinpoint'), findsNothing);
+    },
+  );
+  testWidgets(
     'caution explanation can open the existing recommendation editor',
     (tester) async {
       var edits = 0;

@@ -73,6 +73,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "018_location_browsing.sql",
         include_str!("../migrations/018_location_browsing.sql"),
     ),
+    (
+        "019_understanding_assessment.sql",
+        include_str!("../migrations/019_understanding_assessment.sql"),
+    ),
 ];
 
 pub async fn run(pool: &PgPool) -> Result<(), sqlx::Error> {

@@ -3,7 +3,6 @@ use crate::auth::{
 };
 use crate::extraction::{
     EXTRACTION_DISCLOSURE_VERSION, EXTRACTION_MODEL, TranscriptExtractor, UNDERSTANDING_VERSION,
-    preserve_unresolved, validate_with_catalog,
 };
 use crate::voice::{VOICE_DISCLOSURE_VERSION, VOICE_MODEL, VOICE_PROVIDER, VoiceTranscriber};
 use axum::{
@@ -551,6 +550,20 @@ async fn extract_voice_capture(
     process_voice_capture(&state, owner_id, capture_id, None).await
 }
 
+async fn record_understanding(
+    pool: &PgPool,
+    attempt_id: Uuid,
+    stage: &str,
+    proposal: &crate::extraction::Proposal,
+    assessment: &crate::understanding::Assessment,
+    elapsed: std::time::Duration,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE understanding_attempts SET outcome=$3,duration_ms=$4,metadata=$5,issues=$6,candidate=$7 WHERE attempt_id=$1 AND stage=$2")
+        .bind(attempt_id).bind(stage).bind(if assessment.partial(){"needs_review"}else{"ready"}).bind(elapsed.as_millis() as i64)
+        .bind(&proposal.receipt).bind(serde_json::to_value(&assessment.issues).unwrap()).bind(serde_json::to_value(proposal).unwrap()).execute(pool).await?;
+    Ok(())
+}
+
 async fn process_voice_capture(
     state: &AppState,
     owner_id: Uuid,
@@ -662,13 +675,23 @@ async fn process_voice_capture(
 
     let catalog = crate::category_learning::catalog(&state.pool).await?;
     let context = crate::taxonomy::for_source(&catalog, &transcript);
-    let proposal = match state
+    sqlx::query(
+        "INSERT INTO understanding_attempts(attempt_id,stage,source_id) VALUES($1,'understand',$2)",
+    )
+    .bind(attempt_id)
+    .bind(source_id)
+    .execute(&state.pool)
+    .await?;
+    let started = std::time::Instant::now();
+    let mut proposal = match state
         .extractor
         .extract_with_catalog(&transcript, &context)
         .await
     {
         Ok(value) => value,
-        Err(_) => {
+        Err(error) => {
+            sqlx::query("UPDATE understanding_attempts SET outcome=$2,duration_ms=$3 WHERE attempt_id=$1 AND stage='understand'")
+                .bind(attempt_id).bind(error.code()).bind(started.elapsed().as_millis() as i64).execute(&state.pool).await?;
             fail_extraction_attempt(&state.pool, owner_id, capture_id, attempt_id).await;
             return Err(ApiError::new(
                 StatusCode::BAD_GATEWAY,
@@ -677,22 +700,69 @@ async fn process_voice_capture(
             ));
         }
     };
-    let readable_source = crate::readable_source::from_proposal(&proposal, &transcript);
-    let (items, partial) = match validate_with_catalog(proposal.clone(), &transcript, &catalog)
-        .or_else(|_| {
-            preserve_unresolved(proposal, &transcript)
-                .ok_or(crate::extraction::ExtractionError::Failed)
-        }) {
-        Ok(value) => value,
-        Err(_) => {
-            fail_extraction_attempt(&state.pool, owner_id, capture_id, attempt_id).await;
-            return Err(ApiError::new(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "extraction_unusable",
-                "No grounded recommendation was returned; private transcript remains",
-            ));
+    let mut assessment = crate::understanding::assess(&proposal, &transcript, &catalog);
+    record_understanding(
+        &state.pool,
+        attempt_id,
+        "understand",
+        &proposal,
+        &assessment,
+        started.elapsed(),
+    )
+    .await?;
+    if assessment.partial() && state.extractor.supports_repair() {
+        // Reserve the one capture-wide repair against the SAME three-attempt
+        // ceiling. Crashes consume the reservation; retries cannot buy another.
+        let reserved=sqlx::query("UPDATE transcript_extraction_jobs j SET repair_attempted=true,attempts=attempts+1,lease_until=now()+interval '3 minutes' WHERE capture_id=$1 AND account_id=$2 AND attempt_id=$3 AND status='processing' AND attempts<3 AND NOT repair_attempted AND EXISTS(SELECT 1 FROM transcript_extraction_permissions p WHERE p.account_id=j.account_id AND p.enabled AND p.generation=j.permission_generation) AND EXISTS(SELECT 1 FROM source_texts s WHERE s.id=$4 AND s.revision=j.source_revision) AND NOT EXISTS(SELECT 1 FROM processing_permissions p WHERE p.account_id=j.account_id AND NOT p.enabled) RETURNING capture_id")
+            .bind(capture_id).bind(owner_id).bind(attempt_id).bind(source_id).fetch_optional(&state.pool).await?.is_some();
+        if reserved {
+            sqlx::query("INSERT INTO understanding_attempts(attempt_id,stage,source_id) VALUES($1,'repair',$2)").bind(attempt_id).bind(source_id).execute(&state.pool).await?;
+            let started = std::time::Instant::now();
+            match state
+                .extractor
+                .repair(&transcript, &context, &proposal, &assessment.issues)
+                .await
+            {
+                Ok(repaired) => {
+                    let receipt = repaired.receipt.clone();
+                    let merged =
+                        crate::understanding::merge_repair(&proposal, repaired, &assessment);
+                    let updated = crate::understanding::assess(&merged, &transcript, &catalog);
+                    let mut recorded = merged.clone();
+                    recorded.receipt = receipt;
+                    record_understanding(
+                        &state.pool,
+                        attempt_id,
+                        "repair",
+                        &recorded,
+                        &updated,
+                        started.elapsed(),
+                    )
+                    .await?;
+                    // A repair cannot degrade a usable draft. Per-field merging
+                    // already freezes accepted items and unrelated fields.
+                    if crate::understanding::improves(&assessment, &updated) {
+                        proposal = merged;
+                        assessment = updated;
+                    }
+                }
+                Err(error) => {
+                    sqlx::query("UPDATE understanding_attempts SET outcome=$2,duration_ms=$3 WHERE attempt_id=$1 AND stage='repair'").bind(attempt_id).bind(error.code()).bind(started.elapsed().as_millis() as i64).execute(&state.pool).await?;
+                }
+            }
         }
-    };
+    }
+    if assessment.items.is_empty() {
+        fail_extraction_attempt(&state.pool, owner_id, capture_id, attempt_id).await;
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "extraction_unusable",
+            "No grounded subject was returned; private transcript remains",
+        ));
+    }
+    let readable_source = crate::readable_source::from_proposal(&proposal, &transcript);
+    let partial = assessment.partial();
+    let items = assessment.items;
     let mut tx = state.pool.begin().await?;
     let permission = sqlx::query("SELECT enabled,generation FROM transcript_extraction_permissions WHERE account_id=$1 FOR UPDATE")
         .bind(owner_id).fetch_one(&mut *tx).await?;
@@ -721,19 +791,19 @@ async fn process_voice_capture(
         sqlx::query("UPDATE source_texts SET readable_content=$1,readable_source_revision=revision,readable_version=1 WHERE id=$2 AND revision=$3 AND readable_content IS NULL")
             .bind(readable).bind(source_id).bind(source_revision).execute(&mut *tx).await?;
     }
-    // A known partial capture never publishes any of its provisional items.
+    // Each item owns its review state. Ambiguous shared source holds all affected items.
     let desired_visibility: String =
         sqlx::query_scalar("SELECT desired_visibility FROM captures WHERE id=$1 AND owner_id=$2")
             .bind(capture_id)
             .bind(owner_id)
             .fetch_one(&mut *tx)
             .await?;
-    let visibility = if partial {
-        "private"
-    } else {
-        desired_visibility.as_str()
-    };
     for item in items {
+        let visibility = if item.recommendation["quality"]["needs_review"] == true {
+            "private"
+        } else {
+            desired_visibility.as_str()
+        };
         let item_id = Uuid::new_v4();
         sqlx::query("INSERT INTO knowledge_items(id,capture_id,owner_id,subject,body,visibility,recommendation) VALUES ($1,$2,$3,$4,$5,$7,$6)")
             .bind(item_id).bind(capture_id).bind(owner_id).bind(item.subject).bind(item.body).bind(item.recommendation).bind(visibility)
@@ -886,6 +956,14 @@ async fn refine_item(
     tx.commit().await?;
     let catalog = crate::category_learning::catalog(&state.pool).await?;
     let context = crate::taxonomy::for_source(&catalog, &transcript);
+    sqlx::query(
+        "INSERT INTO understanding_attempts(attempt_id,stage,source_id) VALUES($1,'refine',$2)",
+    )
+    .bind(attempt_id)
+    .bind(source_id)
+    .execute(&state.pool)
+    .await?;
+    let started = std::time::Instant::now();
     let proposal = state
         .extractor
         .extract_with_catalog(&transcript, &context)
@@ -894,7 +972,26 @@ async fn refine_item(
         .as_ref()
         .ok()
         .and_then(|p| crate::readable_source::from_proposal(p, &transcript));
-    let result = proposal.and_then(|p| validate_with_catalog(p, &transcript, &catalog));
+    let result = match proposal {
+        Ok(p) => {
+            let assessment = crate::understanding::assess(&p, &transcript, &catalog);
+            record_understanding(
+                &state.pool,
+                attempt_id,
+                "refine",
+                &p,
+                &assessment,
+                started.elapsed(),
+            )
+            .await?;
+            let partial = assessment.partial();
+            Ok((assessment.items, partial))
+        }
+        Err(error) => {
+            sqlx::query("UPDATE understanding_attempts SET outcome=$2,duration_ms=$3 WHERE attempt_id=$1 AND stage='refine'").bind(attempt_id).bind(error.code()).bind(started.elapsed().as_millis() as i64).execute(&state.pool).await?;
+            Err(error)
+        }
+    };
     let (mut items, partial) = match result {
         Ok((items, partial))
             if items.len() == 1
@@ -1190,6 +1287,8 @@ pub async fn process_pending_voice(
     state: &AppState,
     owner_filter: Option<Uuid>,
 ) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE understanding_attempts SET candidate=NULL WHERE candidate IS NOT NULL AND created_at<now()-interval '7 days'").execute(&state.pool).await?;
+
     sqlx::query("UPDATE captures c SET status='failed',auto_processing=false WHERE ($1::uuid IS NULL OR c.owner_id=$1) AND c.auto_processing AND c.status='transcript_ready' AND EXISTS(SELECT 1 FROM transcript_extraction_jobs j WHERE j.capture_id=c.id AND j.attempts>=3 AND j.status IN ('failed','processing') AND j.lease_until<=now())")
         .bind(owner_filter).execute(&state.pool).await?;
     sqlx::query("UPDATE voice_uploads SET audio=NULL,status='expired' WHERE ($1::uuid IS NULL OR account_id=$1) AND audio IS NOT NULL AND captured_ms < (extract(epoch FROM now()-interval '7 days')*1000)::bigint")
@@ -1589,7 +1688,7 @@ struct ItemRow {
     recommendation: Option<Value>,
 }
 fn item_json(row: &ItemRow) -> Value {
-    json!({"id":row.id,"capture_id":row.capture_id,"subject":row.subject,"body":row.body,"visibility":row.visibility,"revision":row.revision,"created_at":iso(row.created_at),"needs_review":row.needs_review,"recommendation":row.recommendation,"pinned":row.pinned,"pin_revision":row.pin_revision})
+    json!({"id":row.id,"capture_id":row.capture_id,"subject":row.subject,"body":row.body,"visibility":row.visibility,"revision":row.revision,"created_at":iso(row.created_at),"needs_review":row.recommendation.as_ref().and_then(|v|v["quality"]["needs_review"].as_bool()).unwrap_or(row.needs_review),"recommendation":row.recommendation,"pinned":row.pinned,"pin_revision":row.pin_revision})
 }
 fn iso(date: DateTime<Utc>) -> String {
     date.to_rfc3339_opts(SecondsFormat::Micros, true)
@@ -1945,6 +2044,11 @@ async fn edit_content(
     )
     .await?;
     let (mut recommendation, body) = input.build_with_catalog(&catalog).map_err(ApiError::bad)?;
+    if let Some(old) = previous.get::<Option<Value>, _>("recommendation")
+        && old["quality"].is_object()
+    {
+        recommendation["quality"] = old["quality"].clone();
+    }
     if input.must_check_destination(
         &previous.get::<String, _>("subject"),
         &previous

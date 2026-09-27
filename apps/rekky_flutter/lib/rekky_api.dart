@@ -187,9 +187,11 @@ class RekkyRecommendation {
     this.contactPhone,
     this.contactSavedName,
     this.contactMatchingOff = false,
+    this.reviewIssues = const [],
   });
   final String? contactPhone, contactSavedName;
   final bool contactMatchingOff;
+  final List<String> reviewIssues;
   final RecommendationRating? rating;
   final String summary, shelf, experience, entityKind;
   final String attribution,
@@ -222,6 +224,11 @@ class RekkyRecommendation {
   factory RekkyRecommendation.fromJson(
     Map<String, dynamic> json,
   ) => RekkyRecommendation(
+    reviewIssues:
+        ((json['quality'] as Map?)?['issues'] as List?)
+            ?.whereType<String>()
+            .toList() ??
+        const [],
     contactPhone: (json['contact'] as Map?)?['phone'] as String?,
     contactSavedName: (json['contact'] as Map?)?['saved_name'] as String?,
     contactMatchingOff: json['contact_matching'] == 'off',

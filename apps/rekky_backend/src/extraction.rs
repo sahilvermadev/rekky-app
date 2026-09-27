@@ -13,6 +13,24 @@ pub const EDITORIAL_VERSION: i32 = 1;
 pub enum ExtractionError {
     Unavailable,
     Failed,
+    Timeout,
+    ProviderRejected,
+    RateLimited,
+    Incomplete,
+    InvalidJson,
+}
+impl ExtractionError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Unavailable => "provider_unavailable",
+            Self::Failed => "provider_failed",
+            Self::Timeout => "provider_timeout",
+            Self::ProviderRejected => "provider_rejected",
+            Self::RateLimited => "provider_rate_limited",
+            Self::Incomplete => "provider_incomplete",
+            Self::InvalidJson => "provider_invalid_json",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -58,6 +76,8 @@ pub struct ProposedItem {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Proposal {
+    #[serde(skip)]
+    pub receipt: Value,
     #[serde(default)]
     pub readable_source: Value,
     pub items: Vec<ProposedItem>,
@@ -130,6 +150,18 @@ pub fn source_units(source: &str) -> Vec<SourceUnit> {
 #[async_trait]
 pub trait TranscriptExtractor: Send + Sync {
     fn available(&self) -> bool;
+    fn supports_repair(&self) -> bool {
+        false
+    }
+    async fn repair(
+        &self,
+        _transcript: &str,
+        _catalog: &crate::taxonomy::Vocabulary,
+        _proposal: &Proposal,
+        _issues: &[crate::understanding::Issue],
+    ) -> Result<Proposal, ExtractionError> {
+        Err(ExtractionError::Unavailable)
+    }
     async fn extract(&self, transcript: &str) -> Result<Proposal, ExtractionError>;
     async fn extract_with_catalog(
         &self,
@@ -219,7 +251,7 @@ pub fn schema_with_catalog(catalog: &crate::taxonomy::Vocabulary) -> Value {
                 "spoken_value":{"type":["number","null"]},
                 "source_phrase":text_schema(),"evidence":evidence_schema()
             })),
-            "account":array(object(json!({"kind":choice(&["praise","suggestion","suitability","caution","price","context"]),"text":text_schema(),"evidence":{"type":"array","items":{"type":"integer"},"minItems":1,"maxItems":3}}))),
+            "account":array(object(json!({"kind":choice(&["praise","suggestion","suitability","caution","price","context"]),"text":text_schema(),"evidence":{"type":"array","items":{"type":"integer"},"minItems":1,"maxItems":32}}))),
             "locations":array(object(json!({"role":choice(&["venue","practice","service_area","past_experience","context"]),"text":text_schema(),"evidence":evidence_schema()}))),
             "use_cases":array(claim.clone()),
             "classification":object(json!({"types":assignments(true),"facets":assignments(false),"descriptors":array(claim.clone()),"type_description":claim}))
@@ -242,6 +274,33 @@ impl TranscriptExtractor for OpenAiExtractor {
         transcript: &str,
         catalog: &crate::taxonomy::Vocabulary,
     ) -> Result<Proposal, ExtractionError> {
+        self.request(transcript, catalog, None).await
+    }
+    fn supports_repair(&self) -> bool {
+        true
+    }
+    async fn repair(
+        &self,
+        transcript: &str,
+        catalog: &crate::taxonomy::Vocabulary,
+        proposal: &Proposal,
+        issues: &[crate::understanding::Issue],
+    ) -> Result<Proposal, ExtractionError> {
+        self.request(
+            transcript,
+            catalog,
+            Some(json!({"candidate":proposal,"issues":issues})),
+        )
+        .await
+    }
+}
+impl OpenAiExtractor {
+    async fn request(
+        &self,
+        transcript: &str,
+        catalog: &crate::taxonomy::Vocabulary,
+        repair: Option<Value>,
+    ) -> Result<Proposal, ExtractionError> {
         if !self.available() {
             return Err(ExtractionError::Unavailable);
         }
@@ -250,17 +309,30 @@ impl TranscriptExtractor for OpenAiExtractor {
             .json(&json!({
                 "model":EXTRACTION_MODEL,"reasoning":{"effort":"none"},"store":false,"max_output_tokens":5500,
                 "input":[
-                    {"role":"system","content":format!("{}\nKnown category IDs and aliases. Use these only when supported; unfamiliar explicit types belong in type_description with types=[], never in a guessed ID:\n{}",include_str!("../prompts/understanding_v2.txt"),serde_json::to_string(catalog).expect("vocabulary"))},
-                    {"role":"user","content":json!({"transcript_units":source_units(transcript)}).to_string()}
+                    {"role":"system","content":format!("{}\nKnown category IDs and aliases. Use these only when supported; unfamiliar explicit types belong in type_description with types=[], never in a guessed ID:\n{}",include_str!("../prompts/understanding_v3.txt"),serde_json::to_string(catalog).expect("vocabulary"))},
+                    {"role":"user","content":json!({"transcript_units":source_units(transcript),"repair":repair}).to_string()}
                 ],
-                "text":{"format":{"type":"json_schema","name":"rekky_understanding_v2","strict":true,"schema":schema_for_source(catalog, transcript)}}
-            })).send().await.map_err(|_| ExtractionError::Failed)?;
+                "text":{"format":{"type":"json_schema","name":"rekky_understanding_v3","strict":true,"schema":schema_for_source(catalog, transcript)}}
+            })).send().await.map_err(|e| if e.is_timeout(){ExtractionError::Timeout}else{ExtractionError::Failed})?;
         if !response.status().is_success() {
-            return Err(ExtractionError::Failed);
+            return Err(if response.status().as_u16() == 429 {
+                ExtractionError::RateLimited
+            } else {
+                ExtractionError::ProviderRejected
+            });
         }
-        let payload: Value = response.json().await.map_err(|_| ExtractionError::Failed)?;
+        let request_id = response
+            .headers()
+            .get("x-request-id")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_owned();
+        let payload: Value = response
+            .json()
+            .await
+            .map_err(|_| ExtractionError::InvalidJson)?;
         if payload["status"] != "completed" {
-            return Err(ExtractionError::Failed);
+            return Err(ExtractionError::Incomplete);
         }
         let text = payload["output"]
             .as_array()
@@ -273,7 +345,10 @@ impl TranscriptExtractor for OpenAiExtractor {
                 })
             })
             .ok_or(ExtractionError::Failed)?;
-        serde_json::from_str(text).map_err(|_| ExtractionError::Failed)
+        let mut proposal: Proposal =
+            serde_json::from_str(text).map_err(|_| ExtractionError::InvalidJson)?;
+        proposal.receipt = json!({"request_id":request_id,"response_id":payload["id"],"model":payload["model"],"usage":payload["usage"],"prompt_version":3,"schema_version":3,"assessment_version":1});
+        Ok(proposal)
     }
 }
 #[derive(Clone, Debug)]
@@ -383,6 +458,8 @@ fn identity_only(text: &str, subject: &str) -> bool {
         .all(|w| filler.contains(&w.as_str()))
 }
 
+/// Legacy v2 comparison validator retained for historical probes/regressions.
+/// New saves and explicit refinement use `understanding::assess`.
 /// Checks source references, representation coverage and conservative literal
 /// invariants. These checks do NOT prove semantic entailment of a paraphrase.
 pub fn validate(

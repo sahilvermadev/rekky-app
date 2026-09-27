@@ -3398,3 +3398,186 @@ async fn library_pins_are_owner_only_revisioned_and_do_not_edit_recommendations(
     );
     t.cleanup().await;
 }
+
+struct RepairingExtractor {
+    success: bool,
+    calls: std::sync::atomic::AtomicUsize,
+    started: Option<Arc<Notify>>,
+    release: Option<Arc<Notify>>,
+}
+#[async_trait]
+impl TranscriptExtractor for RepairingExtractor {
+    fn available(&self) -> bool {
+        true
+    }
+    fn supports_repair(&self) -> bool {
+        true
+    }
+    async fn extract(&self, _source: &str) -> Result<Proposal, ExtractionError> {
+        Ok(serde_json::from_value(json!({"items":[
+            {"subject":"Lantern Cafe","subject_evidence":[1],"entity_kind":"place","experience":"firsthand","account":[{"kind":"price","text":"Pizza cost 900 rupees.","evidence":[1]}],"locations":[],"use_cases":[]},
+            {"subject":"Willow Cafe","subject_evidence":[2],"entity_kind":"place","experience":"firsthand","account":[{"kind":"praise","text":"Lovely noodles.","evidence":[2]}],"locations":[],"use_cases":[]}
+        ],"ignored_unit_ids":[],"unresolved_unit_ids":[]})).unwrap())
+    }
+    async fn repair(
+        &self,
+        source: &str,
+        _catalog: &rekky_backend::taxonomy::Vocabulary,
+        _proposal: &Proposal,
+        _issues: &[rekky_backend::understanding::Issue],
+    ) -> Result<Proposal, ExtractionError> {
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if let Some(started) = &self.started {
+            started.notify_one();
+        }
+        if let Some(release) = &self.release {
+            release.notified().await;
+        }
+        let mut proposal = self.extract(source).await?;
+        if self.success {
+            proposal.items[0].account[0].text = "Pizza cost 200 rupees.".into();
+        }
+        Ok(proposal)
+    }
+}
+async fn assessment_capture(t: &mut TestApp) -> (Uuid, String, Uuid, Uuid) {
+    let (owner, token) = t.sign_in("google", "valid-a").await;
+    t.call(
+        Method::POST,
+        "/v1/me/visibility-disclosure",
+        Some(&token),
+        Some(json!({"accept":true})),
+        &[],
+    )
+    .await;
+    t.call(
+        Method::POST,
+        "/v1/me/transcript-extraction-permission",
+        Some(&token),
+        Some(json!({"enabled":true,"disclosure_version":1})),
+        &[],
+    )
+    .await;
+    let capture = Uuid::new_v4();
+    let source = Uuid::new_v4();
+    sqlx::query("INSERT INTO captures(id,owner_id,kind,status,desired_visibility) VALUES($1,$2,'voice','transcript_ready','friends')").bind(capture).bind(owner).execute(&t.pool).await.unwrap();
+    sqlx::query("INSERT INTO source_texts(id,capture_id,owner_id,kind,content) VALUES($1,$2,$3,'transcript','Lantern Cafe had pizza for 200 rupees. Willow Cafe had lovely noodles.')").bind(source).bind(capture).bind(owner).execute(&t.pool).await.unwrap();
+    (owner, token, capture, source)
+}
+#[tokio::test]
+async fn assessment_repair_is_once_audited_and_sibling_visibility_is_independent() {
+    for success in [true, false] {
+        let Some(mut t) = TestApp::new().await else {
+            return;
+        };
+        let extractor = Arc::new(RepairingExtractor {
+            success,
+            calls: 0.into(),
+            started: None,
+            release: None,
+        });
+        t.state.extractor = extractor.clone();
+        t.app = router(t.state.clone());
+        let (_owner, token, capture, source) = assessment_capture(&mut t).await;
+        let path = format!("/v1/voice-captures/{capture}/extract");
+        let (status, result) = t.call(Method::POST, &path, Some(&token), None, &[]).await;
+        assert_eq!(status, StatusCode::OK, "{result}");
+        assert_eq!(result["items"].as_array().unwrap().len(), 2);
+        let first = result["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|i| i["subject"] == "Lantern Cafe")
+            .unwrap();
+        let second = result["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|i| i["subject"] == "Willow Cafe")
+            .unwrap();
+        assert_eq!(
+            first["visibility"],
+            if success { "friends" } else { "private" }
+        );
+        assert_eq!(first["needs_review"], !success);
+        assert_eq!(second["visibility"], "friends");
+        assert_eq!(second["needs_review"], false);
+        assert!(!first["body"].as_str().unwrap().contains("900"));
+        assert!(!first["body"].as_str().unwrap().contains("Willow"));
+        let attempts: i32 = sqlx::query_scalar(
+            "SELECT attempts FROM transcript_extraction_jobs WHERE capture_id=$1",
+        )
+        .bind(capture)
+        .fetch_one(&t.pool)
+        .await
+        .unwrap();
+        assert_eq!(attempts, 2);
+        let audited:i64=sqlx::query_scalar("SELECT count(*) FROM understanding_attempts WHERE source_id=$1 AND candidate IS NOT NULL").bind(source).fetch_one(&t.pool).await.unwrap();
+        assert_eq!(audited, 2);
+        assert!(!result.to_string().contains("candidate"));
+        assert!(!result.to_string().contains("subject_evidence"));
+        t.call(Method::POST, &path, Some(&token), None, &[]).await;
+        assert_eq!(extractor.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        sqlx::query("DELETE FROM source_texts WHERE id=$1")
+            .bind(source)
+            .execute(&t.pool)
+            .await
+            .unwrap();
+        let audited: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM understanding_attempts WHERE source_id=$1")
+                .bind(source)
+                .fetch_one(&t.pool)
+                .await
+                .unwrap();
+        assert_eq!(audited, 0);
+        t.cleanup().await;
+    }
+}
+#[tokio::test]
+async fn withdrawal_during_repair_cannot_commit_late_recommendations() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    let started = Arc::new(Notify::new());
+    let release = Arc::new(Notify::new());
+    t.state.extractor = Arc::new(RepairingExtractor {
+        success: true,
+        calls: 0.into(),
+        started: Some(started.clone()),
+        release: Some(release.clone()),
+    });
+    t.app = router(t.state.clone());
+    let (owner, token, capture, _source) = assessment_capture(&mut t).await;
+    let app = t.app.clone();
+    let auth = token.clone();
+    let task = tokio::spawn(async move {
+        app.oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/v1/voice-captures/{capture}/extract"))
+                .header("authorization", format!("Bearer {auth}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+    });
+    started.notified().await;
+    t.call(
+        Method::POST,
+        "/v1/me/transcript-extraction-permission",
+        Some(&token),
+        Some(json!({"enabled":false})),
+        &[],
+    )
+    .await;
+    release.notify_one();
+    assert_eq!(task.await.unwrap().status(), StatusCode::CONFLICT);
+    let saved: i64 = sqlx::query_scalar("SELECT count(*) FROM knowledge_items WHERE owner_id=$1")
+        .bind(owner)
+        .fetch_one(&t.pool)
+        .await
+        .unwrap();
+    assert_eq!(saved, 0);
+    t.cleanup().await;
+}
