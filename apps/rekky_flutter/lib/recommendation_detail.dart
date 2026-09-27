@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'rekky_api.dart';
 import 'original_note_view.dart';
 import 'recommendation_view.dart';
+import 'recommendation_review.dart';
 
 // Hallmark · component: reading sheet · existing warm Material tokens.
 // Pre-emit critique: P4 H5 E4 S4 R5 V4. Native focus/interaction states.
@@ -41,7 +42,6 @@ class _RecommendationDetailSheetState extends State<RecommendationDetailSheet> {
   ResolvedPlace? place;
   bool saving = false;
   String? sourceError, actionError;
-  final sourceKey = GlobalKey();
 
   @override
   void initState() {
@@ -104,15 +104,6 @@ class _RecommendationDetailSheetState extends State<RecommendationDetailSheet> {
     } finally {
       if (mounted) setState(() => sourceLoading = false);
     }
-  }
-
-  void openOriginal() {
-    loadSource();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && sourceKey.currentContext != null) {
-        Scrollable.ensureVisible(sourceKey.currentContext!);
-      }
-    });
   }
 
   Future<void> audience(String value) async {
@@ -248,6 +239,16 @@ class _RecommendationDetailSheetState extends State<RecommendationDetailSheet> {
                     dimension: 16,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   ),
+                if (RecommendationReviewButton.needed(item))
+                  RecommendationReviewButton(
+                    item: item,
+                    onEdit: saving
+                        ? null
+                        : () {
+                            Navigator.pop(context);
+                            widget.editRecommendation(item);
+                          },
+                  ),
                 PopupMenuButton<String>(
                   enabled: !saving,
                   tooltip: 'Recommendation options',
@@ -337,25 +338,8 @@ class _RecommendationDetailSheetState extends State<RecommendationDetailSheet> {
                       ),
                     ),
                   ],
-                  if (item.needsReview) ...[
-                    const SizedBox(height: 24),
-                    Text(
-                      'This saved note may be incomplete.',
-                      style: theme.textTheme.titleSmall,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Compare it with your original note.',
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                    TextButton(
-                      onPressed: openOriginal,
-                      child: const Text('View original note'),
-                    ),
-                  ],
                   // Owner-only quote loads independently of the saved content.
                   Column(
-                    key: sourceKey,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (sourceLoading)

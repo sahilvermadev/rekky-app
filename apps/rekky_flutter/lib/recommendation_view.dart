@@ -1,3 +1,5 @@
+import 'recommendation_review.dart';
+
 import 'package:flutter/material.dart';
 
 import 'rekky_api.dart';
@@ -23,12 +25,19 @@ class RecommendationCard extends StatelessWidget {
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       title: Text(item.subject, maxLines: 2, overflow: TextOverflow.ellipsis),
       subtitle: RecommendationView(item: item),
-      trailing: Icon(
-        item.visibility == 'private'
-            ? Icons.lock_outline
-            : Icons.people_outline,
-        size: 18,
-        semanticLabel: item.visibility == 'private' ? 'Only me' : 'Friends',
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (RecommendationReviewButton.needed(item))
+            RecommendationReviewButton(item: item),
+          Icon(
+            item.visibility == 'private'
+                ? Icons.lock_outline
+                : Icons.people_outline,
+            size: 18,
+            semanticLabel: item.visibility == 'private' ? 'Only me' : 'Friends',
+          ),
+        ],
       ),
       onTap: onTap,
     ),
@@ -57,8 +66,6 @@ class RecommendationView extends StatelessWidget {
       final signals = [
         if (recommendation?.experience == 'secondhand') 'Heard from others',
         if (recommendation?.experience == 'interest') 'Not tried yet',
-        if (recommendation?.cautions.isNotEmpty ?? false) 'Caution',
-        if (item.needsReview) 'Needs review',
       ];
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,

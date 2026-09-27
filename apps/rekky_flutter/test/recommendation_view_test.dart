@@ -18,6 +18,35 @@ RekkyItem fixture([String name = 'structured_recommendation']) {
 
 void main() {
   testWidgets(
+    'card caution opens its explanation without opening the recommendation',
+    (tester) async {
+      var opened = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RecommendationCard(
+              item: fixture(),
+              onTap: () => opened = true,
+            ),
+          ),
+        ),
+      );
+      expect(find.text('Caution'), findsNothing);
+      await tester.tap(find.byTooltip('Caution'));
+      await tester.pumpAndSettle();
+      expect(opened, isFalse);
+      expect(find.text('Small portions; order a few plates.'), findsOneWidget);
+      expect(find.textContaining('can’t pinpoint which detail'), findsNothing);
+      expect(
+        tester.getSize(find.byTooltip('Caution')).width,
+        greaterThanOrEqualTo(48),
+      );
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Caution'), findsOneWidget);
+    },
+  );
+  testWidgets(
     'geographic labels replace conversational phrases while roles and source remain',
     (tester) async {
       final wire = jsonDecode(
@@ -184,10 +213,9 @@ void main() {
                 child: SingleChildScrollView(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
-                    child: RecommendationView(
-                      item: fixture(),
-                      expanded: expanded,
-                    ),
+                    child: expanded
+                        ? RecommendationView(item: fixture(), expanded: true)
+                        : RecommendationCard(item: fixture(), onTap: () {}),
                   ),
                 ),
               ),
@@ -198,7 +226,11 @@ void main() {
           find.text('Small portions; order a few plates.'),
           expanded ? findsOneWidget : findsNothing,
         );
-        expect(find.text('Caution'), expanded ? findsNothing : findsOneWidget);
+        expect(find.text('Caution'), findsNothing);
+        expect(
+          find.byTooltip('Caution'),
+          expanded ? findsNothing : findsOneWidget,
+        );
         expect(
           find.text(fixture().recommendation!.summary),
           expanded ? findsOneWidget : findsNothing,
@@ -286,7 +318,8 @@ void main() {
       ),
     );
     expect(find.text(item.body), findsNothing);
-    expect(find.text('Needs review'), findsOneWidget);
+    expect(find.text('Needs review'), findsNothing);
+    expect(find.byTooltip('Needs review'), findsOneWidget);
     expect(find.text('Saved note'), findsOneWidget);
   });
   testWidgets(

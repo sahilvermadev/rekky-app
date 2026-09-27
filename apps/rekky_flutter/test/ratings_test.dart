@@ -94,7 +94,8 @@ void main() {
           }
           if (!expanded) {
             expect(find.text(item.recommendation!.summary), findsNothing);
-            expect(find.text('Caution'), findsOneWidget);
+            expect(find.text('Caution'), findsNothing);
+            expect(find.byTooltip('Caution'), findsOneWidget);
           }
           expect(tester.takeException(), isNull);
         }

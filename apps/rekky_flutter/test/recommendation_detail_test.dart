@@ -31,6 +31,7 @@ Future<void> openSheet(
   Future<RekkyItem> Function(RekkyItem, String)? audience,
   Future<ResolvedPlace?> Function()? place,
   Future<void> Function(RekkyItem)? deleteItem,
+  void Function(RekkyItem)? editRecommendation,
   double scale = 1,
   RekkyItem? item,
 }) async {
@@ -61,7 +62,7 @@ Future<void> openSheet(
                       audience ?? (item, value) async => revised(item, value),
                   loadPlace: place,
                   deleteItem: deleteItem ?? (_) async {},
-                  editRecommendation: (_) {},
+                  editRecommendation: editRecommendation ?? (_) {},
                   refineItem: (_) {},
                 ),
               ),
@@ -77,6 +78,58 @@ Future<void> openSheet(
 }
 
 void main() {
+  testWidgets(
+    'caution explanation can open the existing recommendation editor',
+    (tester) async {
+      var edits = 0;
+      await openSheet(tester, editRecommendation: (_) => edits++);
+      await tester.tap(find.byTooltip('Caution'));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('Small portions; order a few plates.'),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Edit recommendation'));
+      await tester.pumpAndSettle();
+      expect(edits, 1);
+      expect(find.byType(RecommendationDetailSheet), findsNothing);
+    },
+  );
+  testWidgets(
+    'review explanation includes the actual saved caution without claiming the cause',
+    (tester) async {
+      final saved = fixture('categorized_recommendation');
+      final review = RekkyItem(
+        id: saved.id,
+        captureId: saved.captureId,
+        subject: saved.subject,
+        body: saved.body,
+        visibility: saved.visibility,
+        revision: saved.revision,
+        createdAt: saved.createdAt,
+        recommendation: saved.recommendation,
+        needsReview: true,
+      );
+      await openSheet(tester, item: review);
+      await tester.tap(find.byTooltip('Needs review'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('can’t pinpoint which detail'),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('Small portions; order a few plates.'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Compare it with your original note.'), findsNothing);
+    },
+  );
   testWidgets(
     'opens immediately while the quote loads once and can finish after close',
     (tester) async {
@@ -249,7 +302,7 @@ void main() {
   );
 
   testWidgets(
-    'review notice opens the original without claiming a specific error',
+    'review icon explains uncertainty on tap without an inline notice',
     (tester) async {
       final saved = fixture('categorized_recommendation');
       final review = RekkyItem(
@@ -272,14 +325,25 @@ void main() {
           return original;
         },
       );
-      expect(find.text('This saved note may be incomplete.'), findsOneWidget);
+      expect(find.text('This saved note may be incomplete.'), findsNothing);
+      expect(find.text('Compare it with your original note.'), findsNothing);
+      expect(find.text('View original note'), findsNothing);
+      expect(find.text('Needs review'), findsNothing);
       expect(calls, 1);
-      await tester.ensureVisible(find.text('View original note'));
-      await tester.tap(find.text('View original note'));
+      await tester.tap(find.byTooltip('Needs review'));
+      await tester.pumpAndSettle();
+      expect(find.text('Needs review'), findsOneWidget);
+      expect(
+        find.textContaining('can’t pinpoint which detail'),
+        findsOneWidget,
+      );
+      expect(find.text('Edit recommendation'), findsOneWidget);
+      await tester.tap(find.text('Close'));
       await tester.pumpAndSettle();
       expect(calls, 1);
+      expect(find.text('Needs review'), findsNothing);
+      expect(find.byTooltip('Needs review'), findsOneWidget);
       expect(find.text(original.text), findsOneWidget);
-      expect(find.text('This saved note may be incomplete.'), findsOneWidget);
     },
   );
 
