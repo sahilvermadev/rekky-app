@@ -15,6 +15,7 @@ class RecommendationDetailSheet extends StatefulWidget {
     required this.loadSource,
     this.loadPlace,
     this.manageContact,
+    this.changePin,
     this.contactUpdates,
     required this.changeAudience,
     required this.deleteItem,
@@ -22,6 +23,7 @@ class RecommendationDetailSheet extends StatefulWidget {
     required this.refineItem,
   });
   final RekkyItem item;
+  final Future<RekkyItem> Function(RekkyItem, bool)? changePin;
   final ValueListenable<RekkyItem>? contactUpdates;
   final Future<RekkyItem?> Function(RekkyItem)? manageContact;
   final Future<RekkySource?> Function() loadSource;
@@ -56,8 +58,15 @@ class _RecommendationDetailSheetState extends State<RecommendationDetailSheet> {
     if (mounted &&
         updated != null &&
         updated.id == item.id &&
-        updated.revision > item.revision) {
-      setState(() => item = updated);
+        (updated.revision > item.revision ||
+            updated.pinRevision > item.pinRevision)) {
+      setState(() {
+        final latestContent = updated.revision > item.revision ? updated : item;
+        final latestPin = updated.pinRevision > item.pinRevision
+            ? updated
+            : item;
+        item = latestContent.withPin(latestPin.pinned, latestPin.pinRevision);
+      });
     }
   }
 
@@ -123,6 +132,29 @@ class _RecommendationDetailSheetState extends State<RecommendationDetailSheet> {
             'Couldn’t change who can see this. Try again.',
           );
         });
+      }
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  Future<void> pin() async {
+    if (saving || widget.changePin == null) return;
+    setState(() {
+      saving = true;
+      actionError = null;
+    });
+    try {
+      final updated = await widget.changePin!(item, !item.pinned);
+      if (mounted) setState(() => item = updated);
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => actionError = errorText(
+            error,
+            'Couldn’t save the pin. Try again.',
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => saving = false);
@@ -254,6 +286,10 @@ class _RecommendationDetailSheetState extends State<RecommendationDetailSheet> {
                   tooltip: 'Recommendation options',
                   icon: const Icon(Icons.more_horiz),
                   onSelected: (value) {
+                    if (value == 'pin') {
+                      pin();
+                      return;
+                    }
                     if (value == 'delete') {
                       remove();
                       return;
@@ -262,6 +298,13 @@ class _RecommendationDetailSheetState extends State<RecommendationDetailSheet> {
                     widget.editRecommendation(item);
                   },
                   itemBuilder: (_) => [
+                    if (widget.changePin != null)
+                      PopupMenuItem(
+                        value: 'pin',
+                        child: Text(
+                          item.pinned ? 'Unpin from Library' : 'Pin in Library',
+                        ),
+                      ),
                     const PopupMenuItem(
                       value: 'edit',
                       child: Text('Edit recommendation'),

@@ -25,6 +25,8 @@ The [readable recommendation update](docs/RECOMMENDATION_UNDERSTANDING.md) imple
 
 The [one-tap Remember update](docs/ONE_TAP_REMEMBER.md) removes the typed capture form and draft panels from Ask: tap Remember, speak, tap Done, and new recordings upload, transcribe and save automatically. Server-accepted processing survives app closure; uploads not yet accepted resume when the app runs. The pilot saves private items and labels partial extraction as needing review. Validate a new recording on-device, then improve extraction quality and measure latency before starting further slices. Text/URL share entry remains planned for F-02.
 
+The Library now offers Browse shelves, local collection search, category/location filters, Recent and server-backed Pins. Compact rows expose useful Maps/call actions while full recommendations stay in detail. See the [Library redesign checkpoint](docs/REKKY_FLUTTER_PRODUCT_PLAN.md#personal-library-redesign-checkpoint--2026-09-27) for scope and remaining work.
+
 ## Isolation and configuration
 
 Use a new database, database credentials, app identity, sessions, storage access, job state, indexes and deployment configuration. Everyone starts with fresh accounts and no legacy content or friendships.

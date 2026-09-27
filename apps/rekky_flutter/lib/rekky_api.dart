@@ -23,12 +23,28 @@ class RekkyItem {
     required this.revision,
     required this.createdAt,
     this.needsReview = false,
+    this.pinned = false,
+    this.pinRevision = 1,
     this.recommendation,
   });
   final String id, captureId, subject, body, visibility, createdAt;
-  final bool needsReview;
+  final bool needsReview, pinned;
+  final int pinRevision;
   final RekkyRecommendation? recommendation;
   final int revision;
+  RekkyItem withPin(bool value, int pinVersion) => RekkyItem(
+    id: id,
+    captureId: captureId,
+    subject: subject,
+    body: body,
+    visibility: visibility,
+    revision: revision,
+    createdAt: createdAt,
+    needsReview: needsReview,
+    recommendation: recommendation,
+    pinned: value,
+    pinRevision: pinVersion,
+  );
   factory RekkyItem.fromJson(Map<String, dynamic> json) => RekkyItem(
     id: json['id'] as String,
     captureId: json['capture_id'] as String,
@@ -38,6 +54,8 @@ class RekkyItem {
     revision: json['revision'] as int,
     createdAt: json['created_at'] as String,
     needsReview: json['needs_review'] as bool? ?? false,
+    pinned: json['pinned'] as bool? ?? false,
+    pinRevision: json['pin_revision'] as int? ?? 1,
     recommendation: json['recommendation'] is Map<String, dynamic>
         ? RekkyRecommendation.fromJson(
             json['recommendation'] as Map<String, dynamic>,
@@ -528,6 +546,20 @@ class RekkyApi {
       headers: {'idempotency-key': idempotencyKey},
     );
     return RekkyItem.fromJson(response['item'] as Map<String, dynamic>);
+  }
+
+  Future<({bool pinned, int revision})> pinItem(
+    RekkyItem item,
+    bool pinned,
+  ) async {
+    final response = await request(
+      'PATCH',
+      '/v1/items/${item.id}/pin',
+      body: {'pinned': pinned},
+      headers: {'if-match': '${item.pinRevision}'},
+    );
+    final pin = response['pin'] as Map<String, dynamic>;
+    return (pinned: pin['pinned'] as bool, revision: pin['revision'] as int);
   }
 
   Future<RekkyItem> changeVisibility(RekkyItem item, String visibility) async {

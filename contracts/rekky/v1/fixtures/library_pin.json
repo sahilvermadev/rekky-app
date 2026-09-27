@@ -1,0 +1,6 @@
+{
+  "request": {"method":"PATCH","path":"/v1/items/22222222-2222-4222-8222-222222222222/pin","headers":{"if-match":"1"},"body":{"pinned":true}},
+  "response": {"pin":{"item_id":"22222222-2222-4222-8222-222222222222","pinned":true,"revision":2}},
+  "item_fields": {"pinned":true,"pin_revision":2},
+  "rules": "Owner-only preference. If-Match refers to pin_revision, independent of content revision. Wait for server acknowledgement. Stale writes conflict; deleted or inaccessible items return 404. Pins never change audience or AI ratings."
+}

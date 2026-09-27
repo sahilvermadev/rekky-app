@@ -10,6 +10,39 @@ import 'package:rekky_flutter/main.dart';
 import 'package:rekky_flutter/rekky_api.dart';
 
 void main() {
+  test('pin wire contract uses its own revision and retains content', () async {
+    final fixture = jsonDecode(
+      File('../../contracts/rekky/v1/fixtures/library_pin.json')
+          .readAsStringSync(),
+    ) as Map<String, dynamic>;
+    final item = RekkyItem(
+      id: fixture['response']['pin']['item_id'],
+      captureId: 'capture',
+      subject: 'Lantern',
+      body: 'A good meal.',
+      visibility: 'friends',
+      revision: 9,
+      createdAt: '2026-09-27T12:00:00Z',
+    );
+    final api = RekkyApi(
+      'https://api.example.test',
+      client: MockClient((request) async {
+        expect(request.method, fixture['request']['method']);
+        expect(request.url.path, fixture['request']['path']);
+        expect(request.headers['if-match'], '1');
+        expect(jsonDecode(request.body), fixture['request']['body']);
+        return http.Response(jsonEncode(fixture['response']), 200);
+      }),
+    );
+    final pin = await api.pinItem(item, true);
+    final updated = item.withPin(pin.pinned, pin.revision);
+    expect(updated.pinned, true);
+    expect(updated.pinRevision, 2);
+    expect(updated.revision, 9);
+    expect(updated.body, item.body);
+    expect(updated.visibility, 'friends');
+  });
+
   test('Dart consumes the shared v1 wire examples', () {
     final wire = jsonDecode(
       File('../../contracts/rekky/v1/fixtures/wire.json').readAsStringSync(),

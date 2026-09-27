@@ -85,6 +85,7 @@ pub fn router(state: AppState) -> Router {
             axum::routing::patch(correct_classification),
         )
         .route("/v1/items/{id}/refine", post(refine_item))
+        .route("/v1/items/{id}/pin", axum::routing::patch(pin_item))
         .route("/v1/items/{id}/place", post(resolve_place))
         .route(
             "/v1/items/{id}",
@@ -523,7 +524,7 @@ async fn extraction_items(
     capture_id: Uuid,
     partial: bool,
 ) -> ApiResult {
-    let items: Vec<ItemRow> = sqlx::query_as("SELECT id,capture_id,subject,body,visibility,revision,created_at,recommendation,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review FROM knowledge_items WHERE owner_id=$1 AND capture_id=$2 AND deleted_at IS NULL ORDER BY created_at,id")
+    let items: Vec<ItemRow> = sqlx::query_as("SELECT id,capture_id,subject,body,visibility,revision,created_at,recommendation,pinned,pin_revision,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review FROM knowledge_items WHERE owner_id=$1 AND capture_id=$2 AND deleted_at IS NULL ORDER BY created_at,id")
         .bind(owner_id).bind(capture_id).fetch_all(pool).await?;
     Ok(ok(
         json!({"capture_id":capture_id,"items":items.iter().map(item_json).collect::<Vec<_>>(),"partial":partial}),
@@ -1582,11 +1583,13 @@ struct ItemRow {
     created_at: DateTime<Utc>,
     #[sqlx(default)]
     needs_review: bool,
+    pinned: bool,
+    pin_revision: i32,
     #[sqlx(default)]
     recommendation: Option<Value>,
 }
 fn item_json(row: &ItemRow) -> Value {
-    json!({"id":row.id,"capture_id":row.capture_id,"subject":row.subject,"body":row.body,"visibility":row.visibility,"revision":row.revision,"created_at":iso(row.created_at),"needs_review":row.needs_review,"recommendation":row.recommendation})
+    json!({"id":row.id,"capture_id":row.capture_id,"subject":row.subject,"body":row.body,"visibility":row.visibility,"revision":row.revision,"created_at":iso(row.created_at),"needs_review":row.needs_review,"recommendation":row.recommendation,"pinned":row.pinned,"pin_revision":row.pin_revision})
 }
 fn iso(date: DateTime<Utc>) -> String {
     date.to_rfc3339_opts(SecondsFormat::Micros, true)
@@ -1629,7 +1632,7 @@ async fn save_item(State(state): State<AppState>, headers: HeaderMap, body: Byte
             .as_str()
             .and_then(|s| Uuid::parse_str(s).ok())
             .ok_or_else(|| ApiError::from(sqlx::Error::RowNotFound))?;
-        let live: Option<ItemRow> = sqlx::query_as("SELECT id,capture_id,subject,body,visibility,revision,created_at,recommendation,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review FROM knowledge_items WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL")
+        let live: Option<ItemRow> = sqlx::query_as("SELECT id,capture_id,subject,body,visibility,revision,created_at,recommendation,pinned,pin_revision,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review FROM knowledge_items WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL")
             .bind(item_id).bind(owner_id).fetch_optional(&mut *transaction).await?;
         transaction.commit().await?;
         return match live {
@@ -1648,7 +1651,7 @@ async fn save_item(State(state): State<AppState>, headers: HeaderMap, body: Byte
         .bind(capture_id).bind(owner_id).bind(input.visibility.as_str()).execute(&mut *transaction).await?;
     sqlx::query("INSERT INTO source_texts(id,capture_id,owner_id,kind,content) VALUES ($1,$2,$3,'typed',$4)")
         .bind(source_id).bind(capture_id).bind(owner_id).bind(&input.body).execute(&mut *transaction).await?;
-    let item: ItemRow = sqlx::query_as("INSERT INTO knowledge_items(id,capture_id,owner_id,subject,body,visibility) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id,capture_id,subject,body,visibility,revision,created_at,recommendation")
+    let item: ItemRow = sqlx::query_as("INSERT INTO knowledge_items(id,capture_id,owner_id,subject,body,visibility) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id,capture_id,subject,body,visibility,revision,created_at,recommendation,pinned,pin_revision")
         .bind(item_id).bind(capture_id).bind(owner_id).bind(&input.subject).bind(&input.body).bind(input.visibility.as_str())
         .fetch_one(&mut *transaction).await?;
     let response = json!({"item":item_json(&item)});
@@ -1717,7 +1720,7 @@ async fn list_items(
     {
         return Err(ApiError::cursor());
     }
-    let rows: Vec<ItemRow> = sqlx::query_as("SELECT id,capture_id,subject,body,visibility,revision,created_at,recommendation,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review FROM knowledge_items WHERE owner_id=$1 AND deleted_at IS NULL AND ($2::timestamptz IS NULL OR (created_at,id)<($2::timestamptz,$3::uuid)) AND ($4::text IS NULL OR EXISTS(SELECT 1 FROM item_location_index l WHERE l.item_id=knowledge_items.id AND l.locations_snapshot=knowledge_items.recommendation->'locations' AND knowledge_items.recommendation->'geography_revision'=to_jsonb((SELECT revision FROM geographic_catalog WHERE singleton)) AND l.area_ids @> ARRAY[$4] AND (($5::text IS NOT NULL AND l.role=$5) OR ($5 IS NULL AND l.role IN ('venue','practice','service_area'))))) ORDER BY created_at DESC,id DESC LIMIT 21")
+    let rows: Vec<ItemRow> = sqlx::query_as("SELECT id,capture_id,subject,body,visibility,revision,created_at,recommendation,pinned,pin_revision,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review FROM knowledge_items WHERE owner_id=$1 AND deleted_at IS NULL AND ($2::timestamptz IS NULL OR (created_at,id)<($2::timestamptz,$3::uuid)) AND ($4::text IS NULL OR EXISTS(SELECT 1 FROM item_location_index l WHERE l.item_id=knowledge_items.id AND l.locations_snapshot=knowledge_items.recommendation->'locations' AND knowledge_items.recommendation->'geography_revision'=to_jsonb((SELECT revision FROM geographic_catalog WHERE singleton)) AND l.area_ids @> ARRAY[$4] AND (($5::text IS NOT NULL AND l.role=$5) OR ($5 IS NULL AND l.role IN ('venue','practice','service_area'))))) ORDER BY created_at DESC,id DESC LIMIT 21")
         .bind(owner_id).bind(cursor.as_ref().map(|c| c.created_at)).bind(cursor.as_ref().map(|c| c.id)).bind(&query.area_id).bind(&query.location_role)
         .fetch_all(&state.pool).await?;
     let next_cursor = if rows.len() > 20 {
@@ -1906,7 +1909,7 @@ async fn correct_classification(
     )
     .ok_or_else(|| ApiError::bad("Unknown, duplicate or incompatible category"))?;
     recommendation["classification"] = classification;
-    let updated: ItemRow = sqlx::query_as("UPDATE knowledge_items SET recommendation=$1,revision=revision+1 WHERE id=$2 RETURNING id,capture_id,subject,body,visibility,revision,created_at,recommendation,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review")
+    let updated: ItemRow = sqlx::query_as("UPDATE knowledge_items SET recommendation=$1,revision=revision+1 WHERE id=$2 RETURNING id,capture_id,subject,body,visibility,revision,created_at,recommendation,pinned,pin_revision,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review")
         .bind(recommendation).bind(id).fetch_one(&mut *tx).await?;
     tx.commit().await?;
     Ok(ok(json!({"item":item_json(&updated)})))
@@ -1971,7 +1974,7 @@ async fn edit_content(
             &mut recommendation,
         )
         .map_err(ApiError::bad)?;
-    let updated: ItemRow = sqlx::query_as("UPDATE knowledge_items SET subject=$1,body=$2,visibility=$3,recommendation=$4,revision=revision+1 WHERE id=$5 RETURNING id,capture_id,subject,body,visibility,revision,created_at,recommendation,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review")
+    let updated: ItemRow = sqlx::query_as("UPDATE knowledge_items SET subject=$1,body=$2,visibility=$3,recommendation=$4,revision=revision+1 WHERE id=$5 RETURNING id,capture_id,subject,body,visibility,revision,created_at,recommendation,pinned,pin_revision,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review")
         .bind(input.subject).bind(body).bind(input.visibility).bind(recommendation).bind(id).fetch_one(&mut *tx).await?;
     // Keep original evidence for recovery, but never describe it as support for
     // the owner's replacement. No undisclosed copy of old public prose is made.
@@ -1979,6 +1982,40 @@ async fn edit_content(
         .bind(id).bind(updated.revision).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(ok(json!({"item":item_json(&updated)})))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PinInput {
+    pinned: bool,
+}
+
+// Pins are owner preferences with an independent revision: changing one must
+// not invalidate in-flight understanding, geography, contacts or owner edits.
+async fn pin_item(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> ApiResult {
+    let owner_id = owner(&state, &headers, true).await?;
+    let id = uuid(&id)?;
+    let expected = revision(&headers)?;
+    let input: PinInput = parse(&body)?;
+    let updated = sqlx::query("UPDATE knowledge_items SET pinned=$1,pin_revision=pin_revision+1 WHERE id=$2 AND owner_id=$3 AND pin_revision=$4 AND deleted_at IS NULL RETURNING pinned,pin_revision")
+        .bind(input.pinned).bind(id).bind(owner_id).bind(expected).fetch_optional(&state.pool).await?;
+    if let Some(row) = updated {
+        return Ok(ok(
+            json!({"pin":{"item_id":id,"pinned":row.get::<bool,_>("pinned"),"revision":row.get::<i32,_>("pin_revision")}}),
+        ));
+    }
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM knowledge_items WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL)")
+        .bind(id).bind(owner_id).fetch_one(&state.pool).await?;
+    Err(if exists {
+        ApiError::conflict("Pin changed. Refresh your Library and try again.")
+    } else {
+        ApiError::not_found("Item not found")
+    })
 }
 
 async fn change_visibility(
@@ -1991,7 +2028,7 @@ async fn change_visibility(
     let id = uuid(&id)?;
     let revision = revision(&headers)?;
     let input: VisibilityInput = parse(&body)?;
-    let updated: Option<ItemRow> = sqlx::query_as("UPDATE knowledge_items SET visibility=$1,revision=revision+1 WHERE id=$2 AND owner_id=$3 AND revision=$4 AND deleted_at IS NULL RETURNING id,capture_id,subject,body,visibility,revision,created_at,recommendation")
+    let updated: Option<ItemRow> = sqlx::query_as("UPDATE knowledge_items SET visibility=$1,revision=revision+1 WHERE id=$2 AND owner_id=$3 AND revision=$4 AND deleted_at IS NULL RETURNING id,capture_id,subject,body,visibility,revision,created_at,recommendation,pinned,pin_revision")
         .bind(input.visibility.as_str()).bind(id).bind(owner_id).bind(revision).fetch_optional(&state.pool).await?;
     if let Some(item) = updated {
         return Ok(ok(json!({"item":item_json(&item)})));
@@ -2302,7 +2339,7 @@ async fn attach_contact(
             recommendation["contact_matching"] = json!("off");
         }
     }
-    let updated: ItemRow = sqlx::query_as("UPDATE knowledge_items SET recommendation=$1,revision=revision+1 WHERE id=$2 RETURNING id,capture_id,subject,body,visibility,revision,created_at,recommendation,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review")
+    let updated: ItemRow = sqlx::query_as("UPDATE knowledge_items SET recommendation=$1,revision=revision+1 WHERE id=$2 RETURNING id,capture_id,subject,body,visibility,revision,created_at,recommendation,pinned,pin_revision,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review")
         .bind(recommendation).bind(id).fetch_one(&mut *tx).await?;
     tx.commit().await?;
     Ok(ok(json!({"item":item_json(&updated)})))

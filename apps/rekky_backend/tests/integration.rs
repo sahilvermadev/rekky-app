@@ -3243,3 +3243,141 @@ async fn geography_enrichment_and_filters_preserve_roles_privacy_and_edit_fences
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn library_pins_are_owner_only_revisioned_and_do_not_edit_recommendations() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    let (_, a) = t.sign_in("google", "valid-a").await;
+    let (_, b) = t.sign_in("google", "valid-b").await;
+    for token in [&a, &b] {
+        t.call(
+            Method::POST,
+            "/v1/me/visibility-disclosure",
+            Some(token),
+            Some(json!({"accept":true})),
+            &[],
+        )
+        .await;
+    }
+    let (_, saved) = t.call(Method::POST, "/v1/items", Some(&a),
+        Some(json!({"subject":"Synthetic Library pin","body":"A useful saved note.","visibility":"friends"})),
+        &[("idempotency-key", &Uuid::new_v4().to_string())]).await;
+    let id = saved["item"]["id"].as_str().unwrap();
+    let path = format!("/v1/items/{id}/pin");
+    assert_eq!(saved["item"]["pinned"], false);
+    assert_eq!(saved["item"]["pin_revision"], 1);
+    assert_eq!(
+        t.call(
+            Method::PATCH,
+            &path,
+            None,
+            Some(json!({"pinned":true})),
+            &[("if-match", "1")]
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        t.call(
+            Method::PATCH,
+            &path,
+            Some(&b),
+            Some(json!({"pinned":true})),
+            &[("if-match", "1")]
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    let (status, pin) = t
+        .call(
+            Method::PATCH,
+            &path,
+            Some(&a),
+            Some(json!({"pinned":true})),
+            &[("if-match", "1")],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(pin["pin"]["pinned"], true);
+    assert_eq!(pin["pin"]["revision"], 2);
+    let mut fixture: Value = serde_json::from_str(include_str!(
+        "../../../contracts/rekky/v1/fixtures/library_pin.json"
+    ))
+    .unwrap();
+    fixture["response"]["pin"]["item_id"] = json!(id);
+    assert_eq!(pin, fixture["response"]);
+    assert_eq!(
+        t.call(
+            Method::PATCH,
+            &path,
+            Some(&a),
+            Some(json!({"pinned":false})),
+            &[("if-match", "1")]
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    let (_, list) = t.call(Method::GET, "/v1/items", Some(&a), None, &[]).await;
+    let item = &list["items"][0];
+    assert_eq!(item["pinned"], true);
+    for field in [
+        "revision",
+        "body",
+        "subject",
+        "visibility",
+        "recommendation",
+    ] {
+        assert_eq!(item[field], saved["item"][field]);
+    }
+    // A content/audience write must preserve the preference and its revision.
+    let (status, edited) = t
+        .call(
+            Method::PATCH,
+            &format!("/v1/items/{id}"),
+            Some(&a),
+            Some(json!({"visibility":"private"})),
+            &[("if-match", "1")],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(edited["item"]["pinned"], true);
+    assert_eq!(edited["item"]["pin_revision"], 2);
+    assert_eq!(
+        t.call(
+            Method::PATCH,
+            &path,
+            Some(&a),
+            Some(json!({"pinned":false})),
+            &[("if-match", "2")]
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    t.call(
+        Method::DELETE,
+        &format!("/v1/items/{id}"),
+        Some(&a),
+        None,
+        &[("if-match", "2")],
+    )
+    .await;
+    assert_eq!(
+        t.call(
+            Method::PATCH,
+            &path,
+            Some(&a),
+            Some(json!({"pinned":true})),
+            &[("if-match", "3")]
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    t.cleanup().await;
+}

@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import 'identity.dart';
 import 'contact_matching.dart';
 import 'contact_sheet.dart';
 import 'recommendation_editor.dart';
-import 'recommendation_view.dart';
+import 'library_screen.dart';
 import 'recommendation_detail.dart';
 import 'rekky_api.dart';
 import 'voice_capture_sheet.dart';
@@ -14,7 +16,14 @@ import 'voice_drafts.dart';
 import 'voice_processing.dart';
 
 const apiBaseUrl = String.fromEnvironment('API_BASE_URL');
-void main() => runApp(const RekkyApp());
+void main() {
+  LicenseRegistry.addLicense(() async* {
+    yield LicenseEntryWithLineBreaks([
+      'Liberation Serif',
+    ], await rootBundle.loadString('assets/fonts/LICENSE-Liberation.txt'));
+  });
+  runApp(const RekkyApp());
+}
 
 class RekkyApp extends StatelessWidget {
   const RekkyApp({super.key});
@@ -28,6 +37,13 @@ class RekkyApp extends StatelessWidget {
         surface: const Color(0xFFFFFBF5),
       ),
       scaffoldBackgroundColor: const Color(0xFFFFFBF5),
+    ),
+    darkTheme: ThemeData(
+      useMaterial3: true,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: const Color(0xFF74452F),
+        brightness: Brightness.dark,
+      ),
     ),
     home: const RekkyHome(),
   );
@@ -390,7 +406,14 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
       final items = await api.items();
       if (mounted && accountId == owner && signedIn) {
         setState(() {
-          library = items;
+          // A read started before a pin acknowledgement must not undo it.
+          final current = {for (final item in library) item.id: item};
+          library = items.map((item) {
+            final previous = current[item.id];
+            return previous != null && previous.pinRevision > item.pinRevision
+                ? item.withPin(previous.pinned, previous.pinRevision)
+                : item;
+          }).toList();
           issue = null;
         });
         unawaited(contactMatching?.process(library) ?? Future<void>.value());
@@ -564,6 +587,27 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
     }
   }
 
+  Future<RekkyItem> _pinItem(RekkyItem item, bool pinned) async {
+    final owner = accountId;
+    final scopedApi = RekkyApi(apiBaseUrl)..token = api.token;
+    final result = await scopedApi.pinItem(item, pinned);
+    if (!mounted ||
+        !signedIn ||
+        accountId != owner ||
+        api.token != scopedApi.token) {
+      throw StateError('Account changed');
+    }
+    final current = library.where((i) => i.id == item.id).firstOrNull;
+    if (current == null) throw StateError('Recommendation no longer available');
+    final updated = current.withPin(result.pinned, result.revision);
+    setState(
+      () =>
+          library = library.map((i) => i.id == item.id ? updated : i).toList(),
+    );
+    _contactReaders[item.id]?.value = updated;
+    return updated;
+  }
+
   Future<void> _openItem(RekkyItem item) async {
     final owner = accountId;
     final scopedApi = RekkyApi(apiBaseUrl)..token = api.token;
@@ -591,6 +635,7 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
             item: item,
             contactUpdates: contactUpdates,
             manageContact: _manageContact,
+            changePin: _pinItem,
             loadSource: () async {
               checkAccount();
               final source = await scopedApi.source(item);
@@ -850,7 +895,12 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
                   ),
                 ],
               ),
-            Expanded(child: destination == 0 ? _askPage() : _libraryPage()),
+            Expanded(
+              child: IndexedStack(
+                index: destination,
+                children: [_askPage(), _libraryPage()],
+              ),
+            ),
           ],
         ),
       ),
@@ -983,34 +1033,13 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
     ),
   );
 
-  Widget _libraryPage() => RefreshIndicator(
+  Widget _libraryPage() => LibraryScreen(
+    key: ValueKey('library-$accountId'),
+    items: library,
+    processingMessage: processingMessage,
     onRefresh: _reload,
-    child: library.isEmpty
-        ? ListView(
-            children: [
-              if (processingMessage != null)
-                ListTile(title: Text(processingMessage!)),
-              const SizedBox(height: 160),
-              const Center(
-                child: Text('Your saved memories will appear here.'),
-              ),
-            ],
-          )
-        : ListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-            itemCount: library.length + (processingMessage == null ? 0 : 1),
-            itemBuilder: (context, index) {
-              if (processingMessage != null && index == 0) {
-                return ListTile(title: Text(processingMessage!));
-              }
-              if (processingMessage != null) index -= 1;
-              final item = library[index];
-              return RecommendationCard(
-                key: ValueKey(item.id),
-                item: item,
-                onTap: () => _openItem(item),
-              );
-            },
-          ),
+    onOpen: _openItem,
+    onRemember: _remember,
+    onPin: _pinItem,
   );
 }
