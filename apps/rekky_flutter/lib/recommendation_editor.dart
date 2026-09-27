@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import 'category_editor.dart';
+import 'contact_matching.dart';
 import 'rekky_api.dart';
 
 // Hallmark · component: recommendation editor · existing warm Material tokens.
@@ -41,6 +42,8 @@ class _RecommendationEditorState extends State<RecommendationEditor> {
       linkConfirmed = false;
   bool categoriesLoading = false;
   String ratingChoice = 'keep';
+  late String contactPhone;
+  bool contactChanged = false;
 
   static const kinds = {
     'place': 'Place',
@@ -75,6 +78,7 @@ class _RecommendationEditorState extends State<RecommendationEditor> {
   void initState() {
     super.initState();
     final r = widget.item.recommendation;
+    contactPhone = r?.contactPhone ?? '';
     subject = widget.item.subject;
     summary = r?.summary ?? widget.item.body;
     kind = r?.entityKind ?? 'idea_tip';
@@ -118,6 +122,11 @@ class _RecommendationEditorState extends State<RecommendationEditor> {
       'url': linkMode == 'custom' ? linkUrl : '',
       'label': linkMode == 'custom' ? linkLabel : '',
     },
+    'contact': !contactChanged
+        ? {'mode': 'keep'}
+        : contactPhone.trim().isEmpty || kind != 'person_service'
+        ? {'mode': 'none'}
+        : {'mode': 'set', 'phone': contactPhone},
     'destination_confirmed': linkConfirmed,
     'rating': ratingChoice == 'keep' || ratingChoice == 'none'
         ? {'mode': ratingChoice}
@@ -538,6 +547,38 @@ class _RecommendationEditorState extends State<RecommendationEditor> {
                           child: Text(
                             'This edit changes the experience. Choose a score above to keep a rating.',
                           ),
+                        ),
+                      if (kind == 'person_service')
+                        section('Contact', [
+                          TextFormField(
+                            initialValue: contactPhone,
+                            enabled: !saving,
+                            decoration: const InputDecoration(
+                              labelText: 'Phone number',
+                              hintText: '+91 …',
+                              helperText: 'Follows this recommendation’s audience. Clear to remove.',
+                              helperMaxLines: 2,
+                              border: OutlineInputBorder(),
+                            ),
+                            keyboardType: TextInputType.phone,
+                            validator: (value) =>
+                                contactChanged &&
+                                    (value?.trim().isNotEmpty ?? false) &&
+                                    internationalPhone(value!) == null
+                                ? 'Include + and the country code'
+                                : null,
+                            onChanged: (value) => setState(() {
+                              contactPhone = value;
+                              contactChanged = true;
+                            }),
+                          ),
+                        ]),
+                      if (widget.item.recommendation?.contactPhone != null &&
+                          !contactChanged &&
+                          (subject.trim() != widget.item.subject ||
+                              kind != widget.item.recommendation?.entityKind))
+                        const Text(
+                          'Changing the name or kind removes the old contact. Add it again after saving if it still applies.',
                         ),
                       section('Experience & source', [
                         choice(

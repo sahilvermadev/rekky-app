@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'rekky_api.dart';
+import 'contact_action.dart';
 import 'recommendation_maps_action.dart';
 
 // Hallmark · component scope; existing warm Material tokens, compact list/detail.
@@ -41,10 +42,12 @@ class RecommendationView extends StatelessWidget {
     required this.item,
     this.expanded = false,
     this.place,
+    this.onManageContact,
   });
   final RekkyItem item;
   final bool expanded;
   final ResolvedPlace? place;
+  final VoidCallback? onManageContact;
 
   @override
   Widget build(BuildContext context) {
@@ -182,6 +185,11 @@ class RecommendationView extends StatelessWidget {
             ],
           ),
         ],
+        if (recommendation.entityKind == 'person_service')
+          ContactAction(
+            phone: recommendation.contactPhone,
+            onManage: onManageContact,
+          ),
         RecommendationMapsAction(item: item, place: place),
         const SizedBox(height: 24),
         if (recommendation.experience == 'secondhand' ||

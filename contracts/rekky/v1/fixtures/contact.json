@@ -1,0 +1,8 @@
+{
+  "matching_preference": { "enabled": true, "generation": 1 },
+  "automatic_attachment": { "mode": "automatic", "phone": "+12025550123", "generation": 1 },
+  "manual_attachment": { "mode": "set", "phone": "+12025550123" },
+  "removal": { "mode": "none" },
+  "saved_contact": { "phone": "+12025550123", "origin": "contacts" },
+  "removed_override": { "contact_matching": "off" }
+}

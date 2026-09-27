@@ -5,6 +5,8 @@ use serde_json::{Value, json};
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EditInput {
+    #[serde(default)]
+    pub contact: crate::contacts::Edit,
     pub subject: String,
     pub visibility: String,
     pub entity_kind: String,
@@ -53,6 +55,7 @@ fn clean(value: &mut String, min: usize, max: usize) -> Result<(), &'static str>
 impl EditInput {
     pub fn normalized(mut self) -> Result<Self, &'static str> {
         self.rating.check()?;
+        self.contact.check()?;
         clean(&mut self.subject, 1, 120)?;
         clean(&mut self.summary, 1, 20000)?;
         clean(&mut self.attribution, 0, 300)?;

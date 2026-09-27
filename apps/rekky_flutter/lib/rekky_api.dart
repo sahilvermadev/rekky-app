@@ -154,7 +154,11 @@ class RekkyRecommendation {
     this.destinationUrl = '',
     this.destinationLabel = '',
     this.rating,
+    this.contactPhone,
+    this.contactMatchingOff = false,
   });
+  final String? contactPhone;
+  final bool contactMatchingOff;
   final RecommendationRating? rating;
   final String summary, shelf, experience, entityKind;
   final String attribution,
@@ -184,6 +188,8 @@ class RekkyRecommendation {
   factory RekkyRecommendation.fromJson(
     Map<String, dynamic> json,
   ) => RekkyRecommendation(
+    contactPhone: (json['contact'] as Map?)?['phone'] as String?,
+    contactMatchingOff: json['contact_matching'] == 'off',
     rating: RecommendationRating.parse(json['rating']),
     summary: json['summary'] as String,
     shelf: json['shelf'] as String,
@@ -517,6 +523,23 @@ class RekkyApi {
     return (response['concepts'] as List)
         .map((c) => CategoryConcept.fromJson(c as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<Map<String, dynamic>> contactPreference() =>
+      request('GET', '/v1/me/contact-matching');
+  Future<Map<String, dynamic>> setContactPreference(bool enabled) =>
+      request('POST', '/v1/me/contact-matching', body: {'enabled': enabled});
+  Future<RekkyItem> attachContact(
+    RekkyItem item,
+    Map<String, dynamic> contact,
+  ) async {
+    final response = await request(
+      'PATCH',
+      '/v1/items/${item.id}/contact',
+      body: contact,
+      headers: {'if-match': '${item.revision}'},
+    );
+    return RekkyItem.fromJson(response['item'] as Map<String, dynamic>);
   }
 
   Future<RekkyItem> editRecommendation(

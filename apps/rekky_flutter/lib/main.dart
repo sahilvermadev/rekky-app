@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'identity.dart';
+import 'contact_matching.dart';
+import 'contact_sheet.dart';
 import 'recommendation_editor.dart';
 import 'recommendation_view.dart';
 import 'recommendation_detail.dart';
@@ -51,6 +53,9 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
   List<VoiceDraft> voiceDrafts = [];
   String? accountId;
   VoiceProcessingCoordinator? voiceProcessing;
+  ContactMatchingCoordinator? contactMatching;
+  final contactBook = DeviceContactBook();
+  int itemScreensOpen = 0;
   String? processingMessage;
 
   @override
@@ -65,6 +70,7 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
     question.dispose();
     WidgetsBinding.instance.removeObserver(this);
     voiceProcessing?.stop();
+    contactMatching?.stop();
     unawaited(voiceStore.dispose());
     super.dispose();
   }
@@ -83,6 +89,7 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
     final owner = accountId;
     if (owner == null || !disclosed) return;
     voiceProcessing?.stop();
+    _startContactMatching();
     voiceProcessing = VoiceProcessingCoordinator(
       ownerId: owner,
       store: voiceStore,
@@ -99,6 +106,149 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
       },
     );
     unawaited(voiceProcessing!.process());
+  }
+
+  void _startContactMatching() {
+    final owner = accountId;
+    final token = api.token;
+    if (owner == null || token == null || !disclosed) return;
+    contactMatching?.stop();
+    contactMatching = ContactMatchingCoordinator(
+      api: RekkyApi(apiBaseUrl)..token = token,
+      book: contactBook,
+      isCurrent: () =>
+          mounted &&
+          signedIn &&
+          accountId == owner &&
+          api.token == token &&
+          itemScreensOpen == 0 &&
+          WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed,
+      onSaved: (updated) => setState(
+        () => library = library
+            .map((i) => i.id == updated.id ? updated : i)
+            .toList(),
+      ),
+    );
+    unawaited(contactMatching!.process(library));
+  }
+
+  Future<bool> _contactSettings({bool enableOnly = false}) async {
+    final owner = accountId;
+    final token = api.token;
+    final scoped = RekkyApi(apiBaseUrl)..token = token;
+    bool current() =>
+        mounted && signedIn && accountId == owner && api.token == token;
+    try {
+      final settings = await scoped.contactPreference();
+      if (!mounted || !current()) return false;
+      final enabled = settings['enabled'] == true;
+      if (!(enableOnly && enabled)) {
+        final accepted = await showDialog<bool>(
+          context: context,
+          builder: (dialog) => AlertDialog(
+            title: Text(
+              enabled
+                  ? 'Contact matching is on'
+                  : 'Find saved contacts automatically?',
+            ),
+            content: Text(
+              enabled
+                  ? 'Turning this off stops future matching. Numbers already attached stay with their recommendations; you can remove them in Edit.'
+                  : 'Rekky checks names and numbers on this phone for clear matches to people you recommend. Matched numbers are added automatically, including to existing recommendations, and friends can see them when the recommendation is shared. Only attached numbers are saved to Rekky; your address book stays on this phone.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialog, false),
+                child: const Text('Not now'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialog, true),
+                child: Text(enabled ? 'Turn off' : 'Enable matching'),
+              ),
+            ],
+          ),
+        );
+        if (accepted != true || !current()) return false;
+        contactMatching?.stop();
+        if (enabled) {
+          await scoped.setContactPreference(false);
+          if (current()) _startContactMatching();
+          return false;
+        }
+      }
+      if (!await contactBook.requestAccess()) {
+        if (mounted && current()) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Contact access is off. You can still add a number manually, or allow Contacts in phone settings.',
+              ),
+            ),
+          );
+        }
+        return false;
+      }
+      if (!mounted || !current()) return false;
+      if (!enabled) await scoped.setContactPreference(true);
+      if (!mounted || !current()) return false;
+      _startContactMatching();
+      return true;
+    } catch (_) {
+      if (mounted && current()) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Couldn’t update contact matching. Please try again.',
+            ),
+          ),
+        );
+      }
+      return false;
+    }
+  }
+
+  Future<RekkyItem?> _manageContact(RekkyItem item) async {
+    final owner = accountId;
+    final token = api.token;
+    final scoped = RekkyApi(apiBaseUrl)..token = token;
+    void check() {
+      if (!mounted || !signedIn || accountId != owner || api.token != token) {
+        throw StateError('Account changed');
+      }
+    }
+
+    final updated = await showModalBottomSheet<RekkyItem>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (_) => ContactSheet(
+        item: item,
+        book: contactBook,
+        enableMatching: () async {
+          if (!await _contactSettings(enableOnly: true)) return null;
+          check();
+          final preference = await scoped.contactPreference();
+          check();
+          return preference['enabled'] == true
+              ? preference['generation'] as int
+              : null;
+        },
+        save: (contact) async {
+          check();
+          final updated = await scoped.attachContact(item, contact);
+          check();
+          setState(
+            () => library = library
+                .map((i) => i.id == updated.id ? updated : i)
+                .toList(),
+          );
+          return updated;
+        },
+      ),
+    );
+    check();
+    return updated;
   }
 
   Future<void> _restore() async {
@@ -195,6 +345,8 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
   }
 
   Future<void> _signOut() async {
+    contactMatching?.stop();
+    contactMatching = null;
     voiceProcessing?.stop();
     voiceProcessing = null;
     setState(() => busy = true);
@@ -231,6 +383,7 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
           library = items;
           issue = null;
         });
+        unawaited(contactMatching?.process(library) ?? Future<void>.value());
       }
     } catch (error) {
       if (mounted) setState(() => issue = '$error');
@@ -411,66 +564,73 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
     }
 
     checkAccount();
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      showDragHandle: true,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      builder: (sheetContext) => ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(sheetContext).height * .9,
+    itemScreensOpen++;
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        showDragHandle: true,
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        builder: (sheetContext) => ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(sheetContext).height * .9,
+          ),
+          child: RecommendationDetailSheet(
+            item: item,
+            manageContact: _manageContact,
+            loadSource: () async {
+              checkAccount();
+              final source = await scopedApi.source(item);
+              checkAccount();
+              return source;
+            },
+            loadPlace: () async {
+              checkAccount();
+              final place = await scopedApi.place(item);
+              checkAccount();
+              return place;
+            },
+            changeAudience: (current, visibility) async {
+              checkAccount();
+              final updated = await scopedApi.changeVisibility(
+                current,
+                visibility,
+              );
+              checkAccount();
+              setState(() {
+                library = library
+                    .map((i) => i.id == updated.id ? updated : i)
+                    .toList();
+              });
+              return updated;
+            },
+            deleteItem: (current) async {
+              checkAccount();
+              await scopedApi.delete(current);
+              checkAccount();
+              setState(() {
+                library.removeWhere((i) => i.id == current.id);
+                matches.removeWhere((m) => m['item_id'] == current.id);
+              });
+            },
+            editRecommendation: (current) {
+              if (mounted && signedIn && accountId == owner) {
+                unawaited(_editRecommendation(current));
+              }
+            },
+            refineItem: (current) {
+              if (mounted && signedIn && accountId == owner) {
+                unawaited(_refineItem(current));
+              }
+            },
+          ),
         ),
-        child: RecommendationDetailSheet(
-          item: item,
-          loadSource: () async {
-            checkAccount();
-            final source = await scopedApi.source(item);
-            checkAccount();
-            return source;
-          },
-          loadPlace: () async {
-            checkAccount();
-            final place = await scopedApi.place(item);
-            checkAccount();
-            return place;
-          },
-          changeAudience: (current, visibility) async {
-            checkAccount();
-            final updated = await scopedApi.changeVisibility(
-              current,
-              visibility,
-            );
-            checkAccount();
-            setState(() {
-              library = library
-                  .map((i) => i.id == updated.id ? updated : i)
-                  .toList();
-            });
-            return updated;
-          },
-          deleteItem: (current) async {
-            checkAccount();
-            await scopedApi.delete(current);
-            checkAccount();
-            setState(() {
-              library.removeWhere((i) => i.id == current.id);
-              matches.removeWhere((m) => m['item_id'] == current.id);
-            });
-          },
-          editRecommendation: (current) {
-            if (mounted && signedIn && accountId == owner) {
-              unawaited(_editRecommendation(current));
-            }
-          },
-          refineItem: (current) {
-            if (mounted && signedIn && accountId == owner) {
-              unawaited(_refineItem(current));
-            }
-          },
-        ),
-      ),
-    );
+      );
+    } finally {
+      itemScreensOpen--;
+      if (mounted && signedIn && accountId == owner) unawaited(_reload());
+    }
   }
 
   Future<void> _editRecommendation(RekkyItem item) async {
@@ -482,44 +642,50 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
       }
     }
 
-    final updated = await Navigator.push<RekkyItem>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => RecommendationEditor(
-          item: item,
-          loadConcepts: () async {
-            checkAccount();
-            final concepts = await scopedApi.categoryConcepts();
-            checkAccount();
-            return concepts;
-          },
-          onSave: (content) async {
-            checkAccount();
-            final updated = await scopedApi.editRecommendation(item, content);
-            checkAccount();
-            setState(() {
-              library = library
-                  .map((i) => i.id == updated.id ? updated : i)
-                  .toList();
-              matches = matches
-                  .map(
-                    (m) => m['item_id'] == updated.id
-                        ? {
-                            ...m,
-                            'subject': updated.subject,
-                            'body': updated.body,
-                            'visibility': updated.visibility,
-                            'revision': updated.revision,
-                          }
-                        : m,
-                  )
-                  .toList();
-            });
-            return updated;
-          },
+    itemScreensOpen++;
+    RekkyItem? updated;
+    try {
+      updated = await Navigator.push<RekkyItem>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => RecommendationEditor(
+            item: item,
+            loadConcepts: () async {
+              checkAccount();
+              final concepts = await scopedApi.categoryConcepts();
+              checkAccount();
+              return concepts;
+            },
+            onSave: (content) async {
+              checkAccount();
+              final updated = await scopedApi.editRecommendation(item, content);
+              checkAccount();
+              setState(() {
+                library = library
+                    .map((i) => i.id == updated.id ? updated : i)
+                    .toList();
+                matches = matches
+                    .map(
+                      (m) => m['item_id'] == updated.id
+                          ? {
+                              ...m,
+                              'subject': updated.subject,
+                              'body': updated.body,
+                              'visibility': updated.visibility,
+                              'revision': updated.revision,
+                            }
+                          : m,
+                    )
+                    .toList();
+              });
+              return updated;
+            },
+          ),
         ),
-      ),
-    );
+      );
+    } finally {
+      itemScreensOpen--;
+    }
     if (updated != null && mounted && signedIn && accountId == owner) {
       unawaited(_openItem(updated));
     }
@@ -626,11 +792,13 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
           PopupMenuButton<String>(
             tooltip: 'Account and recovery',
             onSelected: (value) {
+              if (value == 'contacts') unawaited(_contactSettings());
               if (value == 'recordings') unawaited(_openVoiceDrafts());
               if (value == 'processing') unawaited(_processingSettings());
               if (value == 'signout') unawaited(_signOut());
             },
             itemBuilder: (_) => const [
+              PopupMenuItem(value: 'contacts', child: Text('Contact matching')),
               PopupMenuItem(
                 value: 'processing',
                 child: Text('Voice processing'),

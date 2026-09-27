@@ -12,12 +12,14 @@ class RecommendationDetailSheet extends StatefulWidget {
     required this.item,
     required this.loadSource,
     this.loadPlace,
+    this.manageContact,
     required this.changeAudience,
     required this.deleteItem,
     required this.editRecommendation,
     required this.refineItem,
   });
   final RekkyItem item;
+  final Future<RekkyItem?> Function(RekkyItem)? manageContact;
   final Future<RekkySource?> Function() loadSource;
   final Future<ResolvedPlace?> Function()? loadPlace;
   final Future<RekkyItem> Function(RekkyItem, String) changeAudience;
@@ -275,7 +277,36 @@ class _RecommendationDetailSheetState extends State<RecommendationDetailSheet> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  RecommendationView(item: item, expanded: true, place: place),
+                  RecommendationView(
+                    item: item,
+                    expanded: true,
+                    place: place,
+                    onManageContact: widget.manageContact == null || saving
+                        ? null
+                        : () async {
+                            setState(() {
+                              saving = true;
+                              actionError = null;
+                            });
+                            try {
+                              final updated = await widget.manageContact!(item);
+                              if (mounted && updated != null) {
+                                setState(() => item = updated);
+                              }
+                            } catch (e) {
+                              if (mounted) {
+                                setState(
+                                  () => actionError = errorText(
+                                    e,
+                                    'Couldn’t update contact.',
+                                  ),
+                                );
+                              }
+                            } finally {
+                              if (mounted) setState(() => saving = false);
+                            }
+                          },
+                  ),
                   if (actionError != null) ...[
                     const SizedBox(height: 16),
                     Semantics(

@@ -42,6 +42,14 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/session/exchange", post(exchange))
         .route("/v1/session", axum::routing::delete(logout))
         .route("/v1/me", get(me))
+        .route(
+            "/v1/me/contact-matching",
+            get(contact_preference).post(set_contact_preference),
+        )
+        .route(
+            "/v1/items/{id}/contact",
+            axum::routing::patch(attach_contact),
+        )
         .route("/v1/me/visibility-disclosure", post(accept_disclosure))
         .route("/v1/me/processing-withdrawal", post(withdraw_processing))
         .route(
@@ -765,7 +773,12 @@ async fn refine_item(
     let capture_id: Uuid = row.get("capture_id");
     if row
         .get::<Option<Value>, _>("recommendation")
-        .is_some_and(|v| v["origin"] == "user" || v["version"] == UNDERSTANDING_VERSION)
+        .is_some_and(|v| {
+            v["origin"] == "user"
+                || v["version"] == UNDERSTANDING_VERSION
+                || v.get("contact").is_some()
+                || v.get("contact_matching").is_some()
+        })
     {
         tx.commit().await?;
         let partial: bool = sqlx::query_scalar("SELECT status='partial' FROM captures WHERE id=$1")
@@ -1844,6 +1857,17 @@ async fn edit_content(
             .unwrap_or(Value::Null),
         &mut recommendation,
     );
+    input
+        .contact
+        .apply(
+            &previous.get::<String, _>("subject"),
+            &input.subject,
+            &previous
+                .get::<Option<Value>, _>("recommendation")
+                .unwrap_or(Value::Null),
+            &mut recommendation,
+        )
+        .map_err(ApiError::bad)?;
     let updated: ItemRow = sqlx::query_as("UPDATE knowledge_items SET subject=$1,body=$2,visibility=$3,recommendation=$4,revision=revision+1 WHERE id=$5 RETURNING id,capture_id,subject,body,visibility,revision,created_at,recommendation,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review")
         .bind(input.subject).bind(body).bind(input.visibility).bind(recommendation).bind(id).fetch_one(&mut *tx).await?;
     // Keep original evidence for recovery, but never describe it as support for
@@ -2042,4 +2066,112 @@ async fn ask(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> 
     Ok(ok(
         json!({"scope":"own","results":results,"answer":null,"next_cursor":next_cursor}),
     ))
+}
+
+async fn contact_preference(State(state): State<AppState>, headers: HeaderMap) -> ApiResult {
+    let owner_id = owner(&state, &headers, true).await?;
+    let row = sqlx::query(
+        "SELECT enabled,generation FROM contact_matching_preferences WHERE owner_id=$1",
+    )
+    .bind(owner_id)
+    .fetch_optional(&state.pool)
+    .await?;
+    Ok(ok(match row {
+        Some(row) => {
+            json!({"enabled":row.get::<bool,_>("enabled"),"generation":row.get::<i64,_>("generation")})
+        }
+        None => json!({"enabled":false,"generation":0}),
+    }))
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ContactPreference {
+    enabled: bool,
+}
+async fn set_contact_preference(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> ApiResult {
+    let owner_id = owner(&state, &headers, true).await?;
+    let input: ContactPreference = parse(&body)?;
+    let row = sqlx::query("INSERT INTO contact_matching_preferences(owner_id,enabled,generation) VALUES($1,$2,1) ON CONFLICT(owner_id) DO UPDATE SET enabled=$2,generation=contact_matching_preferences.generation+1,updated_at=now() RETURNING enabled,generation")
+        .bind(owner_id).bind(input.enabled).fetch_one(&state.pool).await?;
+    Ok(ok(
+        json!({"enabled":row.get::<bool,_>("enabled"),"generation":row.get::<i64,_>("generation")}),
+    ))
+}
+#[derive(Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
+enum ContactAttachment {
+    Automatic { phone: String, generation: i64 },
+    Set { phone: String },
+    None,
+}
+async fn attach_contact(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> ApiResult {
+    let owner_id = owner(&state, &headers, true).await?;
+    let id = uuid(&id)?;
+    let expected = revision(&headers)?;
+    let input: ContactAttachment = parse(&body)?;
+    let mut tx = state.pool.begin().await?;
+    // Serialize opt-out with automatic attachment, including requests already in flight.
+    if let ContactAttachment::Automatic { generation, .. } = &input {
+        let permission = sqlx::query("SELECT enabled,generation FROM contact_matching_preferences WHERE owner_id=$1 FOR SHARE")
+            .bind(owner_id).fetch_optional(&mut *tx).await?;
+        if !permission.is_some_and(|p| {
+            p.get::<bool, _>("enabled") && p.get::<i64, _>("generation") == *generation
+        }) {
+            return Err(ApiError::conflict(
+                "Contact matching changed; refresh before trying again",
+            ));
+        }
+    }
+    let row = sqlx::query("SELECT subject,revision,recommendation FROM knowledge_items WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL FOR UPDATE")
+        .bind(id).bind(owner_id).fetch_optional(&mut *tx).await?
+        .ok_or_else(|| ApiError::not_found("Item not found"))?;
+    if row.get::<i32, _>("revision") != expected {
+        return Err(ApiError::conflict(
+            "Recommendation changed; reopen before attaching a number",
+        ));
+    }
+    let mut recommendation = row
+        .get::<Option<Value>, _>("recommendation")
+        .ok_or_else(|| ApiError::bad("This note has no recommendation yet"))?;
+    if recommendation["entity_kind"] != "person_service" {
+        return Err(ApiError::bad(
+            "Contact numbers are supported for people and services",
+        ));
+    }
+    match input {
+        ContactAttachment::Automatic { phone, .. } => {
+            if recommendation.get("contact").is_some()
+                || recommendation["contact_matching"] == "off"
+            {
+                return Err(ApiError::conflict(
+                    "This recommendation already has a contact decision",
+                ));
+            }
+            recommendation["contact"] = json!({"phone":crate::contacts::normalize(&phone).map_err(ApiError::bad)?,"origin":"contacts"});
+        }
+        ContactAttachment::Set { phone } => {
+            recommendation["contact"] = json!({"phone":crate::contacts::normalize(&phone).map_err(ApiError::bad)?,"origin":"user"});
+            recommendation["contact_matching"] = json!("off");
+        }
+        ContactAttachment::None => {
+            recommendation
+                .as_object_mut()
+                .ok_or_else(|| ApiError::bad("Invalid recommendation"))?
+                .remove("contact");
+            recommendation["contact_matching"] = json!("off");
+        }
+    }
+    let updated: ItemRow = sqlx::query_as("UPDATE knowledge_items SET recommendation=$1,revision=revision+1 WHERE id=$2 RETURNING id,capture_id,subject,body,visibility,revision,created_at,recommendation,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review")
+        .bind(recommendation).bind(id).fetch_one(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(ok(json!({"item":item_json(&updated)})))
 }

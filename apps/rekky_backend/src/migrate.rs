@@ -45,6 +45,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "011_place_lookup_budget.sql",
         include_str!("../migrations/011_place_lookup_budget.sql"),
     ),
+    (
+        "012_contact_matching.sql",
+        include_str!("../migrations/012_contact_matching.sql"),
+    ),
 ];
 
 pub async fn run(pool: &PgPool) -> Result<(), sqlx::Error> {

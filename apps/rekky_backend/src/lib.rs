@@ -1,5 +1,6 @@
 pub mod app;
 pub mod auth;
+pub mod contacts;
 pub mod editing;
 pub mod extraction;
 pub mod migrate;

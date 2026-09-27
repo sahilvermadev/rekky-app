@@ -2373,3 +2373,282 @@ async fn place_lookup_rejects_late_results_after_edit_or_logout() {
         t.cleanup().await;
     }
 }
+
+#[tokio::test]
+async fn contact_attachment_is_owner_scoped_revision_fenced_and_follows_item_audience() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    let (_, token) = t.sign_in("google", "valid-a").await;
+    let (_, other) = t.sign_in("google", "valid-b").await;
+    for auth in [&token, &other] {
+        t.call(
+            Method::POST,
+            "/v1/me/visibility-disclosure",
+            Some(auth),
+            Some(json!({"accept":true})),
+            &[],
+        )
+        .await;
+    }
+    let item = categorized_item(
+        &t,
+        &token,
+        "Test Doctor",
+        "person_service",
+        "service.general_doctor",
+        &[],
+    )
+    .await;
+    let id = item["id"].as_str().unwrap();
+    let path = format!("/v1/items/{id}/contact");
+    let automatic = json!({"mode":"automatic","phone":"+91 98765 43210","generation":1});
+    assert_eq!(
+        t.call(
+            Method::PATCH,
+            &path,
+            Some(&token),
+            Some(automatic.clone()),
+            &[("if-match", "1")]
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    let (status, settings) = t
+        .call(
+            Method::POST,
+            "/v1/me/contact-matching",
+            Some(&token),
+            Some(json!({"enabled":true})),
+            &[],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(settings["generation"], 1);
+    assert_eq!(
+        t.call(
+            Method::PATCH,
+            &path,
+            Some(&other),
+            Some(json!({"mode":"set","phone":"+919876543210"})),
+            &[("if-match", "1")]
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        t.call(
+            Method::PATCH,
+            &path,
+            Some(&token),
+            Some(json!({"mode":"set","phone":"9876543210"})),
+            &[("if-match", "1")]
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    let (status, attached) = t
+        .call(
+            Method::PATCH,
+            &path,
+            Some(&token),
+            Some(automatic.clone()),
+            &[("if-match", "1")],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{attached}");
+    assert_eq!(attached["item"]["revision"], 2);
+    assert_eq!(
+        attached["item"]["recommendation"]["contact"],
+        json!({"phone":"+919876543210","origin":"contacts"})
+    );
+    assert_eq!(attached["item"]["visibility"], "private");
+    assert!(!attached["item"]["body"].as_str().unwrap().contains("98765"));
+    // Visibility changes carry the same snapshot without another phone-sharing field.
+    let (_, shared) = t
+        .call(
+            Method::PATCH,
+            &format!("/v1/items/{id}"),
+            Some(&token),
+            Some(json!({"visibility":"friends"})),
+            &[("if-match", "2")],
+        )
+        .await;
+    assert_eq!(
+        shared["item"]["recommendation"]["contact"],
+        attached["item"]["recommendation"]["contact"]
+    );
+    assert_eq!(shared["item"]["visibility"], "friends");
+    // Friends metadata is not authorization for an unrelated account.
+    let (_, outsider) = t
+        .call(Method::GET, "/v1/items", Some(&other), None, &[])
+        .await;
+    assert!(!outsider.to_string().contains("9876543210"));
+    assert_eq!(
+        t.call(
+            Method::PATCH,
+            &path,
+            Some(&token),
+            Some(json!({"mode":"none"})),
+            &[("if-match", "2")]
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    let (status, removed) = t
+        .call(
+            Method::PATCH,
+            &path,
+            Some(&token),
+            Some(json!({"mode":"none"})),
+            &[("if-match", "3")],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(removed["item"]["recommendation"].get("contact").is_none());
+    assert_eq!(removed["item"]["recommendation"]["contact_matching"], "off");
+    assert_eq!(
+        t.call(
+            Method::PATCH,
+            &path,
+            Some(&token),
+            Some(automatic.clone()),
+            &[("if-match", "4")]
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    // Disabling and re-enabling fences an earlier request's generation.
+    t.call(
+        Method::POST,
+        "/v1/me/contact-matching",
+        Some(&token),
+        Some(json!({"enabled":false})),
+        &[],
+    )
+    .await;
+    t.call(
+        Method::POST,
+        "/v1/me/contact-matching",
+        Some(&token),
+        Some(json!({"enabled":true})),
+        &[],
+    )
+    .await;
+    let another = categorized_item(
+        &t,
+        &token,
+        "Other Doctor",
+        "person_service",
+        "service.doctor",
+        &[],
+    )
+    .await;
+    let path2 = format!("/v1/items/{}/contact", another["id"].as_str().unwrap());
+    assert_eq!(
+        t.call(
+            Method::PATCH,
+            &path2,
+            Some(&token),
+            Some(automatic),
+            &[("if-match", "1")]
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        t.call(
+            Method::PATCH,
+            &path2,
+            Some(&token),
+            Some(json!({"mode":"automatic","phone":"+919876543210","generation":3})),
+            &[("if-match", "1")]
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let place = categorized_item(&t, &token, "Test Cafe", "place", "place.cafe", &[]).await;
+    assert_eq!(
+        t.call(
+            Method::PATCH,
+            &format!("/v1/items/{}/contact", place["id"].as_str().unwrap()),
+            Some(&token),
+            Some(json!({"mode":"set","phone":"+919876543210"})),
+            &[("if-match", "1")]
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    let mut edit = json!({
+        "subject":"Other Doctor", "visibility":"friends", "entity_kind":"person_service",
+        "summary":"Helpful and practical.", "experience":"firsthand", "attribution":"",
+        "observations":[], "locations":[], "use_cases":[], "types":["service.doctor"],
+        "facets":[], "descriptors":[], "destination":{"mode":"none","url":"","label":""}
+    });
+    let content_path = format!("/v1/items/{}/content", another["id"].as_str().unwrap());
+    // Omitted contact action from older clients preserves the snapshot.
+    let (status, edited) = t
+        .call(
+            Method::PATCH,
+            &content_path,
+            Some(&token),
+            Some(edit.clone()),
+            &[("if-match", "2")],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{edited}");
+    assert_eq!(
+        edited["item"]["recommendation"]["contact"]["phone"],
+        "+919876543210"
+    );
+    edit["subject"] = json!("Different Doctor");
+    let (status, renamed) = t
+        .call(
+            Method::PATCH,
+            &content_path,
+            Some(&token),
+            Some(edit.clone()),
+            &[("if-match", "3")],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{renamed}");
+    assert!(renamed["item"]["recommendation"].get("contact").is_none());
+    assert_eq!(renamed["item"]["recommendation"]["contact_matching"], "off");
+    // A full edit can deliberately attach a replacement without global matching.
+    t.call(
+        Method::POST,
+        "/v1/me/contact-matching",
+        Some(&token),
+        Some(json!({"enabled":false})),
+        &[],
+    )
+    .await;
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../contracts/rekky/v1/fixtures/contact.json"
+    ))
+    .unwrap();
+    edit["contact"] = fixture["manual_attachment"].clone();
+    let (status, replaced) = t
+        .call(
+            Method::PATCH,
+            &content_path,
+            Some(&token),
+            Some(edit),
+            &[("if-match", "4")],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{replaced}");
+    assert_eq!(
+        replaced["item"]["recommendation"]["contact"]["phone"],
+        fixture["saved_contact"]["phone"]
+    );
+    t.cleanup().await;
+}
