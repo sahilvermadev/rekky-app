@@ -165,6 +165,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
         areaId != null ||
         search.text.isNotEmpty ||
         typeId != null;
+    int visibleCount(List<RekkyItem> items) =>
+        order == LibraryOrder.browse &&
+            shelf == null &&
+            selected.length > 12 &&
+            search.text.isEmpty &&
+            areaId == null
+        ? items.length.clamp(0, 4)
+        : items.length;
     return RefreshIndicator(
       onRefresh: widget.onRefresh,
       child: CustomScrollView(
@@ -545,19 +553,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               sliver: SliverList.builder(
-                itemCount:
-                    order == LibraryOrder.browse &&
-                        shelf == null &&
-                        selected.length > 12 &&
-                        search.text.isEmpty &&
-                        areaId == null
-                    ? group.value.length.clamp(0, 4)
-                    : group.value.length,
+                itemCount: visibleCount(group.value),
                 itemBuilder: (context, index) {
                   final item = group.value[index];
                   return _LibraryRow(
                     key: ValueKey(item.id),
                     item: item,
+                    bottomGap: index == visibleCount(group.value) - 1 ? 0 : 8,
                     onOpen: () => widget.onOpen(item),
                     onPin: () => pinMenu(item),
                     pinBusy: pendingPins.contains(item.id),
@@ -567,7 +569,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
             ),
           ],
-          const SliverToBoxAdapter(child: SizedBox(height: 32)),
         ],
       ),
     );
@@ -578,12 +579,14 @@ class _LibraryRow extends StatefulWidget {
   const _LibraryRow({
     super.key,
     required this.item,
+    required this.bottomGap,
     required this.onOpen,
     required this.onPin,
     required this.pinBusy,
     required this.openUrl,
   });
   final RekkyItem item;
+  final double bottomGap;
   final VoidCallback onOpen, onPin;
   final bool pinBusy;
   final Future<bool> Function(Uri) openUrl;
@@ -630,7 +633,7 @@ class _LibraryRowState extends State<_LibraryRow> {
       if (rec?.primaryLocation != null) rec!.primaryLocation!,
     ].join(' · ');
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: EdgeInsets.only(bottom: widget.bottomGap),
       child: Material(
         color: colors.surfaceContainerLow,
         shape: RoundedRectangleBorder(

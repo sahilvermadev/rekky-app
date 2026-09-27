@@ -29,9 +29,10 @@ class RekkyNavigation extends StatelessWidget {
       child: TextButton(
         onPressed: () => onSelect(index),
         style: TextButton.styleFrom(
-          foregroundColor: destination == index
-              ? colors.onSurface
-              : colors.onSurfaceVariant,
+          foregroundColor: index == 0
+              ? RekkyTheme.onNavAsk
+              : RekkyTheme.onNavLibrary,
+          backgroundColor: Colors.transparent,
           textStyle: labelStyle.copyWith(
             fontWeight: destination == index
                 ? FontWeight.w700
@@ -39,7 +40,7 @@ class RekkyNavigation extends StatelessWidget {
           ),
           minimumSize: const Size(48, 60),
           padding: const EdgeInsets.symmetric(horizontal: 8),
-          shape: const StadiumBorder(),
+          shape: const RoundedRectangleBorder(),
         ),
         child: Text(label, maxLines: 1),
       ),
@@ -64,7 +65,7 @@ class RekkyNavigation extends StatelessWidget {
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
           child: Center(
             heightFactor: 1,
             child: ConstrainedBox(
@@ -92,30 +93,36 @@ class RekkyNavigation extends StatelessWidget {
                   final centreWidth = measure('Recommend') + 32;
                   final fits =
                       sideWidth * 2 + centreWidth <= constraints.maxWidth;
-                  return DecoratedBox(
-                    decoration: ShapeDecoration(
-                      color: colors.surfaceContainerLow,
-                      shape: StadiumBorder(
-                        side: BorderSide(
-                          color: colors.outlineVariant.withValues(alpha: .7),
+                  return ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: DecoratedBox(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            RekkyTheme.navAsk,
+                            RekkyTheme.navAsk,
+                            RekkyTheme.navLibrary,
+                            RekkyTheme.navLibrary,
+                          ],
+                          stops: [0, .5, .5, 1],
                         ),
                       ),
-                    ),
-                    child: fits
-                        ? Row(
-                            children: [
-                              SizedBox(width: sideWidth, child: tab(0, 'Ask')),
-                              Expanded(child: recommend()),
-                              SizedBox(
-                                width: sideWidth,
-                                child: tab(1, 'Library'),
-                              ),
-                            ],
-                          )
-                        : Padding(
-                            // Reflow only when the scaled labels cannot fit in one row.
-                            padding: const EdgeInsets.all(8),
-                            child: Column(
+                      child: fits
+                          ? Row(
+                              children: [
+                                SizedBox(
+                                  width: sideWidth,
+                                  child: tab(0, 'Ask'),
+                                ),
+                                Expanded(child: recommend()),
+                                SizedBox(
+                                  width: sideWidth,
+                                  child: tab(1, 'Library'),
+                                ),
+                              ],
+                            )
+                          : Column(
+                              // Reflow only when the scaled labels cannot fit in one row.
                               mainAxisSize: MainAxisSize.min,
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
@@ -128,7 +135,7 @@ class RekkyNavigation extends StatelessWidget {
                                 ),
                               ],
                             ),
-                          ),
+                    ),
                   );
                 },
               ),

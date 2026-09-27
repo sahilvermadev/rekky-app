@@ -11,8 +11,12 @@ abstract final class RekkyTheme {
   static const jade = Color(0xff227057);
   static const citron = Color(0xff686719);
   static const gold = Color(0xff89650c);
-  static const capture = Color(0xffff896c);
-  static const onCapture = Color(0xff21120e);
+  static const capture = Color(0xfff34f47);
+  static const onCapture = Color(0xff17110f);
+  static const navAsk = Color(0xff2856d8);
+  static const onNavAsk = Color(0xffffffff);
+  static const navLibrary = Color(0xffffd43b);
+  static const onNavLibrary = Color(0xff1b170a);
   static const coralLight = Color(0xffffa58c);
   static const plumLight = Color(0xffdda6db);
   static const jadeLight = Color(0xff9bd4b8);
