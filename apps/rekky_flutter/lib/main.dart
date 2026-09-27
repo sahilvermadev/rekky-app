@@ -11,7 +11,7 @@ import 'contact_matching.dart';
 import 'contact_sheet.dart';
 import 'recommendation_editor.dart';
 import 'library_screen.dart';
-import 'ask_screen.dart';
+import 'ask_experience.dart';
 import 'rekky_theme.dart';
 import 'rekky_navigation.dart';
 import 'recommendation_detail.dart';
@@ -81,13 +81,11 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
   final api = RekkyApi(apiBaseUrl);
   final identity = IdentityService();
   final voiceStore = VoiceDraftStore();
-  final question = TextEditingController();
-  bool busy = true, signedIn = false, disclosed = false, searching = false;
+  bool busy = true, signedIn = false, disclosed = false;
   bool recordingScreenOpen = false;
   int destination = 0;
   String? issue;
   List<RekkyItem> library = [];
-  List<Map<String, dynamic>> matches = [];
   List<VoiceDraft> voiceDrafts = [];
   String? accountId;
   VoiceProcessingCoordinator? voiceProcessing;
@@ -106,7 +104,6 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    question.dispose();
     WidgetsBinding.instance.removeObserver(this);
     voiceProcessing?.stop();
     contactMatching?.stop();
@@ -411,7 +408,6 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
         signedIn = false;
         disclosed = false;
         library = [];
-        matches = [];
         voiceDrafts = [];
         processingMessage = null;
         accountId = null;
@@ -519,8 +515,8 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
           ),
           content: Text(
             enabled
-                ? 'Turning this off stops new voice and transcript processing. Unprocessed recordings on this phone will be deleted; saved memories and transcripts remain.'
-                : 'Rekky will send new recordings and their private transcript text to OpenAI to make recommendations. Audio is deleted after a usable transcript is saved. New completed recommendations default to Friends; you can change them to Only me. Incomplete results and transcripts stay private. Existing recommendations keep their audience.',
+                ? 'Turning this off stops new voice, transcript and Ask processing. Unprocessed recordings on this phone will be deleted; saved memories and transcripts remain.'
+                : 'Rekky will send new recordings and their private transcript text to OpenAI to make recommendations. Ask sends your question and relevant saved recommendations to OpenAI to find useful matches. Audio is deleted after a usable transcript is saved. New completed recommendations default to Friends; you can change them to Only me. Incomplete results and transcripts stay private. Existing recommendations keep their audience.',
           ),
           actions: [
             TextButton(
@@ -553,25 +549,6 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
       _startVoiceProcessing();
       if (mounted) setState(() => issue = '$error');
     }
-  }
-
-  Future<void> _ask() async {
-    final q = question.text.trim();
-    if (q.isEmpty) return;
-    setState(() {
-      searching = true;
-      issue = null;
-    });
-    try {
-      final found = await api.ask(q);
-      if (mounted) setState(() => matches = found);
-    } catch (error) {
-      if (mounted) {
-        RekkyHaptics.warning();
-        setState(() => issue = '$error');
-      }
-    }
-    if (mounted) setState(() => searching = false);
   }
 
   Future<void> _remember() async {
@@ -696,7 +673,6 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
               checkAccount();
               setState(() {
                 library.removeWhere((i) => i.id == current.id);
-                matches.removeWhere((m) => m['item_id'] == current.id);
               });
             },
             editRecommendation: (current) {
@@ -749,19 +725,6 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
               setState(() {
                 library = library
                     .map((i) => i.id == updated.id ? updated : i)
-                    .toList();
-                matches = matches
-                    .map(
-                      (m) => m['item_id'] == updated.id
-                          ? {
-                              ...m,
-                              'subject': updated.subject,
-                              'body': updated.body,
-                              'visibility': updated.visibility,
-                              'revision': updated.revision,
-                            }
-                          : m,
-                    )
                     .toList();
               });
               return updated;
@@ -851,7 +814,7 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
                 ),
                 const SizedBox(height: 12),
                 const Text(
-                  'When you use Recommend, Rekky automatically sends the selected audio and its private transcript text to OpenAI to create your recommendation. Audio is deleted after a usable transcript is saved. The transcript stays private. You can turn future processing off in settings.',
+                  'When you use Recommend, Rekky automatically sends the selected audio and its private transcript text to OpenAI to create your recommendation. Audio is deleted after a usable transcript is saved. The transcript stays private. Ask sends questions and relevant saved recommendations to OpenAI. You can turn future processing off in settings.',
                 ),
                 const Spacer(),
                 if (issue != null)
@@ -946,14 +909,14 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
     ],
   );
 
-  Widget _askPage() => AskScreen(
-    controller: question,
-    matches: matches,
-    searching: searching,
-    onAsk: _ask,
-    onOpen: (id) {
-      final item = library.where((item) => item.id == id).firstOrNull;
-      if (item != null) _openItem(item);
+  Widget _askPage() => AskExperience(
+    key: ValueKey('ask-$accountId'),
+    api: api,
+    onOpen: (item) async {
+      if (!library.any((old) => old.id == item.id)) {
+        setState(() => library = [...library, item]);
+      }
+      await _openItem(item);
     },
   );
 

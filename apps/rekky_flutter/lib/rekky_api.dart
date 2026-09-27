@@ -1,3 +1,5 @@
+import 'ask_answer.dart';
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -657,6 +659,28 @@ class RekkyApi {
             as Map<String, dynamic>?;
     return data == null ? null : RekkySource.fromJson(data);
   }
+
+  Future<RekkyItem> item(String id) async => RekkyItem.fromJson(
+    (await request('GET', '/v1/items/$id'))['item'] as Map<String, dynamic>,
+  );
+
+  Future<AskAnswer> askAgent(String question, String requestId) async =>
+      AskAnswer.fromJson(
+        await request(
+          'POST',
+          '/v1/ask/agent',
+          body: {'question': question, 'request_id': requestId},
+          timeout: const Duration(seconds: 55),
+        ),
+      );
+
+  Future<void> cancelAsk(String id) async {
+    await request('DELETE', '/v1/ask/answers/$id');
+  }
+
+  Future<AskAnswer> askPage(String id, int offset) async => AskAnswer.fromJson(
+    await request('GET', '/v1/ask/answers/$id?offset=$offset'),
+  );
 
   Future<List<Map<String, dynamic>>> ask(String question) async {
     final results = <Map<String, dynamic>>[];

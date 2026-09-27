@@ -36,6 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         transcriber,
         extractor,
         places: Arc::new(rekky_backend::places::GooglePlaces::from_env()),
+        ask_model: Arc::new(rekky_backend::ask::OpenAiAsk::from_env()),
     };
     let geography_pool = state.pool.clone();
     let geography_worker = tokio::spawn(async move {
@@ -67,6 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let worker_state = state.clone();
     let worker = tokio::spawn(async move {
         loop {
+            let _ = rekky_backend::ask::sweep(&worker_state.pool).await;
             if let Err(error) = rekky_backend::app::process_pending_voice(&worker_state, None).await
             {
                 eprintln!("Voice worker database error: {error}");

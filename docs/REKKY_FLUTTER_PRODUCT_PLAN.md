@@ -1,6 +1,6 @@
 # Rekky: Flutter product and delivery plan
 
-Updated: 2026-09-27. Status: Rust backend and Flutter Android pilot support signed-in one-tap voice capture, automatic recommendation processing, editing, categories, ratings, contacts, geographic organization and a curated Library. Ask remains a basic lexical/category search. The next integrated product slice is intelligent own-library Ask, beginning with ASK-0/1 below. No delivery phase has passed its full gate; iOS/native reliability, source correction, production infrastructure and broader quality evidence remain open.
+Updated: 2026-09-27. Status: Rust backend and Flutter Android pilot support signed-in one-tap voice capture, automatic recommendation processing, editing, categories, ratings, contacts, geographic organization and a curated Library. The first intelligent own-library Ask pilot now supports typed agentic recall/discovery, cited evidence, caveats and actions. ASK-0/1 quality and scale gates remain open; voice/refinement and comparison follow. See [implementation evidence and remaining work](ASK_AGENT_SLICE.md). No delivery phase has passed its full gate; iOS/native reliability, source correction, production infrastructure and broader quality evidence remain open.
 
 This is the active product and implementation reference. It supersedes the previous experience, capture, voice and completion plans wherever they differ. Legacy documents and code are technical references only: no consent, deletion, retention, guest, audience or delivery rule is inherited implicitly. This document defines those policies for the new product. The existing browser prototype is an interaction inventory, not the approved design; see [legacy reference and provenance](./LEGACY_REFERENCE.md).
 
@@ -660,7 +660,7 @@ F-02 starts with explicit text/URL share and ordered-sync checkpoints before adv
 
 ### Ask retrieval implementation slices (F-01 through F-04)
 
-- [ ] ASK-0/1 (F-00.5/F-01.2/3): implement the [intelligent own-library Ask slice](ASK_EXPERIENCE_PLAN.md#9-delivery-slices-and-acceptance), including contracts/evaluation, fuzzy recall, occasion discovery, appropriate evidence/action layouts and responsive pagination.
+- [ ] ASK-0/1 (F-00.5/F-01.2/3), partial pilot implemented ([evidence](ASK_AGENT_SLICE.md)): finish the [intelligent own-library Ask slice](ASK_EXPERIENCE_PLAN.md#9-delivery-slices-and-acceptance), including contracts/evaluation, fuzzy recall, occasion discovery, appropriate evidence/action layouts and responsive pagination.
 - [ ] ASK-2/3 (own-Ask expansion): add dedicated voice questions, session refinement and bounded own-library comparison; these complete the first Ask experience release, without claiming unrelated F-01 gates. ASK-4/5 depend on F-02 sync; ASK-6 inherits F-03 authorization; ASK-7 extends F-04 composition.
 
 
@@ -768,7 +768,7 @@ Use Flutter widget/integration tests for consequential flows, contract tests for
 
 ## 13. Current handoff and decision log
 
-**Next task:** Deliver ASK-0/1 from the [Ask experience plan](ASK_EXPERIENCE_PLAN.md): shared agent/tool/answer/evidence fixtures and a labelled baseline together with a bounded Ask agent for intelligent own-library recall/discovery, contextual explanations, truthful geographic constraints, first-page rendering and useful actions through the real Rust API. Follow with spoken questions/in-place refinement (ASK-2) and bounded comparison (ASK-3). Grouped Library navigation, source quotation presentation, full recommendation editing, appearance and deliberate haptics are implemented pilot checkpoints. Transcript correction/reprocessing, real-audio capture-to-Ask quality evidence, native background upload, iOS runtime and production backup exclusion remain open. These continue to gate the applicable rollout; no delivery phase has passed its full gate.
+**Next task:** Finish the ASK-0/1 quality and scale gates: the labelled multilingual evaluation, fixed-pass versus adaptive comparison, and larger-library continuation. The first typed agentic recall/discovery path is implemented; see the [checkpoint](ASK_AGENT_SLICE.md). Then add spoken questions and full in-place refinement (ASK-2), followed by bounded comparison (ASK-3). Transcript correction/reprocessing, real-audio capture-to-Ask evidence, native background upload, iOS runtime and production backup exclusion remain open independently. No delivery phase has passed its full gate.
 
 | Date | Decision | Consequence |
 | --- | --- | --- |
@@ -1022,3 +1022,6 @@ Recommend opens the complete recording layout immediately. Begin local microphon
 Cancel is available during startup and safely waits for an outstanding recorder start to settle before cancelling it; a late response cannot save a draft or leave a recorder active. Backgrounding before startup completes also cancels it. Existing two-minute and interruption capture limits remain.
 
 Validation: Flutter analysis passed; 56 targeted recording, navigation, Library and recommendation-detail tests passed, with updated acknowledgement/failure haptic assertions also passing. Coverage includes slow startup/save, startup cancellation, denied permission, backgrounding before readiness, stable Done placement and large text. The Android debug build was installed, the active recording layout inspected on the connected phone and the test recording discarded without queuing/uploading it. Local backend health and USB forwarding were verified. Physical haptic strength/feel and iOS behavior require device feedback; automated platform-call assertions do not establish tactile quality.
+
+
+**Agentic Ask pilot checkpoint (2026-09-27):** The first typed own-library agent path is implemented in Rust/Flutter, using gpt-6-luna native tool decisions, lexical clue expansion, evidence-linked results, geographic role checks, bounded budgets, cancellation and revision-safe answer pages. Six invented live-model development cases pass after fixing phrase retrieval and distinguishing a supported fit from a source-backed exclusion. This is a partial ASK-0/1 checkpoint, not its 120-query held-out release gate. Semantic-index measurement, larger-library continuation and the planned comparative evaluation remain open. Spoken questions/full refinement and comparison remain ASK-2/3. See [Ask implementation and limits](ASK_AGENT_SLICE.md).

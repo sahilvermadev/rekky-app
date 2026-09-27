@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "request_id": "33333333-3333-4333-8333-333333333333",
+  "mode": "agent",
+  "intent": "discovery",
+  "title": "Somewhere to talk",
+  "clarification": "",
+  "choices": [],
+  "location": "",
+  "changed": false,
+  "results": [
+    {
+      "item": {
+        "id": "11111111-1111-4111-8111-111111111111",
+        "capture_id": "22222222-2222-4222-8222-222222222222",
+        "subject": "Lantern Kitchen",
+        "body": "We could talk easily. The tables are small.",
+        "visibility": "private",
+        "revision": 1,
+        "created_at": "2026-09-27T00:00:00Z",
+        "needs_review": false,
+        "pinned": false,
+        "pin_revision": 1,
+        "recommendation": null
+      },
+      "section": "supported",
+      "reason": "Your note describes an easy place for conversation.",
+      "caveat": "The tables are small.",
+      "evidence": [
+        {
+          "id": "summary",
+          "kind": "summary",
+          "text": "We could talk easily. The tables are small."
+        }
+      ]
+    }
+  ],
+  "next_offset": null,
+  "search_incomplete": false
+}

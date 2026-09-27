@@ -34,6 +34,7 @@ pub struct AppState {
     pub transcriber: Arc<dyn VoiceTranscriber>,
     pub extractor: Arc<dyn TranscriptExtractor>,
     pub places: Arc<dyn crate::places::PlaceResolver>,
+    pub ask_model: Arc<dyn crate::ask::AskModel>,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -88,7 +89,9 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/items/{id}/place", post(resolve_place))
         .route(
             "/v1/items/{id}",
-            axum::routing::patch(change_visibility).delete(delete_item),
+            axum::routing::patch(change_visibility)
+                .delete(delete_item)
+                .get(get_item),
         )
         .route("/v1/captures/{id}", get(capture))
         .route(
@@ -96,11 +99,16 @@ pub fn router(state: AppState) -> Router {
             axum::routing::delete(delete_source),
         )
         .route("/v1/ask", post(ask))
+        .route("/v1/ask/agent", post(crate::ask::run))
+        .route(
+            "/v1/ask/answers/{id}",
+            get(crate::ask::page).delete(crate::ask::cancel),
+        )
         .layer(DefaultBodyLimit::max(100 * 1024))
         .with_state(state)
 }
 
-type ApiResult = Result<Response, ApiError>;
+pub(crate) type ApiResult = Result<Response, ApiError>;
 
 #[derive(Debug)]
 pub struct ApiError {
@@ -109,14 +117,14 @@ pub struct ApiError {
     message: &'static str,
 }
 impl ApiError {
-    fn new(status: StatusCode, code: &'static str, message: &'static str) -> Self {
+    pub(crate) fn new(status: StatusCode, code: &'static str, message: &'static str) -> Self {
         Self {
             status,
             code,
             message,
         }
     }
-    fn bad(message: &'static str) -> Self {
+    pub(crate) fn bad(message: &'static str) -> Self {
         Self::new(StatusCode::BAD_REQUEST, "invalid_request", message)
     }
     fn cursor() -> Self {
@@ -126,10 +134,10 @@ impl ApiError {
             "Invalid page cursor",
         )
     }
-    fn not_found(message: &'static str) -> Self {
+    pub(crate) fn not_found(message: &'static str) -> Self {
         Self::new(StatusCode::NOT_FOUND, "not_found", message)
     }
-    fn conflict(message: &'static str) -> Self {
+    pub(crate) fn conflict(message: &'static str) -> Self {
         Self::new(StatusCode::CONFLICT, "revision_conflict", message)
     }
 }
@@ -152,7 +160,7 @@ impl IntoResponse for ApiError {
             .into_response()
     }
 }
-fn ok(value: Value) -> Response {
+pub(crate) fn ok(value: Value) -> Response {
     Json(value).into_response()
 }
 fn created(value: Value) -> Response {
@@ -161,7 +169,7 @@ fn created(value: Value) -> Response {
 fn no_content() -> Response {
     StatusCode::NO_CONTENT.into_response()
 }
-fn parse<T: DeserializeOwned>(body: &Bytes) -> Result<T, ApiError> {
+pub(crate) fn parse<T: DeserializeOwned>(body: &Bytes) -> Result<T, ApiError> {
     serde_json::from_slice(body).map_err(|_| ApiError::bad("Invalid request body"))
 }
 fn header<'a>(headers: &'a HeaderMap, name: &'static str) -> Option<&'a str> {
@@ -176,7 +184,11 @@ fn revision(headers: &HeaderMap) -> Result<i32, ApiError> {
         .filter(|v| *v > 0)
         .ok_or_else(|| ApiError::bad("If-Match revision is required"))
 }
-async fn owner(state: &AppState, headers: &HeaderMap, disclosure: bool) -> Result<Uuid, ApiError> {
+pub(crate) async fn owner(
+    state: &AppState,
+    headers: &HeaderMap,
+    disclosure: bool,
+) -> Result<Uuid, ApiError> {
     let bearer = header(headers, "authorization").and_then(|v| v.strip_prefix("Bearer "));
     let token = bearer
         .filter(|v| {
@@ -2447,4 +2459,25 @@ async fn attach_contact(
         .bind(recommendation).bind(id).fetch_one(&mut *tx).await?;
     tx.commit().await?;
     Ok(ok(json!({"item":item_json(&updated)})))
+}
+
+pub(crate) async fn owner_item(
+    state: &AppState,
+    owner_id: Uuid,
+    id: Uuid,
+) -> Result<Option<Value>, ApiError> {
+    let row:Option<ItemRow>=sqlx::query_as("SELECT id,capture_id,subject,body,visibility,revision,created_at,recommendation,pinned,pin_revision,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review FROM knowledge_items WHERE owner_id=$1 AND id=$2 AND deleted_at IS NULL")
+        .bind(owner_id).bind(id).fetch_optional(&state.pool).await?;
+    Ok(row.as_ref().map(item_json))
+}
+async fn get_item(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> ApiResult {
+    let owner_id = owner(&state, &headers, true).await?;
+    let item = owner_item(&state, owner_id, id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("Recommendation not found"))?;
+    Ok(ok(json!({"item":item})))
 }

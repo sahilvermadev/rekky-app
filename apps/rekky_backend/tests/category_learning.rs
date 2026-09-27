@@ -235,6 +235,7 @@ async fn background_learning_deduplicates_reuses_and_fences_results() {
         transcriber: Arc::new(rekky_backend::voice::OpenAiTranscriber::from_env()),
         extractor: Arc::new(rekky_backend::extraction::OpenAiExtractor::from_env()),
         places: Arc::new(rekky_backend::places::GooglePlaces::from_env()),
+        ask_model: Arc::new(rekky_backend::ask::OpenAiAsk::from_env()),
     });
     use axum::{
         body::{Body, to_bytes},

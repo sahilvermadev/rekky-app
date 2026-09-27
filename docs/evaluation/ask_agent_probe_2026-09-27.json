@@ -1,0 +1,811 @@
+{
+  "kind": "synthetic-development-not-held-out",
+  "model": "gpt-6-luna",
+  "date": "2026-09-27",
+  "cases": [
+    {
+      "answer": {
+        "changed": false,
+        "choices": [],
+        "clarification": "",
+        "intent": "discovery",
+        "location": "",
+        "mode": "agent",
+        "next_offset": null,
+        "request_id": "a56393c3-156a-4063-b210-bdfa36295ef8",
+        "results": [
+          {
+            "caveat": "",
+            "evidence": [
+              {
+                "id": "summary",
+                "kind": "summary",
+                "text": "A peaceful Italian dinner in Pune. Very easy to have a conversation."
+              },
+              {
+                "id": "experience",
+                "kind": "experience",
+                "text": "firsthand"
+              }
+            ],
+            "item": {
+              "body": "A peaceful Italian dinner in Pune. Very easy to have a conversation.",
+              "capture_id": "612e74cb-c4d6-4f83-95ac-9f796f873352",
+              "created_at": "2026-09-27T18:08:07.966910Z",
+              "id": "ebfc611a-de36-493b-827a-64f6ab1326f7",
+              "needs_review": false,
+              "pin_revision": 1,
+              "pinned": false,
+              "recommendation": {
+                "classification": {
+                  "types": [
+                    {
+                      "id": "place.restaurant",
+                      "label": "Restaurant"
+                    }
+                  ]
+                },
+                "entity_kind": "place",
+                "experience": "firsthand",
+                "locations": [
+                  {
+                    "geography": {
+                      "area_id": "ask-probe-pune",
+                      "browse": {
+                        "destination": {
+                          "aliases": [
+                            "pune"
+                          ],
+                          "country_code": "IN",
+                          "id": "ask-probe-pune",
+                          "kind": "city",
+                          "label": "Pune"
+                        },
+                        "membership": "supported_geographic_scope",
+                        "neighbourhood": null,
+                        "regions": [],
+                        "version": 1
+                      },
+                      "country_code": "IN",
+                      "filter_ids": [
+                        "ask-probe-pune"
+                      ],
+                      "hierarchy": [],
+                      "label": "Pune",
+                      "match_method": "name_and_context",
+                      "name": "Pune",
+                      "source": "geonames",
+                      "source_url": "https://www.geonames.org/",
+                      "status": "resolved"
+                    },
+                    "name": "Pune",
+                    "role": "venue",
+                    "text": "Pune"
+                  }
+                ],
+                "observations": [],
+                "shelf": "Test",
+                "summary": "A peaceful Italian dinner in Pune. Very easy to have a conversation.",
+                "use_cases": [],
+                "version": 2
+              },
+              "revision": 1,
+              "subject": "Pune Courtyard",
+              "visibility": "private"
+            },
+            "reason": "The saved experience describes a peaceful Italian dinner where it was very easy to have a conversation.",
+            "section": "supported"
+          },
+          {
+            "caveat": "",
+            "evidence": [
+              {
+                "id": "summary",
+                "kind": "summary",
+                "text": "We had Italian pasta in Delhi. It was quiet enough to talk without raising our voices. The tables seat two people."
+              },
+              {
+                "id": "experience",
+                "kind": "experience",
+                "text": "firsthand"
+              }
+            ],
+            "item": {
+              "body": "We had Italian pasta in Delhi. It was quiet enough to talk without raising our voices. The tables seat two people.",
+              "capture_id": "3adc14ab-aef9-408a-abf4-d3c5a19b443e",
+              "created_at": "2026-09-27T18:08:07.934809Z",
+              "id": "af431c16-3161-4efc-9067-5fa484bd2ca1",
+              "needs_review": false,
+              "pin_revision": 1,
+              "pinned": false,
+              "recommendation": {
+                "classification": {
+                  "types": [
+                    {
+                      "id": "place.restaurant",
+                      "label": "Restaurant"
+                    }
+                  ]
+                },
+                "entity_kind": "place",
+                "experience": "firsthand",
+                "locations": [
+                  {
+                    "geography": {
+                      "area_id": "ask-probe-delhi",
+                      "browse": {
+                        "destination": {
+                          "aliases": [
+                            "delhi"
+                          ],
+                          "country_code": "IN",
+                          "id": "ask-probe-delhi",
+                          "kind": "city",
+                          "label": "Delhi"
+                        },
+                        "membership": "supported_geographic_scope",
+                        "neighbourhood": null,
+                        "regions": [],
+                        "version": 1
+                      },
+                      "country_code": "IN",
+                      "filter_ids": [
+                        "ask-probe-delhi"
+                      ],
+                      "hierarchy": [],
+                      "label": "Delhi",
+                      "match_method": "name_and_context",
+                      "name": "Delhi",
+                      "source": "geonames",
+                      "source_url": "https://www.geonames.org/",
+                      "status": "resolved"
+                    },
+                    "name": "Delhi",
+                    "role": "venue",
+                    "text": "Delhi"
+                  }
+                ],
+                "observations": [],
+                "shelf": "Test",
+                "summary": "We had Italian pasta in Delhi. It was quiet enough to talk without raising our voices. The tables seat two people.",
+                "use_cases": [],
+                "version": 2
+              },
+              "revision": 1,
+              "subject": "Lantern Garden",
+              "visibility": "private"
+            },
+            "reason": "A firsthand note says it was quiet enough to talk without raising your voices over Italian pasta.",
+            "section": "supported"
+          }
+        ],
+        "title": "Dinner spots where conversation was easy",
+        "version": 1
+      },
+      "elapsed_ms": 4063,
+      "excluded_supported": "Lantern Live",
+      "expected": "Lantern Garden",
+      "forbidden_supported": false,
+      "hit": true,
+      "question": "Somewhere I can hear a friend over dinner",
+      "status": 200,
+      "trace": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "page": 0,
+                "terms": [
+                  "dinner",
+                  "quiet",
+                  "conversation",
+                  "hear",
+                  "restaurant"
+                ]
+              },
+              "tool": "search_knowledge"
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "choices": [],
+                "clarification": "",
+                "intent": "discovery",
+                "location": "",
+                "results": [
+                  {
+                    "caveat": "",
+                    "evidence_ids": [
+                      "summary",
+                      "experience"
+                    ],
+                    "item_id": "ebfc611a-de36-493b-827a-64f6ab1326f7",
+                    "reason": "The saved experience describes a peaceful Italian dinner where it was very easy to have a conversation.",
+                    "section": "supported"
+                  },
+                  {
+                    "caveat": "",
+                    "evidence_ids": [
+                      "summary",
+                      "experience"
+                    ],
+                    "item_id": "af431c16-3161-4efc-9067-5fa484bd2ca1",
+                    "reason": "A firsthand note says it was quiet enough to talk without raising your voices over Italian pasta.",
+                    "section": "supported"
+                  }
+                ],
+                "title": "Dinner spots where conversation was easy"
+              },
+              "tool": "present_answer"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "answer": {
+        "changed": false,
+        "choices": [],
+        "clarification": "",
+        "intent": "recall",
+        "location": "",
+        "mode": "agent",
+        "next_offset": null,
+        "request_id": "d2953b25-467f-4539-8733-0ee4bfee08e9",
+        "results": [
+          {
+            "caveat": "यह जानकारी पिछली यात्रा की है; उनके मौजूदा service area के बारे में पता नहीं है।",
+            "evidence": [
+              {
+                "id": "summary",
+                "kind": "summary",
+                "text": "Mohan drove us from Mussoorie to Landour on our last trip. He was punctual and drove carefully. I do not know his current service area."
+              },
+              {
+                "id": "experience",
+                "kind": "experience",
+                "text": "firsthand"
+              }
+            ],
+            "item": {
+              "body": "Mohan drove us from Mussoorie to Landour on our last trip. He was punctual and drove carefully. I do not know his current service area.",
+              "capture_id": "fe98a326-12d3-4073-98e0-9c1e69b4dde1",
+              "created_at": "2026-09-27T18:08:07.974204Z",
+              "id": "c8052429-31b3-41cb-83ed-f1865b426233",
+              "needs_review": false,
+              "pin_revision": 1,
+              "pinned": false,
+              "recommendation": {
+                "classification": {
+                  "types": [
+                    {
+                      "id": "service.taxi",
+                      "label": "Restaurant"
+                    }
+                  ]
+                },
+                "entity_kind": "person_service",
+                "experience": "firsthand",
+                "locations": [],
+                "observations": [],
+                "shelf": "Test",
+                "summary": "Mohan drove us from Mussoorie to Landour on our last trip. He was punctual and drove carefully. I do not know his current service area.",
+                "use_cases": [],
+                "version": 2
+              },
+              "revision": 1,
+              "subject": "Mohan Hill Taxi",
+              "visibility": "private"
+            },
+            "reason": "Mohan ने पिछली यात्रा में आपको मसूरी से लंढौर पहुँचाया था।",
+            "section": "supported"
+          }
+        ],
+        "title": "मसूरी से लंढौर ले जाने वाले ड्राइवर",
+        "version": 1
+      },
+      "elapsed_ms": 3942,
+      "excluded_supported": null,
+      "expected": "Mohan Hill Taxi",
+      "forbidden_supported": false,
+      "hit": true,
+      "question": "वो ड्राइवर जिसने मसूरी से लंढौर पहुँचाया था",
+      "status": 200,
+      "trace": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "page": 0,
+                "terms": [
+                  "driver",
+                  "Mussoorie",
+                  "Landour",
+                  "लंढौर",
+                  "मसूरी",
+                  "chauffeur",
+                  "taxi"
+                ]
+              },
+              "tool": "search_knowledge"
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "choices": [],
+                "clarification": "",
+                "intent": "recall",
+                "location": "",
+                "results": [
+                  {
+                    "caveat": "यह जानकारी पिछली यात्रा की है; उनके मौजूदा service area के बारे में पता नहीं है।",
+                    "evidence_ids": [
+                      "summary",
+                      "experience"
+                    ],
+                    "item_id": "c8052429-31b3-41cb-83ed-f1865b426233",
+                    "reason": "Mohan ने पिछली यात्रा में आपको मसूरी से लंढौर पहुँचाया था।",
+                    "section": "supported"
+                  }
+                ],
+                "title": "मसूरी से लंढौर ले जाने वाले ड्राइवर"
+              },
+              "tool": "present_answer"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "answer": {
+        "changed": false,
+        "choices": [],
+        "clarification": "",
+        "intent": "discovery",
+        "location": "Delhi",
+        "mode": "agent",
+        "next_offset": null,
+        "request_id": "5c3948af-dc21-467f-a5d7-f68c6cff6372",
+        "results": [
+          {
+            "caveat": "",
+            "evidence": [
+              {
+                "id": "summary",
+                "kind": "summary",
+                "text": "We had Italian pasta in Delhi. It was quiet enough to talk without raising our voices. The tables seat two people."
+              },
+              {
+                "id": "experience",
+                "kind": "experience",
+                "text": "firsthand"
+              }
+            ],
+            "item": {
+              "body": "We had Italian pasta in Delhi. It was quiet enough to talk without raising our voices. The tables seat two people.",
+              "capture_id": "3adc14ab-aef9-408a-abf4-d3c5a19b443e",
+              "created_at": "2026-09-27T18:08:07.934809Z",
+              "id": "af431c16-3161-4efc-9067-5fa484bd2ca1",
+              "needs_review": false,
+              "pin_revision": 1,
+              "pinned": false,
+              "recommendation": {
+                "classification": {
+                  "types": [
+                    {
+                      "id": "place.restaurant",
+                      "label": "Restaurant"
+                    }
+                  ]
+                },
+                "entity_kind": "place",
+                "experience": "firsthand",
+                "locations": [
+                  {
+                    "geography": {
+                      "area_id": "ask-probe-delhi",
+                      "browse": {
+                        "destination": {
+                          "aliases": [
+                            "delhi"
+                          ],
+                          "country_code": "IN",
+                          "id": "ask-probe-delhi",
+                          "kind": "city",
+                          "label": "Delhi"
+                        },
+                        "membership": "supported_geographic_scope",
+                        "neighbourhood": null,
+                        "regions": [],
+                        "version": 1
+                      },
+                      "country_code": "IN",
+                      "filter_ids": [
+                        "ask-probe-delhi"
+                      ],
+                      "hierarchy": [],
+                      "label": "Delhi",
+                      "match_method": "name_and_context",
+                      "name": "Delhi",
+                      "source": "geonames",
+                      "source_url": "https://www.geonames.org/",
+                      "status": "resolved"
+                    },
+                    "name": "Delhi",
+                    "role": "venue",
+                    "text": "Delhi"
+                  }
+                ],
+                "observations": [],
+                "shelf": "Test",
+                "summary": "We had Italian pasta in Delhi. It was quiet enough to talk without raising our voices. The tables seat two people.",
+                "use_cases": [],
+                "version": 2
+              },
+              "revision": 1,
+              "subject": "Lantern Garden",
+              "visibility": "private"
+            },
+            "reason": "Wahan pasta ke saath baat bina awaaz unchi kiye ho paayi; tables do logon ke liye hain.",
+            "section": "supported"
+          }
+        ],
+        "title": "Delhi mein quiet dinner",
+        "version": 1
+      },
+      "elapsed_ms": 4007,
+      "excluded_supported": "Pune Courtyard",
+      "expected": "Lantern Garden",
+      "forbidden_supported": false,
+      "hit": true,
+      "question": "Koi quiet dinner ki jagah, Delhi mein",
+      "status": 200,
+      "trace": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "page": 0,
+                "terms": [
+                  "quiet dinner Delhi",
+                  "quiet restaurant Delhi",
+                  " शांत dinner दिल्ली",
+                  "shor",
+                  "conversation",
+                  "dinner place"
+                ]
+              },
+              "tool": "search_knowledge"
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "choices": [],
+                "clarification": "",
+                "intent": "discovery",
+                "location": "Delhi",
+                "results": [
+                  {
+                    "caveat": "",
+                    "evidence_ids": [
+                      "summary",
+                      "experience"
+                    ],
+                    "item_id": "af431c16-3161-4efc-9067-5fa484bd2ca1",
+                    "reason": "Wahan pasta ke saath baat bina awaaz unchi kiye ho paayi; tables do logon ke liye hain.",
+                    "section": "supported"
+                  }
+                ],
+                "title": "Delhi mein quiet dinner"
+              },
+              "tool": "present_answer"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "answer": {
+        "changed": false,
+        "choices": [],
+        "clarification": "Do you remember where you heard about the violin repairer, or any part of their name?",
+        "intent": "recall",
+        "location": "",
+        "mode": "agent",
+        "next_offset": null,
+        "request_id": "36b24b6a-03d1-4a8b-82af-7305c383a9e1",
+        "results": [],
+        "title": "No violin repairer found",
+        "version": 1
+      },
+      "elapsed_ms": 3462,
+      "excluded_supported": "Ravi Plumbing",
+      "expected": null,
+      "forbidden_supported": false,
+      "hit": true,
+      "question": "Who repairs violins?",
+      "status": 200,
+      "trace": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "page": 0,
+                "terms": [
+                  "violin",
+                  "luthier",
+                  "instrument repair",
+                  "violinist",
+                  "strings"
+                ]
+              },
+              "tool": "search_knowledge"
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "choices": [],
+                "clarification": "Do you remember where you heard about the violin repairer, or any part of their name?",
+                "intent": "recall",
+                "location": "",
+                "results": [],
+                "title": "No violin repairer found"
+              },
+              "tool": "present_answer"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "answer": {
+        "changed": false,
+        "choices": [],
+        "clarification": "Would you like a caterer for a particular city?",
+        "intent": "discovery",
+        "location": "",
+        "mode": "agent",
+        "next_offset": null,
+        "request_id": "4d450112-4aba-48b1-b6a8-b3bffa86c942",
+        "results": [
+          {
+            "caveat": "The saved note only documents catering for 25 guests and says there is no information about larger events.",
+            "evidence": [
+              {
+                "id": "summary",
+                "kind": "summary",
+                "text": "Meera catered a home lunch for 25 guests. That was good. I have no information about larger events."
+              },
+              {
+                "id": "experience",
+                "kind": "experience",
+                "text": "firsthand"
+              }
+            ],
+            "item": {
+              "body": "Meera catered a home lunch for 25 guests. That was good. I have no information about larger events.",
+              "capture_id": "c66b5800-0520-422c-92b6-547a83790911",
+              "created_at": "2026-09-27T18:08:08.049072Z",
+              "id": "1038bcff-ef56-4d21-b164-0925a63f5360",
+              "needs_review": false,
+              "pin_revision": 1,
+              "pinned": false,
+              "recommendation": {
+                "classification": {
+                  "types": []
+                },
+                "entity_kind": "person_service",
+                "experience": "firsthand",
+                "locations": [],
+                "observations": [],
+                "shelf": "Test",
+                "summary": "Meera catered a home lunch for 25 guests. That was good. I have no information about larger events.",
+                "use_cases": [],
+                "version": 2
+              },
+              "revision": 1,
+              "subject": "Meera Home Catering",
+              "visibility": "private"
+            },
+            "reason": "Meera has catered a home lunch, but whether she can handle 60 guests is unknown.",
+            "section": "worth_checking"
+          }
+        ],
+        "title": "No confirmed 60-guest caterer",
+        "version": 1
+      },
+      "elapsed_ms": 5165,
+      "excluded_supported": null,
+      "expected": null,
+      "forbidden_supported": false,
+      "hit": true,
+      "question": "A caterer who can handle 60 guests",
+      "status": 200,
+      "trace": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "page": 0,
+                "terms": [
+                  "caterer catering",
+                  "60 guests",
+                  "sixty guests",
+                  "event food"
+                ]
+              },
+              "tool": "search_knowledge"
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "page": 0,
+                "terms": [
+                  "catering 60",
+                  "large event caterer",
+                  "banquet guests",
+                  "food service 60 people",
+                  "caterer events"
+                ]
+              },
+              "tool": "search_knowledge"
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "choices": [],
+                "clarification": "Would you like a caterer for a particular city?",
+                "intent": "discovery",
+                "location": "",
+                "results": [
+                  {
+                    "caveat": "The saved note only documents catering for 25 guests and says there is no information about larger events.",
+                    "evidence_ids": [
+                      "summary",
+                      "experience"
+                    ],
+                    "item_id": "1038bcff-ef56-4d21-b164-0925a63f5360",
+                    "reason": "Meera has catered a home lunch, but whether she can handle 60 guests is unknown.",
+                    "section": "worth_checking"
+                  }
+                ],
+                "title": "No confirmed 60-guest caterer"
+              },
+              "tool": "present_answer"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "answer": {
+        "changed": false,
+        "choices": [],
+        "clarification": "",
+        "intent": "discovery",
+        "location": "",
+        "mode": "agent",
+        "next_offset": null,
+        "request_id": "e8ef4751-6ec3-4f07-90ae-afd5fada3175",
+        "results": [
+          {
+            "caveat": "It has a steep climb at the end.",
+            "evidence": [
+              {
+                "id": "summary",
+                "kind": "summary",
+                "text": "I enjoyed walking this outdoor trail on a weekend. There were shady stretches and a steep climb at the end."
+              },
+              {
+                "id": "experience",
+                "kind": "experience",
+                "text": "firsthand"
+              }
+            ],
+            "item": {
+              "body": "I enjoyed walking this outdoor trail on a weekend. There were shady stretches and a steep climb at the end.",
+              "capture_id": "8df653f6-d6e1-48d0-8003-b214f2394a85",
+              "created_at": "2026-09-27T18:08:08.059709Z",
+              "id": "c90032bc-e8a5-470e-aadb-ed9a11a1e0dd",
+              "needs_review": false,
+              "pin_revision": 1,
+              "pinned": false,
+              "recommendation": {
+                "classification": {
+                  "types": []
+                },
+                "entity_kind": "activity",
+                "experience": "firsthand",
+                "locations": [],
+                "observations": [],
+                "shelf": "Test",
+                "summary": "I enjoyed walking this outdoor trail on a weekend. There were shady stretches and a steep climb at the end.",
+                "use_cases": [],
+                "version": 2
+              },
+              "revision": 1,
+              "subject": "River Loop",
+              "visibility": "private"
+            },
+            "reason": "A firsthand outdoor trail walk that the saved note says you enjoyed on a weekend; it also mentions shady stretches.",
+            "section": "supported"
+          }
+        ],
+        "title": "An outdoor trail walk",
+        "version": 1
+      },
+      "elapsed_ms": 3280,
+      "excluded_supported": "Boulder Room",
+      "expected": "River Loop",
+      "forbidden_supported": false,
+      "hit": true,
+      "question": "Something to do this weekend outdoors",
+      "status": 200,
+      "trace": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "page": 0,
+                "terms": [
+                  "outdoors",
+                  "hiking",
+                  "park",
+                  "weekend",
+                  "walk",
+                  "camping",
+                  "cycling"
+                ]
+              },
+              "tool": "search_knowledge"
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "choices": [],
+                "clarification": "",
+                "intent": "discovery",
+                "location": "",
+                "results": [
+                  {
+                    "caveat": "It has a steep climb at the end.",
+                    "evidence_ids": [
+                      "summary",
+                      "experience"
+                    ],
+                    "item_id": "c90032bc-e8a5-470e-aadb-ed9a11a1e0dd",
+                    "reason": "A firsthand outdoor trail walk that the saved note says you enjoyed on a weekend; it also mentions shady stretches.",
+                    "section": "supported"
+                  }
+                ],
+                "title": "An outdoor trail walk"
+              },
+              "tool": "present_answer"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -402,6 +402,7 @@ impl TestApp {
             transcriber,
             extractor: Arc::new(TestExtractor),
             places: Arc::new(TestPlaces),
+            ask_model: Arc::new(rekky_backend::ask::OpenAiAsk::from_env()),
         };
         let app = router(state.clone());
         Some(Self {
@@ -3580,4 +3581,508 @@ async fn withdrawal_during_repair_cannot_commit_late_recommendations() {
         .unwrap();
     assert_eq!(saved, 0);
     t.cleanup().await;
+}
+
+struct ScriptedAsk {
+    decisions: std::sync::atomic::AtomicUsize,
+}
+#[async_trait]
+impl rekky_backend::ask::AskModel for ScriptedAsk {
+    fn available(&self) -> bool {
+        true
+    }
+    async fn decide(
+        &self,
+        context: Value,
+        _last: bool,
+    ) -> Result<rekky_backend::ask::Decision, rekky_backend::ask::AgentError> {
+        self.decisions
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let history = context["tool_observations"].as_array().unwrap();
+        let (name, arguments) = if history.is_empty() {
+            (
+                "search_knowledge",
+                json!({"terms":["Lantern restaurant"],"page":0}),
+            )
+        } else {
+            let items = history[0]["result"]["items"].as_array().unwrap();
+            let results:Vec<_>=items.iter().map(|item|json!({"item_id":item["item_id"],"section":"supported","reason":"A saved meal with room to talk.","caveat":"","evidence_ids":[item["evidence"][0]["id"]]})).collect();
+            (
+                "present_answer",
+                json!({"intent":"discovery","title":"Somewhere to talk","location":"","clarification":"","choices":[],"results":results}),
+            )
+        };
+        Ok(rekky_backend::ask::Decision {
+            calls: vec![rekky_backend::ask::ToolCall {
+                name: name.into(),
+                arguments,
+            }],
+            input_tokens: 100,
+            output_tokens: 100,
+        })
+    }
+}
+
+#[tokio::test]
+async fn agentic_ask_is_owner_scoped_idempotent_and_revision_checked() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    let model = Arc::new(ScriptedAsk {
+        decisions: std::sync::atomic::AtomicUsize::new(0),
+    });
+    t.state.ask_model = model.clone();
+    t.app = router(t.state.clone());
+    let (account, token) = t.sign_in("google", "valid-a").await;
+    let owner = account;
+    t.call(
+        Method::POST,
+        "/v1/me/visibility-disclosure",
+        Some(&token),
+        Some(json!({"accept":true})),
+        &[],
+    )
+    .await;
+    sqlx::query("INSERT INTO transcript_extraction_permissions(account_id,enabled,generation,disclosure_version) VALUES($1,true,1,1)").bind(owner).execute(&t.pool).await.unwrap();
+    let item = categorized_item(&t, &token, "Lantern", "place", "place.restaurant", &[]).await;
+    let run = Uuid::new_v4();
+    let request = json!({"request_id":run,"question":"somewhere to talk"});
+    let (code, response) = t
+        .call(
+            Method::POST,
+            "/v1/ask/agent",
+            Some(&token),
+            Some(request.clone()),
+            &[],
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{response}");
+    assert_eq!(response["results"][0]["item"]["id"], item["id"]);
+    assert_eq!(response["mode"], "agent");
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../contracts/rekky/v1/fixtures/ask_answer.json"
+    ))
+    .unwrap();
+    for key in fixture.as_object().unwrap().keys() {
+        assert!(
+            response.get(key).is_some(),
+            "Missing shared answer field: {key}"
+        );
+    }
+    for key in fixture["results"][0].as_object().unwrap().keys() {
+        assert!(
+            response["results"][0].get(key).is_some(),
+            "Missing shared result field: {key}"
+        );
+    }
+
+    assert_eq!(model.decisions.load(std::sync::atomic::Ordering::SeqCst), 2);
+    let (_, again) = t
+        .call(
+            Method::POST,
+            "/v1/ask/agent",
+            Some(&token),
+            Some(request),
+            &[],
+        )
+        .await;
+    assert_eq!(again["results"], response["results"]);
+    assert_eq!(model.decisions.load(std::sync::atomic::Ordering::SeqCst), 2);
+    let (code, _) = t
+        .call(
+            Method::POST,
+            "/v1/ask/agent",
+            Some(&token),
+            Some(json!({"request_id":run,"question":"different"})),
+            &[],
+        )
+        .await;
+    assert_eq!(code, StatusCode::CONFLICT);
+    let (_, other) = t.sign_in("google", "valid-b").await;
+    t.call(
+        Method::POST,
+        "/v1/me/visibility-disclosure",
+        Some(&other),
+        Some(json!({"accept":true})),
+        &[],
+    )
+    .await;
+    let (code, _) = t
+        .call(
+            Method::GET,
+            &format!("/v1/ask/answers/{run}"),
+            Some(&other),
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(code, StatusCode::NOT_FOUND);
+    let (code, _) = t
+        .call(
+            Method::GET,
+            &format!("/v1/items/{}", item["id"].as_str().unwrap()),
+            Some(&other),
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(code, StatusCode::NOT_FOUND);
+    sqlx::query("UPDATE knowledge_items SET revision=revision+1 WHERE id=$1")
+        .bind(Uuid::parse_str(item["id"].as_str().unwrap()).unwrap())
+        .execute(&t.pool)
+        .await
+        .unwrap();
+    let (_, changed) = t
+        .call(
+            Method::GET,
+            &format!("/v1/ask/answers/{run}"),
+            Some(&token),
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(changed["results"], json!([]));
+    assert_eq!(changed["changed"], true);
+    t.call(
+        Method::POST,
+        "/v1/me/processing-withdrawal",
+        Some(&token),
+        Some(json!({})),
+        &[],
+    )
+    .await;
+    let (code, _) = t
+        .call(
+            Method::GET,
+            &format!("/v1/ask/answers/{run}"),
+            Some(&token),
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(code, StatusCode::FORBIDDEN);
+    t.cleanup().await;
+}
+
+struct BlockingAsk {
+    started: Arc<Notify>,
+    release: Arc<Notify>,
+    calls: std::sync::atomic::AtomicUsize,
+}
+#[async_trait]
+impl rekky_backend::ask::AskModel for BlockingAsk {
+    fn available(&self) -> bool {
+        true
+    }
+    async fn decide(
+        &self,
+        _: Value,
+        _: bool,
+    ) -> Result<rekky_backend::ask::Decision, rekky_backend::ask::AgentError> {
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.started.notify_one();
+        self.release.notified().await;
+        Ok(rekky_backend::ask::Decision {
+            calls: vec![rekky_backend::ask::ToolCall {
+                name: "search_knowledge".into(),
+                arguments: json!({"terms":[],"page":0}),
+            }],
+            input_tokens: 10,
+            output_tokens: 10,
+        })
+    }
+}
+#[tokio::test]
+async fn agentic_ask_cancellation_fences_late_work_and_pre_admission() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    let model = Arc::new(BlockingAsk {
+        started: Arc::new(Notify::new()),
+        release: Arc::new(Notify::new()),
+        calls: 0.into(),
+    });
+    t.state.ask_model = model.clone();
+    t.app = router(t.state.clone());
+    let (owner, token) = t.sign_in("google", "valid-a").await;
+    t.call(
+        Method::POST,
+        "/v1/me/visibility-disclosure",
+        Some(&token),
+        Some(json!({"accept":true})),
+        &[],
+    )
+    .await;
+    sqlx::query("INSERT INTO transcript_extraction_permissions(account_id,enabled,generation,disclosure_version) VALUES($1,true,1,1)").bind(owner).execute(&t.pool).await.unwrap();
+    let run = Uuid::new_v4();
+    let app = t.app.clone();
+    let auth = token.clone();
+    let task = tokio::spawn(async move {
+        app.oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/v1/ask/agent")
+                .header("authorization", format!("Bearer {auth}"))
+                .body(Body::from(
+                    json!({"request_id":run,"question":"a quiet meal"}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(5), model.started.notified())
+        .await
+        .unwrap();
+    let (status, _) = t
+        .call(
+            Method::DELETE,
+            &format!("/v1/ask/answers/{run}"),
+            Some(&token),
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    model.release.notify_one();
+    assert!(!task.await.unwrap().status().is_success());
+    assert_eq!(model.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    let receipt: (String, bool) =
+        sqlx::query_as("SELECT status,result IS NULL FROM ask_runs WHERE id=$1")
+            .bind(run)
+            .fetch_one(&t.pool)
+            .await
+            .unwrap();
+    assert_eq!(receipt, ("cancelled".into(), true));
+    let early = Uuid::new_v4();
+    t.call(
+        Method::DELETE,
+        &format!("/v1/ask/answers/{early}"),
+        Some(&token),
+        None,
+        &[],
+    )
+    .await;
+    let (status, _) = t
+        .call(
+            Method::POST,
+            "/v1/ask/agent",
+            Some(&token),
+            Some(json!({"request_id":early,"question":"a quiet meal"})),
+            &[],
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(model.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    t.cleanup().await;
+}
+
+struct RecordingAsk {
+    model: rekky_backend::ask::OpenAiAsk,
+    trace: std::sync::Mutex<Vec<Value>>,
+}
+#[async_trait]
+impl rekky_backend::ask::AskModel for RecordingAsk {
+    fn available(&self) -> bool {
+        self.model.available()
+    }
+    async fn decide(
+        &self,
+        context: Value,
+        final_turn: bool,
+    ) -> Result<rekky_backend::ask::Decision, rekky_backend::ask::AgentError> {
+        let result = self.model.decide(context, final_turn).await;
+        let trace = match &result {
+            Ok(d) => {
+                json!({"calls":d.calls.iter().map(|c| json!({"tool":c.name,"arguments":c.arguments})).collect::<Vec<_>>()})
+            }
+            Err(_) => json!({"error":"provider adapter failed"}),
+        };
+        self.trace.lock().unwrap().push(trace);
+        result
+    }
+}
+
+#[tokio::test]
+#[ignore = "Explicit live-model probe with invented notes only; requires OPENAI_ASK_ENABLED and OPENAI_API_KEY"]
+async fn live_ask_development_probe() {
+    let mut t = TestApp::new()
+        .await
+        .expect("isolated DATABASE_URL required");
+    assert!(
+        t.state.ask_model.available(),
+        "Live Ask adapter must be explicitly enabled"
+    );
+    let recording = Arc::new(RecordingAsk {
+        model: rekky_backend::ask::OpenAiAsk::from_env(),
+        trace: std::sync::Mutex::new(vec![]),
+    });
+    t.state.ask_model = recording.clone();
+    t.app = router(t.state.clone());
+    let (owner, token) = t.sign_in("google", "valid-a").await;
+    t.call(
+        Method::POST,
+        "/v1/me/visibility-disclosure",
+        Some(&token),
+        Some(json!({"accept":true})),
+        &[],
+    )
+    .await;
+    sqlx::query("INSERT INTO transcript_extraction_permissions(account_id,enabled,generation,disclosure_version) VALUES($1,true,1,1)").bind(owner).execute(&t.pool).await.unwrap();
+    let notes = [
+        (
+            "Lantern Garden",
+            "place",
+            "place.restaurant",
+            "We had Italian pasta in Delhi. It was quiet enough to talk without raising our voices. The tables seat two people.",
+            "Delhi",
+        ),
+        (
+            "Lantern Live",
+            "place",
+            "place.restaurant",
+            "The food was excellent in Delhi but the music was so loud we could not hear one another.",
+            "Delhi",
+        ),
+        (
+            "Pune Courtyard",
+            "place",
+            "place.restaurant",
+            "A peaceful Italian dinner in Pune. Very easy to have a conversation.",
+            "Pune",
+        ),
+        (
+            "Mohan Hill Taxi",
+            "person_service",
+            "service.taxi",
+            "Mohan drove us from Mussoorie to Landour on our last trip. He was punctual and drove carefully. I do not know his current service area.",
+            "",
+        ),
+        (
+            "Meera Home Catering",
+            "person_service",
+            "",
+            "Meera catered a home lunch for 25 guests. That was good. I have no information about larger events.",
+            "",
+        ),
+        (
+            "River Loop",
+            "activity",
+            "",
+            "I enjoyed walking this outdoor trail on a weekend. There were shady stretches and a steep climb at the end.",
+            "",
+        ),
+        (
+            "Boulder Room",
+            "place",
+            "",
+            "An indoor climbing gym. The staff were helpful and beginners could try several levels.",
+            "",
+        ),
+        (
+            "Ravi Plumbing",
+            "person_service",
+            "",
+            "Ravi repaired the kitchen tap. His work was good. He does not repair musical instruments.",
+            "",
+        ),
+    ];
+    for city in ["Delhi", "Pune"] {
+        sqlx::query("INSERT INTO geographic_areas(id,name,label,country,feature,population,aliases,ancestors,hierarchy) VALUES($1,$2,$2,'IN','PPL',100,ARRAY[lower($2)],ARRAY[]::text[],'[]') ON CONFLICT(id) DO NOTHING")
+            .bind(format!("ask-probe-{}",city.to_lowercase())).bind(city).execute(&t.pool).await.unwrap();
+    }
+    let mut ids = std::collections::HashMap::new();
+    for (name, kind, category, body, city) in notes {
+        let (_, saved) = t
+            .call(
+                Method::POST,
+                "/v1/items",
+                Some(&token),
+                Some(json!({"subject":name,"body":body,"visibility":"private"})),
+                &[("idempotency-key", &Uuid::new_v4().to_string())],
+            )
+            .await;
+        let id = Uuid::parse_str(saved["item"]["id"].as_str().unwrap()).unwrap();
+        ids.insert(name.to_string(), id);
+        let mut rec = json!({"version":2,"entity_kind":kind,"shelf":"Test","experience":"firsthand","summary":body,"observations":[],"locations":if city.is_empty(){json!([])}else{json!([{"role":"venue","text":city,"name":city,"geography":{"status":"resolved","area_id":format!("ask-probe-{}",city.to_lowercase()),"filter_ids":[format!("ask-probe-{}",city.to_lowercase())]}}])},"use_cases":[],"classification":{"types":if category.is_empty(){json!([])}else{json!([{"id":category,"label":"Restaurant"}])}}});
+        let mut connection = t.pool.acquire().await.unwrap();
+        rekky_backend::geography::enrich(&mut connection, rec["locations"].as_array_mut().unwrap())
+            .await
+            .unwrap();
+        drop(connection);
+        sqlx::query("UPDATE knowledge_items SET recommendation=$1 WHERE id=$2")
+            .bind(rec)
+            .bind(id)
+            .execute(&t.pool)
+            .await
+            .unwrap();
+    }
+    let queries = [
+        (
+            "Somewhere I can hear a friend over dinner",
+            Some("Lantern Garden"),
+            Some("Lantern Live"),
+        ),
+        (
+            "वो ड्राइवर जिसने मसूरी से लंढौर पहुँचाया था",
+            Some("Mohan Hill Taxi"),
+            None,
+        ),
+        (
+            "Koi quiet dinner ki jagah, Delhi mein",
+            Some("Lantern Garden"),
+            Some("Pune Courtyard"),
+        ),
+        ("Who repairs violins?", None, Some("Ravi Plumbing")),
+        ("A caterer who can handle 60 guests", None, None),
+        (
+            "Something to do this weekend outdoors",
+            Some("River Loop"),
+            Some("Boulder Room"),
+        ),
+    ];
+    let mut report = vec![];
+    for (question, expected, excluded) in queries {
+        let start = std::time::Instant::now();
+        let (status, response) = t
+            .call(
+                Method::POST,
+                "/v1/ask/agent",
+                Some(&token),
+                Some(json!({"request_id":Uuid::new_v4(),"question":question})),
+                &[],
+            )
+            .await;
+        let found = response["results"].as_array().cloned().unwrap_or_default();
+        let hit = expected.is_none_or(|name| {
+            found
+                .iter()
+                .any(|r| r["item"]["id"] == ids[name].to_string())
+        });
+        let forbidden = (question.contains("60 guests")
+            && found.iter().any(|r| r["section"] == "supported"))
+            || excluded.is_some_and(|name| {
+                found
+                    .iter()
+                    .any(|r| r["item"]["id"] == ids[name].to_string())
+            });
+        let elapsed = start.elapsed().as_millis();
+        println!(
+            "probe status={status} expected_hit={hit} forbidden_supported={forbidden} elapsed_ms={elapsed}"
+        );
+        report.push(json!({"question":question,"status":status.as_u16(),"expected":expected,"excluded_supported":excluded,"hit":hit,"forbidden_supported":forbidden,"elapsed_ms":elapsed,"answer":response,"trace":std::mem::take(&mut *recording.trace.lock().unwrap())}));
+    }
+    let path = std::env::var("ASK_PROBE_OUTPUT").expect("ASK_PROBE_OUTPUT required");
+    std::fs::write(path, serde_json::to_string_pretty(&report).unwrap()).unwrap();
+    t.cleanup().await;
+    sqlx::query("DELETE FROM geographic_areas WHERE id IN ('ask-probe-delhi','ask-probe-pune')")
+        .execute(&t.pool)
+        .await
+        .unwrap();
+    assert!(
+        report
+            .iter()
+            .all(|v| v["status"] == 200 && v["hit"] == true && v["forbidden_supported"] == false),
+        "Inspect the development report before enabling Ask"
+    );
 }

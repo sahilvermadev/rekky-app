@@ -1,6 +1,6 @@
 # Ask: from a loose intention to a useful decision
 
-Status: approved product direction, proposed delivery specification. Written 2026-09-27. Implementation has not started. This document expands the Ask sections of [the canonical product plan](REKKY_FLUTTER_PRODUCT_PLAN.md); the canonical plan owns access, consent, retention and release gates. ASK-0 through ASK-7 are implementation checkpoints within that plan, not a replacement phase system.
+Status: approved product direction; first integrated ASK-0/1 pilot implemented 2026-09-27. Full slice/release gates remain open. See [implementation, evidence and limitations](ASK_AGENT_SLICE.md). This document expands the Ask sections of [the canonical product plan](REKKY_FLUTTER_PRODUCT_PLAN.md); the canonical plan owns access, consent, retention and release gates. ASK-0 through ASK-7 are implementation checkpoints within that plan, not a replacement phase system.
 
 ## 1. Outcome and principles
 
@@ -21,7 +21,7 @@ People can express an occasion, partial memory, feeling, constraint or desired o
 
 Implemented: authenticated Rust/Postgres API, Flutter Ask and Library, one-tap voice recommendation capture, structured recommendations, editable content, category concepts/aliases, typed geographic projections, ratings with provenance, contacts, Maps actions and a curated Library.
 
-Current Ask uses owner-scoped Postgres lexical search, exact-title priority and taxonomy matching. It returns item snippets and `answer: null`. It has no structured conversation, semantic retrieval, evidence-specific explanation, voice question input, comparison view or persistent personal preferences. The Flutter client currently fetches every result page before returning the accumulated list, and opens results through the loaded Library list. Both behaviors need replacement for responsive, independently usable Ask.
+The pre-agent baseline uses owner-scoped Postgres lexical search, exact-title priority and taxonomy matching. It returns item snippets and `answer: null`. It has no structured conversation, semantic retrieval, evidence-specific explanation, voice question input, comparison view or persistent personal preferences. The baseline Flutter client fetched every result page before returning the accumulated list, and opens results through the loaded Library list. The new pilot replaces both behaviors. Voice, semantic indexing, full conversation, comparison and durable preferences remain open.
 
 The historical text seed is useful regression material, not a current benchmark or held-out evaluation. Its documented failures include Hindi retrieval, city constraints and same-name candidates. No complete delivery phase is declared passed.
 
