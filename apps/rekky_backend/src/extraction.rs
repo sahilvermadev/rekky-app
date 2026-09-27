@@ -131,6 +131,13 @@ pub fn source_units(source: &str) -> Vec<SourceUnit> {
 pub trait TranscriptExtractor: Send + Sync {
     fn available(&self) -> bool;
     async fn extract(&self, transcript: &str) -> Result<Proposal, ExtractionError>;
+    async fn extract_with_catalog(
+        &self,
+        transcript: &str,
+        _catalog: &crate::taxonomy::Vocabulary,
+    ) -> Result<Proposal, ExtractionError> {
+        self.extract(transcript).await
+    }
 }
 pub struct OpenAiExtractor {
     key: Option<String>,
@@ -166,10 +173,13 @@ fn choice(values: &[&str]) -> Value {
     json!({"type":"string","enum":values})
 }
 pub fn schema() -> Value {
+    schema_with_catalog(crate::taxonomy::vocabulary())
+}
+pub fn schema_with_catalog(catalog: &crate::taxonomy::Vocabulary) -> Value {
     let claim = object(json!({"text":text_schema(),"evidence":evidence_schema()}));
     let assignment = |is_type| {
         object(
-            json!({"concept_id":{"type":"string","enum":crate::taxonomy::vocabulary().concepts.iter().filter(|c| (c.dimension == "type") == is_type).map(|c|&c.id).collect::<Vec<_>>()},"source_phrase":{"type":"string","enum":crate::taxonomy::vocabulary().concepts.iter().filter(|c| (c.dimension == "type") == is_type).flat_map(|c|c.aliases.iter()).collect::<Vec<_>>()},"evidence":evidence_schema()}),
+            json!({"concept_id":{"type":"string","enum":catalog.concepts.iter().filter(|c| (c.dimension == "type") == is_type).map(|c|&c.id).collect::<Vec<_>>()},"source_phrase":{"type":"string","enum":catalog.concepts.iter().filter(|c| (c.dimension == "type") == is_type).flat_map(|c|c.aliases.iter()).collect::<Vec<_>>()},"evidence":evidence_schema()}),
         )
     };
     object(json!({
@@ -198,6 +208,14 @@ impl TranscriptExtractor for OpenAiExtractor {
         self.enabled && self.key.is_some()
     }
     async fn extract(&self, transcript: &str) -> Result<Proposal, ExtractionError> {
+        self.extract_with_catalog(transcript, crate::taxonomy::vocabulary())
+            .await
+    }
+    async fn extract_with_catalog(
+        &self,
+        transcript: &str,
+        catalog: &crate::taxonomy::Vocabulary,
+    ) -> Result<Proposal, ExtractionError> {
         if !self.available() {
             return Err(ExtractionError::Unavailable);
         }
@@ -206,10 +224,10 @@ impl TranscriptExtractor for OpenAiExtractor {
             .json(&json!({
                 "model":EXTRACTION_MODEL,"store":false,"max_output_tokens":5500,
                 "input":[
-                    {"role":"system","content":format!("{}\nShared category vocabulary (use canonical IDs, not invented labels):\n{}",include_str!("../prompts/understanding_v2.txt"),serde_json::to_string(crate::taxonomy::vocabulary()).expect("vocabulary"))},
+                    {"role":"system","content":format!("{}\nShared category vocabulary (use canonical IDs, not invented labels):\n{}",include_str!("../prompts/understanding_v2.txt"),serde_json::to_string(catalog).expect("vocabulary"))},
                     {"role":"user","content":json!({"transcript_units":source_units(transcript)}).to_string()}
                 ],
-                "text":{"format":{"type":"json_schema","name":"rekky_understanding_v2","strict":true,"schema":schema()}}
+                "text":{"format":{"type":"json_schema","name":"rekky_understanding_v2","strict":true,"schema":schema_with_catalog(catalog)}}
             })).send().await.map_err(|_| ExtractionError::Failed)?;
         if !response.status().is_success() {
             return Err(ExtractionError::Failed);
@@ -344,6 +362,13 @@ fn identity_only(text: &str, subject: &str) -> bool {
 pub fn validate(
     proposal: Proposal,
     source: &str,
+) -> Result<(Vec<ValidatedItem>, bool), ExtractionError> {
+    validate_with_catalog(proposal, source, crate::taxonomy::vocabulary())
+}
+pub fn validate_with_catalog(
+    proposal: Proposal,
+    source: &str,
+    catalog: &crate::taxonomy::Vocabulary,
 ) -> Result<(Vec<ValidatedItem>, bool), ExtractionError> {
     let units = source_units(source);
     if proposal.items.is_empty() || proposal.items.len() > 5 || units.is_empty() {
@@ -544,8 +569,12 @@ pub fn validate(
             .filter(|u| ids.contains(&u.id))
             .cloned()
             .collect();
-        let (classification, classification_support) =
-            crate::taxonomy::validate(&classification_proposal, &item.entity_kind, &item_units);
+        let (classification, classification_support) = crate::taxonomy::validate_in(
+            catalog,
+            &classification_proposal,
+            &item.entity_kind,
+            &item_units,
+        );
         let rating = crate::ratings::validate(&item.rating, &item.experience, &item_units);
         let evidence = json!({"pipeline_version":UNDERSTANDING_VERSION,"editorial_version":EDITORIAL_VERSION,"proposal":item,
             "units":item_units,"classification":classification_support});

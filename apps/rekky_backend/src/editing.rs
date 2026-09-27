@@ -150,7 +150,14 @@ impl EditInput {
         }
     }
     pub fn build(&self) -> Result<(Value, String), &'static str> {
-        let mut classification = crate::taxonomy::present(
+        self.build_with_catalog(crate::taxonomy::vocabulary())
+    }
+    pub fn build_with_catalog(
+        &self,
+        catalog: &crate::taxonomy::Vocabulary,
+    ) -> Result<(Value, String), &'static str> {
+        let mut classification = crate::taxonomy::present_in(
+            catalog,
             &self.entity_kind,
             &self.types,
             &self.facets,

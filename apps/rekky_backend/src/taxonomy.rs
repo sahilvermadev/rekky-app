@@ -5,12 +5,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{collections::BTreeSet, sync::OnceLock};
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Vocabulary {
     pub version: i32,
     pub concepts: Vec<Concept>,
 }
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Concept {
     pub id: String,
     pub label: String,
@@ -19,6 +19,10 @@ pub struct Concept {
     pub entity_kinds: Vec<String>,
     pub parent_id: Option<String>,
     pub aliases: Vec<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub definition: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub evidence_focus: Vec<String>,
 }
 pub fn vocabulary() -> &'static Vocabulary {
     static V: OnceLock<Vocabulary> = OnceLock::new();
@@ -30,7 +34,10 @@ pub fn vocabulary() -> &'static Vocabulary {
     })
 }
 pub fn concept(id: &str) -> Option<&'static Concept> {
-    vocabulary().concepts.iter().find(|c| c.id == id)
+    concept_in(vocabulary(), id)
+}
+pub fn concept_in<'a>(catalog: &'a Vocabulary, id: &str) -> Option<&'a Concept> {
+    catalog.concepts.iter().find(|c| c.id == id)
 }
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -83,8 +90,14 @@ fn supported(text: &str, ids: &[usize], units: &[SourceUnit]) -> bool {
 fn compatible(c: &Concept, kind: &str) -> bool {
     c.entity_kinds.iter().any(|k| k == kind)
 }
-fn accepted(a: &Assignment, kind: &str, dimension: &str, units: &[SourceUnit]) -> bool {
-    concept(&a.concept_id).is_some_and(|c| {
+fn accepted(
+    catalog: &Vocabulary,
+    a: &Assignment,
+    kind: &str,
+    dimension: &str,
+    units: &[SourceUnit],
+) -> bool {
+    concept_in(catalog, &a.concept_id).is_some_and(|c| {
         compatible(c, kind) && (if dimension == "type" { c.dimension == "type" } else { c.dimension != "type" })
         && supported(&a.source_phrase, &a.evidence, units)
         && c.aliases.iter().any(|alias| words(alias) == words(&a.source_phrase))
@@ -107,11 +120,19 @@ pub fn validate(
     kind: &str,
     units: &[SourceUnit],
 ) -> (Value, Value) {
+    validate_in(vocabulary(), proposal, kind, units)
+}
+pub fn validate_in(
+    catalog: &Vocabulary,
+    proposal: &ProposedClassification,
+    kind: &str,
+    units: &[SourceUnit],
+) -> (Value, Value) {
     let mut types = Vec::new();
     let mut facets = Vec::new();
     let mut support = Vec::new();
     for a in proposal.types.iter().chain(&proposal.facets).take(16) {
-        let Some(c) = concept(&a.concept_id) else {
+        let Some(c) = concept_in(catalog, &a.concept_id) else {
             continue;
         };
         // The registry owns dimensions too. A supported cuisine accidentally
@@ -121,7 +142,7 @@ pub fn validate(
         } else {
             ("facet", &mut facets)
         };
-        if accepted(a, kind, dimension, units) && !ids.contains(&a.concept_id) {
+        if accepted(catalog, a, kind, dimension, units) && !ids.contains(&a.concept_id) {
             ids.push(a.concept_id.clone());
             support.push(json!(a));
         }
@@ -130,7 +151,7 @@ pub fn validate(
     let all = types.clone();
     types.retain(|id| {
         !all.iter()
-            .any(|other| other != id && ancestors(other).contains(id))
+            .any(|other| other != id && ancestors_in(catalog, other).contains(id))
     });
     types.truncate(3);
     facets.truncate(4);
@@ -143,13 +164,13 @@ pub fn validate(
             !types
                 .iter()
                 .chain(&facets)
-                .filter_map(|id| concept(id))
+                .filter_map(|id| concept_in(catalog, id))
                 .any(|c| c.aliases.iter().any(|alias| words(alias) == words(&d.text)))
         })
         .map(|d| d.text.trim().to_owned())
         .collect();
-    let mut presentation =
-        present(kind, &types, &facets, &descriptors, "extracted").expect("validated concepts");
+    let mut presentation = present_in(catalog, kind, &types, &facets, &descriptors, "extracted")
+        .expect("validated concepts");
     // An unfamiliar explicit type can label the item without inventing a
     // canonical ID or turning a capability descriptor into its category.
     let descriptive_type = proposal.type_description.as_ref().filter(|d| {
@@ -184,25 +205,41 @@ pub fn validate(
     }
     (
         presentation,
-        json!({"vocabulary_version":vocabulary().version,
+        json!({"vocabulary_version":catalog.version,
         "assignments":support,"type_description":descriptive_type,"descriptors":proposal.descriptors.iter()
             .filter(|d| descriptors.contains(&d.text.trim().to_owned())).collect::<Vec<_>>()}),
     )
 }
 
 pub fn ancestors(id: &str) -> BTreeSet<String> {
+    ancestors_in(vocabulary(), id)
+}
+pub fn ancestors_in(catalog: &Vocabulary, id: &str) -> BTreeSet<String> {
     let mut result = BTreeSet::new();
-    let mut current = concept(id);
+    let mut current = concept_in(catalog, id);
     while let Some(c) = current {
         if !result.insert(c.id.clone()) {
             break;
         }
-        current = c.parent_id.as_deref().and_then(concept);
+        current = c
+            .parent_id
+            .as_deref()
+            .and_then(|id| concept_in(catalog, id));
     }
     result
 }
 
 pub fn present(
+    kind: &str,
+    types: &[String],
+    facets: &[String],
+    descriptors: &[String],
+    origin: &str,
+) -> Option<Value> {
+    present_in(vocabulary(), kind, types, facets, descriptors, origin)
+}
+pub fn present_in(
+    catalog: &Vocabulary,
     kind: &str,
     types: &[String],
     facets: &[String],
@@ -215,7 +252,7 @@ pub fn present(
     let mut seen = BTreeSet::new();
     for (ids, dimension) in [(types, "type"), (facets, "facet")] {
         for id in ids {
-            let c = concept(id)?;
+            let c = concept_in(catalog, id)?;
             if !compatible(c, kind)
                 || ((dimension == "type") != (c.dimension == "type"))
                 || !seen.insert(id)
@@ -229,56 +266,57 @@ pub fn present(
         .filter(|id| {
             !types
                 .iter()
-                .any(|other| other != *id && ancestors(other).contains(*id))
+                .any(|other| other != *id && ancestors_in(catalog, other).contains(*id))
         })
         .cloned()
         .collect();
     let refs = |ids: &[String]| {
         ids.iter()
             .map(|id| {
-                let c = concept(id).unwrap();
+                let c = concept_in(catalog, id).unwrap();
                 json!({"id":c.id,"label":c.label,"dimension":c.dimension,"dimension_label":c.dimension_label})
             })
             .collect::<Vec<_>>()
     };
     let mut search_ids = BTreeSet::new();
     for id in types.iter().chain(facets) {
-        search_ids.extend(ancestors(id));
+        search_ids.extend(ancestors_in(catalog, id));
     }
     let mut terms = BTreeSet::new();
     for id in &search_ids {
-        let c = concept(id).unwrap();
+        let c = concept_in(catalog, id).unwrap();
         terms.insert(c.label.clone());
         terms.extend(c.aliases.clone());
     }
     terms.extend(descriptors.iter().cloned());
     let mut display = types
         .first()
-        .and_then(|id| concept(id))
+        .and_then(|id| concept_in(catalog, id))
         .map(|c| c.label.clone());
     let cuisines: Vec<_> = facets
         .iter()
-        .filter_map(|id| concept(id))
+        .filter_map(|id| concept_in(catalog, id))
         .filter(|c| c.dimension == "cuisine")
         .collect();
     if types.first().map(String::as_str) == Some("place.restaurant") && cuisines.len() == 1 {
         display = Some(format!("{} restaurant", cuisines[0].label));
     }
-    Some(
-        json!({"vocabulary_version":vocabulary().version,"origin":origin,
+    Some(json!({"vocabulary_version":catalog.version,"origin":origin,
         "types":refs(&types),"facets":refs(facets),"descriptors":descriptors,
         "display_label":display,"search_ids":search_ids,
-        "search_terms":terms.into_iter().collect::<Vec<_>>().join(" ")}),
-    )
+        "search_terms":terms.into_iter().collect::<Vec<_>>().join(" ")}))
 }
 
 /// Longest aliases first: "general physician" is one specific concept, not
 /// unrelated matches for "general" and "physician". Query qualifiers remain.
 pub fn query_concepts(question: &str) -> (Vec<String>, Vec<String>) {
+    query_concepts_in(vocabulary(), question)
+}
+pub fn query_concepts_in(catalog: &Vocabulary, question: &str) -> (Vec<String>, Vec<String>) {
     let tokens = words(question);
     let mut used = vec![false; tokens.len()];
     let mut ids = BTreeSet::new();
-    let mut aliases: Vec<_> = vocabulary()
+    let mut aliases: Vec<_> = catalog
         .concepts
         .iter()
         .flat_map(|c| c.aliases.iter().map(move |a| (words(a), c.id.clone())))
@@ -304,4 +342,25 @@ pub fn query_concepts(question: &str) -> (Vec<String>, Vec<String>) {
             .map(|(_, v)| v)
             .collect(),
     )
+}
+
+/// Bound per-capture context: seeds plus learned concepts whose accepted aliases
+/// occur in the source, including their parents. Never send the full growing registry.
+pub fn for_source(catalog: &Vocabulary, source: &str) -> Vocabulary {
+    let mut ids: BTreeSet<String> = vocabulary().concepts.iter().map(|c| c.id.clone()).collect();
+    for c in &catalog.concepts {
+        if c.aliases.iter().any(|a| contains_phrase(source, a)) {
+            ids.extend(ancestors_in(catalog, &c.id));
+        }
+    }
+    Vocabulary {
+        version: catalog.version,
+        concepts: catalog
+            .concepts
+            .iter()
+            .filter(|c| ids.contains(&c.id))
+            .take(100)
+            .cloned()
+            .collect(),
+    }
 }

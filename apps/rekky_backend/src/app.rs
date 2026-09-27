@@ -3,7 +3,7 @@ use crate::auth::{
 };
 use crate::extraction::{
     EXTRACTION_DISCLOSURE_VERSION, EXTRACTION_MODEL, TranscriptExtractor, UNDERSTANDING_VERSION,
-    preserve_unresolved, validate,
+    preserve_unresolved, validate_with_catalog,
 };
 use crate::voice::{VOICE_DISCLOSURE_VERSION, VOICE_MODEL, VOICE_PROVIDER, VoiceTranscriber};
 use axum::{
@@ -658,7 +658,13 @@ async fn process_voice_capture(
     }
     tx.commit().await?;
 
-    let proposal = match state.extractor.extract(&transcript).await {
+    let catalog = crate::category_learning::catalog(&state.pool).await?;
+    let context = crate::taxonomy::for_source(&catalog, &transcript);
+    let proposal = match state
+        .extractor
+        .extract_with_catalog(&transcript, &context)
+        .await
+    {
         Ok(value) => value,
         Err(_) => {
             fail_extraction_attempt(&state.pool, owner_id, capture_id, attempt_id).await;
@@ -670,9 +676,11 @@ async fn process_voice_capture(
         }
     };
     let readable_source = crate::readable_source::from_proposal(&proposal, &transcript);
-    let (items, partial) = match validate(proposal.clone(), &transcript).or_else(|_| {
-        preserve_unresolved(proposal, &transcript).ok_or(crate::extraction::ExtractionError::Failed)
-    }) {
+    let (items, partial) = match validate_with_catalog(proposal.clone(), &transcript, &catalog)
+        .or_else(|_| {
+            preserve_unresolved(proposal, &transcript)
+                .ok_or(crate::extraction::ExtractionError::Failed)
+        }) {
         Ok(value) => value,
         Err(_) => {
             fail_extraction_attempt(&state.pool, owner_id, capture_id, attempt_id).await;
@@ -718,6 +726,7 @@ async fn process_voice_capture(
             .execute(&mut *tx).await?;
         sqlx::query("INSERT INTO item_source_support(item_id,source_id,source_revision,pipeline_version,support) VALUES($1,$2,$3,$4,$5)")
             .bind(item_id).bind(source_id).bind(source_revision).bind(UNDERSTANDING_VERSION).bind(item.evidence).execute(&mut *tx).await?;
+        crate::category_learning::enqueue(&mut tx, item_id).await?;
     }
     sqlx::query("UPDATE captures SET status=$2,revision=revision+1 WHERE id=$1 AND owner_id=$3")
         .bind(capture_id)
@@ -859,12 +868,17 @@ async fn refine_item(
             .bind(id).bind(owner_id).bind(attempt_id).bind(generation).bind(source_revision).bind(expected_revision).execute(&mut *tx).await?;
     }
     tx.commit().await?;
-    let proposal = state.extractor.extract(&transcript).await;
+    let catalog = crate::category_learning::catalog(&state.pool).await?;
+    let context = crate::taxonomy::for_source(&catalog, &transcript);
+    let proposal = state
+        .extractor
+        .extract_with_catalog(&transcript, &context)
+        .await;
     let readable_source = proposal
         .as_ref()
         .ok()
         .and_then(|p| crate::readable_source::from_proposal(p, &transcript));
-    let result = proposal.and_then(|p| validate(p, &transcript));
+    let result = proposal.and_then(|p| validate_with_catalog(p, &transcript, &catalog));
     let (mut items, partial) = match result {
         Ok((items, partial))
             if items.len() == 1
@@ -928,6 +942,7 @@ async fn refine_item(
         .bind(id).bind(item.subject).bind(item.body).bind(item.recommendation).execute(&mut *tx).await?;
     sqlx::query("INSERT INTO item_source_support(item_id,source_id,source_revision,pipeline_version,support) VALUES($1,$2,$3,$4,$5) ON CONFLICT(item_id) DO UPDATE SET source_id=EXCLUDED.source_id,source_revision=EXCLUDED.source_revision,pipeline_version=EXCLUDED.pipeline_version,support=EXCLUDED.support")
         .bind(id).bind(source_id).bind(source_revision).bind(UNDERSTANDING_VERSION).bind(item.evidence).execute(&mut *tx).await?;
+    crate::category_learning::enqueue(&mut tx, id).await?;
     sqlx::query("UPDATE captures SET status=$2,revision=revision+1 WHERE id=$1")
         .bind(capture_id)
         .bind(if partial { "partial" } else { "completed" })
@@ -1771,7 +1786,9 @@ struct VisibilityInput {
 }
 async fn taxonomy_catalog(State(state): State<AppState>, headers: HeaderMap) -> ApiResult {
     owner(&state, &headers, true).await?;
-    Ok(ok(json!(crate::taxonomy::vocabulary())))
+    Ok(ok(json!(
+        crate::category_learning::catalog(&state.pool).await?
+    )))
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1789,6 +1806,7 @@ async fn correct_classification(
     let id = uuid(&id)?;
     let expected = revision(&headers)?;
     let input: ClassificationInput = parse(&body)?;
+    let mut catalog = crate::category_learning::catalog(&state.pool).await?;
     let mut tx = state.pool.begin().await?;
     let row = sqlx::query("SELECT recommendation,revision FROM knowledge_items WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL FOR UPDATE")
         .bind(id).bind(owner_id).fetch_optional(&mut *tx).await?
@@ -1799,6 +1817,7 @@ async fn correct_classification(
     let mut recommendation: Value = row
         .get::<Option<Value>, _>("recommendation")
         .ok_or_else(|| ApiError::bad("This note does not have a structured category yet"))?;
+    crate::category_learning::include_stored_types(&mut tx, &mut catalog, &recommendation).await?;
     let kind = recommendation["entity_kind"].as_str().unwrap_or("");
     let descriptors: Vec<String> = recommendation["classification"]["descriptors"]
         .as_array()
@@ -1809,9 +1828,15 @@ async fn correct_classification(
                 .collect()
         })
         .unwrap_or_default();
-    let classification =
-        crate::taxonomy::present(kind, &input.types, &input.facets, &descriptors, "user")
-            .ok_or_else(|| ApiError::bad("Unknown, duplicate or incompatible category"))?;
+    let classification = crate::taxonomy::present_in(
+        &catalog,
+        kind,
+        &input.types,
+        &input.facets,
+        &descriptors,
+        "user",
+    )
+    .ok_or_else(|| ApiError::bad("Unknown, duplicate or incompatible category"))?;
     recommendation["classification"] = classification;
     let updated: ItemRow = sqlx::query_as("UPDATE knowledge_items SET recommendation=$1,revision=revision+1 WHERE id=$2 RETURNING id,capture_id,subject,body,visibility,revision,created_at,recommendation,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review")
         .bind(recommendation).bind(id).fetch_one(&mut *tx).await?;
@@ -1829,7 +1854,8 @@ async fn edit_content(
     let expected = revision(&headers)?;
     let input: crate::editing::EditInput = parse(&body)?;
     let input = input.normalized().map_err(ApiError::bad)?;
-    let (mut recommendation, body) = input.build().map_err(ApiError::bad)?;
+    let mut catalog = crate::category_learning::catalog(&state.pool).await?;
+
     let mut tx = state.pool.begin().await?;
     let previous = sqlx::query("SELECT subject,recommendation,revision FROM knowledge_items WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL FOR UPDATE")
         .bind(id).bind(owner_id).fetch_optional(&mut *tx).await?
@@ -1839,6 +1865,15 @@ async fn edit_content(
             "This recommendation changed. Reopen it before editing; your draft has not been saved.",
         ));
     }
+    crate::category_learning::include_stored_types(
+        &mut tx,
+        &mut catalog,
+        &previous
+            .get::<Option<Value>, _>("recommendation")
+            .unwrap_or(Value::Null),
+    )
+    .await?;
+    let (mut recommendation, body) = input.build_with_catalog(&catalog).map_err(ApiError::bad)?;
     if input.must_check_destination(
         &previous.get::<String, _>("subject"),
         &previous
@@ -2020,14 +2055,8 @@ async fn ask(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> 
             json!({"scope":"own","results":[],"answer":null,"next_cursor":null}),
         ));
     }
-    let question_hash = hash(
-        format!(
-            "taxonomy-{}:{}",
-            crate::taxonomy::vocabulary().version,
-            input.question
-        )
-        .as_bytes(),
-    );
+    let catalog = crate::category_learning::catalog(&state.pool).await?;
+    let question_hash = hash(format!("taxonomy-{}:{}", catalog.version, input.question).as_bytes());
     let offset = if let Some(cursor) = input.cursor.as_deref() {
         let parsed: AskCursor = decode(cursor)?;
         if parsed.offset < 0 || parsed.offset > 100000 || parsed.question_hash != question_hash {
@@ -2042,7 +2071,7 @@ async fn ask(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> 
         .map(|term| format!("{term}:*"))
         .collect::<Vec<_>>()
         .join(" | ");
-    let (category_ids, remaining) = crate::taxonomy::query_concepts(&input.question);
+    let (category_ids, remaining) = crate::taxonomy::query_concepts_in(&catalog, &input.question);
     let residual = remaining
         .iter()
         .filter(|term| term.chars().count() >= 2 && !stop.contains(term.as_str()))
@@ -2052,7 +2081,7 @@ async fn ask(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> 
         .join(" & ");
     // Known type/facet phrases constrain categorized items together. Unclassified
     // memories retain their lexical path, and an exact title always stays findable.
-    let rows: Vec<AskRow> = sqlx::query_as("SELECT id,subject,body,visibility,revision FROM knowledge_items WHERE owner_id=$1 AND deleted_at IS NULL AND (lower(subject)=lower($6) OR (cardinality($4::text[])=0 AND to_tsvector('simple',subject||' '||body||' '||category_search) @@ to_tsquery('simple',$2)) OR (cardinality($4::text[])>0 AND ((category_ids @> $4 AND ($5='' OR to_tsvector('simple',subject||' '||body) @@ to_tsquery('simple',$5))) OR (cardinality(category_ids)=0 AND to_tsvector('simple',subject||' '||body) @@ to_tsquery('simple',$2))))) ORDER BY (lower(subject)=lower($6)) DESC,ts_rank_cd(to_tsvector('simple',subject||' '||body||' '||category_search),to_tsquery('simple',$2)) DESC,created_at DESC,id DESC LIMIT 21 OFFSET $3")
+    let rows: Vec<AskRow> = sqlx::query_as("SELECT id,subject,body,visibility,revision FROM knowledge_items WHERE owner_id=$1 AND deleted_at IS NULL AND (lower(subject)=lower($6) OR (cardinality($4::text[])=0 AND to_tsvector('simple',subject||' '||body||' '||category_search) @@ to_tsquery('simple',$2)) OR (cardinality($4::text[])>0 AND ((category_ids @> $4 AND ($5='' OR to_tsvector('simple',subject||' '||body) @@ to_tsquery('simple',$5))) OR (cardinality(category_ids)=0 AND to_tsvector('simple',subject||' '||body||' '||category_search) @@ to_tsquery('simple',$2))))) ORDER BY (lower(subject)=lower($6)) DESC,ts_rank_cd(to_tsvector('simple',subject||' '||body||' '||category_search),to_tsquery('simple',$2)) DESC,created_at DESC,id DESC LIMIT 21 OFFSET $3")
         .bind(owner_id).bind(search_terms).bind(offset).bind(category_ids).bind(residual).bind(&input.question).fetch_all(&state.pool).await?;
     let results: Vec<_> = rows.iter().take(20).map(|r| json!({"item_id":r.id,"subject":r.subject,"body":r.body,"visibility":r.visibility,"revision":r.revision,"evidence_item_id":r.id})).collect();
     let next_cursor = if rows.len() > 20 {

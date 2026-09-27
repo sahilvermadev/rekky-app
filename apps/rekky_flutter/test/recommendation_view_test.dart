@@ -18,6 +18,35 @@ RekkyItem fixture([String name = 'structured_recommendation']) {
 
 void main() {
   testWidgets(
+    'learned category uses the same compact card and readable detail',
+    (tester) async {
+      final item = RekkyItem.fromJson(
+        jsonDecode(
+          File('../../contracts/rekky/v1/fixtures/learned_recommendation.json')
+              .readAsStringSync(),
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RecommendationCard(item: item, onTap: () {}),
+          ),
+        ),
+      );
+      expect(find.text('Fountain pen restorer'), findsOneWidget);
+      expect(find.text(item.recommendation!.summary), findsNothing);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: RecommendationView(item: item, expanded: true)),
+        ),
+      );
+      expect(find.text('Fountain pen restorer'), findsOneWidget);
+      expect(find.text(item.recommendation!.summary), findsOneWidget);
+      expect(find.text('work_performed'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+  testWidgets(
     'service account keeps practical detail without retrieval headings',
     (tester) async {
       final item = RekkyItem.fromJson(

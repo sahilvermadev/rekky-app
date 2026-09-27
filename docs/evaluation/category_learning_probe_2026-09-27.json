@@ -1,0 +1,665 @@
+{
+  "date": "2026-09-27",
+  "model": "gpt-4.1-mini",
+  "input_policy": "Synthetic generic phrases only. No account or transcript access. Probe never publishes registry changes.",
+  "notes": [
+    "Development smoke tests, not a representative semantic or multilingual quality gate.",
+    "Initial held-out cases were subsequently reused while tightening the policy.",
+    "Both model calls accepted a wrong parent and broader alias in the violin case. The final policy removes model-generated hierarchy and unobserved aliases deterministically.",
+    "Final six cases span three kinds; clock repairer, puzzle box and birdwatching walk were fresh phrases. Cab provider, airport pickup and vague praise were reused development cases."
+  ],
+  "runs": [
+    {
+      "run": "rekky-learning-probe.json",
+      "cases": [
+        {
+          "elapsed_ms": 2999,
+          "output": {
+            "deterministic_result": {
+              "Err": "invalid_definition"
+            },
+            "proposal": {
+              "aliases": [],
+              "decision": "defer",
+              "definition": "",
+              "evidence_focus": [],
+              "existing_id": "",
+              "label": "",
+              "negative_examples": [],
+              "parent_id": "",
+              "positive_examples": []
+            },
+            "review": null
+          },
+          "term": "fountain pen restorer"
+        },
+        {
+          "elapsed_ms": 1653,
+          "output": {
+            "deterministic_result": {
+              "Err": "invalid_definition"
+            },
+            "proposal": {
+              "aliases": [
+                "cab provider"
+              ],
+              "decision": "alias",
+              "definition": "",
+              "evidence_focus": [],
+              "existing_id": "service.taxi",
+              "label": "Taxi service",
+              "negative_examples": [
+                "bus driver",
+                "car rental service"
+              ],
+              "parent_id": "",
+              "positive_examples": [
+                "person offering car rides for hire",
+                "provider of taxi or cab services"
+              ]
+            },
+            "review": null
+          },
+          "term": "cab provider"
+        },
+        {
+          "elapsed_ms": 1430,
+          "output": {
+            "deterministic_result": {
+              "Err": "invalid_definition"
+            },
+            "proposal": {
+              "aliases": [],
+              "decision": "defer",
+              "definition": "",
+              "evidence_focus": [],
+              "existing_id": "",
+              "label": "",
+              "negative_examples": [],
+              "parent_id": "",
+              "positive_examples": []
+            },
+            "review": null
+          },
+          "term": "airport pickup"
+        }
+      ]
+    },
+    {
+      "run": "rekky-learning-probe-v2.json",
+      "cases": [
+        {
+          "elapsed_ms": 3755,
+          "output": {
+            "deterministic_result": {
+              "Ok": "learned.ce7de4bb5e7563576b814de6"
+            },
+            "proposal": {
+              "aliases": [
+                "fountain pen restorer"
+              ],
+              "decision": "create",
+              "definition": "A person who professionally repairs, refurbishes, and maintains fountain pens to restore their functionality and appearance.",
+              "evidence_focus": [
+                "experience_duration",
+                "work_performed",
+                "limitations"
+              ],
+              "existing_id": "",
+              "label": "Fountain pen restorer",
+              "negative_examples": [
+                "pen manufacturer",
+                "general pen repair shop"
+              ],
+              "parent_id": "",
+              "positive_examples": [
+                "a specialist who cleans and fixes ink flow issues in vintage fountain pens",
+                "a service provider who replaces nibs and refurbishes old fountain pens to working condition"
+              ]
+            },
+            "review": {
+              "approve": true,
+              "compatible_kind_and_parent": true,
+              "correct_meaning": true,
+              "equivalent_aliases": true,
+              "examples_correct": true,
+              "generic_no_private_identity": true,
+              "no_existing_duplicate": true,
+              "safe_optional_focus": true
+            }
+          },
+          "term": "fountain pen restorer"
+        },
+        {
+          "elapsed_ms": 2765,
+          "output": {
+            "deterministic_result": {
+              "Ok": "service.taxi"
+            },
+            "proposal": {
+              "aliases": [
+                "cab provider"
+              ],
+              "decision": "alias",
+              "definition": "A service that provides transportation to passengers using taxis or cabs.",
+              "evidence_focus": [
+                "service_area",
+                "work_performed",
+                "experience_duration"
+              ],
+              "existing_id": "service.taxi",
+              "label": "Taxi service",
+              "negative_examples": [
+                "bus service",
+                "chauffeur service"
+              ],
+              "parent_id": "",
+              "positive_examples": [
+                "a company offering car rides to customers on demand",
+                "an individual licensed to drive a taxi for hire"
+              ]
+            },
+            "review": {
+              "approve": true,
+              "compatible_kind_and_parent": true,
+              "correct_meaning": true,
+              "equivalent_aliases": true,
+              "examples_correct": true,
+              "generic_no_private_identity": true,
+              "no_existing_duplicate": true,
+              "safe_optional_focus": true
+            }
+          },
+          "term": "cab provider"
+        },
+        {
+          "elapsed_ms": 2811,
+          "output": {
+            "deterministic_result": {
+              "Ok": "learned.ceba371beb83594ca6d5e0b7"
+            },
+            "proposal": {
+              "aliases": [
+                "airport pickup service",
+                "airport pick-up",
+                "airport pickup",
+                "airport pickup person"
+              ],
+              "decision": "create",
+              "definition": "A person service that provides transportation for clients from an airport to a specified location, often involving vehicle and driver arrangements focused on airport arrivals.",
+              "evidence_focus": [
+                "service_area",
+                "work_performed",
+                "experience_duration",
+                "compatibility",
+                "limitations"
+              ],
+              "existing_id": "",
+              "label": "Airport pickup service",
+              "negative_examples": [
+                "taxi service",
+                "chauffeur service"
+              ],
+              "parent_id": "",
+              "positive_examples": [
+                "driver who meets clients at the airport to take them to their hotels",
+                "service arranging private rides from airport arrivals to city destinations"
+              ]
+            },
+            "review": {
+              "approve": false,
+              "compatible_kind_and_parent": true,
+              "correct_meaning": true,
+              "equivalent_aliases": false,
+              "examples_correct": true,
+              "generic_no_private_identity": true,
+              "no_existing_duplicate": false,
+              "safe_optional_focus": true
+            }
+          },
+          "term": "airport pickup"
+        }
+      ]
+    },
+    {
+      "run": "rekky-learning-heldout.json",
+      "cases": [
+        {
+          "elapsed_ms": 2225,
+          "output": {
+            "deterministic_result": {
+              "Err": "invalid_definition"
+            },
+            "proposal": {
+              "aliases": [
+                "violin repairer"
+              ],
+              "decision": "create",
+              "definition": "A person who specializes in repairing violins, including fixing structural damage, adjusting components, and restoring sound quality.",
+              "evidence_focus": [
+                "work_performed",
+                "experience_duration",
+                "compatibility"
+              ],
+              "existing_id": "",
+              "label": "Violin repairer",
+              "negative_examples": [
+                "A general instrument repairer who does not specifically repair violins",
+                "A music teacher who instructs violin playing",
+                "A violin maker who builds violins from raw materials",
+                "A guitar repairer who fixes guitars but not violins"
+              ],
+              "parent_id": "",
+              "positive_examples": [
+                "A craftsman who restores old violins to playable condition",
+                "A technician who fixes cracks and replaces violin parts"
+              ]
+            },
+            "review": null
+          },
+          "term": "violin repairer"
+        },
+        {
+          "elapsed_ms": 1418,
+          "output": {
+            "deterministic_result": {
+              "Err": "invalid_definition"
+            },
+            "proposal": {
+              "aliases": [
+                "patient and helpful"
+              ],
+              "decision": "defer",
+              "definition": "",
+              "evidence_focus": [],
+              "existing_id": "",
+              "label": "",
+              "negative_examples": [],
+              "parent_id": "",
+              "positive_examples": []
+            },
+            "review": null
+          },
+          "term": "patient and helpful"
+        }
+      ]
+    },
+    {
+      "run": "rekky-learning-heldout-v2.json",
+      "cases": [
+        {
+          "elapsed_ms": 3484,
+          "output": {
+            "deterministic_result": {
+              "Ok": "learned.84ffb9fe69dd46d344db975e"
+            },
+            "proposal": {
+              "aliases": [
+                "violin repairer",
+                "violin technician",
+                "string instrument repairer"
+              ],
+              "decision": "create",
+              "definition": "A violin repairer is a person who specializes in maintaining, mending, and restoring violins and similar string instruments to ensure their optimal sound quality and playability.",
+              "evidence_focus": [
+                "work_performed",
+                "experience_duration",
+                "limitations"
+              ],
+              "existing_id": "",
+              "label": "Violin repairer",
+              "negative_examples": [
+                "furniture carpenter who builds and repairs wooden furniture",
+                "general musical instrument seller who sells but does not repair instruments"
+              ],
+              "parent_id": "service.carpenter",
+              "positive_examples": [
+                "a craftsman who repairs cracks and replaces violin bridges",
+                "a technician who restores old violins by fixing their structural damage"
+              ]
+            },
+            "review": {
+              "approve": true,
+              "compatible_kind_and_parent": true,
+              "correct_meaning": true,
+              "equivalent_aliases": true,
+              "examples_correct": true,
+              "generic_no_private_identity": true,
+              "no_existing_duplicate": true,
+              "safe_optional_focus": true
+            }
+          },
+          "term": "violin repairer"
+        },
+        {
+          "elapsed_ms": 1039,
+          "output": {
+            "deterministic_result": {
+              "Err": "provisional"
+            },
+            "proposal": {
+              "aliases": [],
+              "decision": "defer",
+              "definition": "",
+              "evidence_focus": [],
+              "existing_id": "",
+              "label": "",
+              "negative_examples": [],
+              "parent_id": "",
+              "positive_examples": []
+            },
+            "review": null
+          },
+          "term": "patient and helpful"
+        }
+      ]
+    },
+    {
+      "run": "rekky-learning-final-probe.json",
+      "cases": [
+        {
+          "elapsed_ms": 1874,
+          "output": {
+            "deterministic_result": {
+              "Err": "invalid_definition"
+            },
+            "proposal": {
+              "aliases": [],
+              "decision": "create",
+              "definition": "A violin repairer is a person service specializing in the maintenance, fixing, and restoration of violins and related string instruments.",
+              "evidence_focus": [
+                "work_performed",
+                "experience_duration",
+                "limitations",
+                "compatibility"
+              ],
+              "existing_id": "",
+              "label": "Violin repairer",
+              "negative_examples": [
+                "A guitar repairer who works only on guitars rather than violins.",
+                "A music teacher who instructs violin playing but does not perform repairs."
+              ],
+              "parent_id": "",
+              "positive_examples": [
+                "A craftsperson who fixes cracks, replaces parts, and adjusts violin components.",
+                "A professional who restores old violins to playable condition and tunes their mechanical parts."
+              ]
+            },
+            "review": null
+          },
+          "term": "violin repairer"
+        },
+        {
+          "elapsed_ms": 1219,
+          "output": {
+            "deterministic_result": {
+              "Err": "provisional"
+            },
+            "proposal": {
+              "aliases": [
+                "patient and helpful"
+              ],
+              "decision": "defer",
+              "definition": "",
+              "evidence_focus": [],
+              "existing_id": "",
+              "label": "",
+              "negative_examples": [],
+              "parent_id": "",
+              "positive_examples": []
+            },
+            "review": null
+          },
+          "term": "patient and helpful"
+        }
+      ]
+    },
+    {
+      "run": "rekky-learning-pilot-probe.json",
+      "cases": [
+        {
+          "elapsed_ms": 3469,
+          "entity_kind": "person_service",
+          "output": {
+            "deterministic_result": {
+              "Ok": "learned.6f865104701a26e3be3a9dc4"
+            },
+            "proposal": {
+              "aliases": [
+                "clock repairer"
+              ],
+              "decision": "create",
+              "definition": "A clock repairer is a person who specializes in diagnosing, maintaining, and repairing clocks and similar timekeeping devices.",
+              "evidence_focus": [
+                "work_performed",
+                "experience_duration",
+                "limitations",
+                "compatibility",
+                "service_area"
+              ],
+              "existing_id": "",
+              "label": "Clock repairer",
+              "negative_examples": [
+                "A watch repairer who specializes only in wristwatches and small portable timepieces, not mechanical clocks.",
+                "A general handyman who performs various home repairs but does not specifically repair clocks."
+              ],
+              "parent_id": "",
+              "positive_examples": [
+                "A professional who repairs and restores antique grandfather clocks and wall clocks.",
+                "A technician skilled in fixing the mechanical movements of mantel clocks and cuckoo clocks."
+              ]
+            },
+            "review": {
+              "approve": true,
+              "compatible_kind_and_parent": true,
+              "correct_meaning": true,
+              "equivalent_aliases": true,
+              "examples_correct": true,
+              "generic_no_private_identity": true,
+              "no_existing_duplicate": true,
+              "safe_optional_focus": true
+            }
+          },
+          "term": "clock repairer"
+        },
+        {
+          "elapsed_ms": 3058,
+          "entity_kind": "thing",
+          "output": {
+            "deterministic_result": {
+              "Ok": "learned.e4ed1766fb3441e590758f85"
+            },
+            "proposal": {
+              "aliases": [
+                "puzzle box"
+              ],
+              "decision": "create",
+              "definition": "A puzzle box is a physical container or box designed to be opened through solving a puzzle or series of mechanical challenges, often used for entertainment or securing items in a clever way.",
+              "evidence_focus": [
+                "limitations",
+                "specific_variant"
+              ],
+              "existing_id": "",
+              "label": "Puzzle box",
+              "negative_examples": [
+                "A simple wooden box that opens with a normal latch without any puzzle mechanism",
+                "A jewelry box that opens with a key without requiring puzzle solving"
+              ],
+              "parent_id": "",
+              "positive_examples": [
+                "A wooden box that requires sliding the panels in a certain sequence to open",
+                "A metal box that opens only after solving a combination puzzle embedded in its surface"
+              ]
+            },
+            "review": {
+              "approve": true,
+              "compatible_kind_and_parent": true,
+              "correct_meaning": true,
+              "equivalent_aliases": true,
+              "examples_correct": true,
+              "generic_no_private_identity": true,
+              "no_existing_duplicate": true,
+              "safe_optional_focus": true
+            }
+          },
+          "term": "puzzle box"
+        },
+        {
+          "elapsed_ms": 2971,
+          "entity_kind": "activity_event",
+          "output": {
+            "deterministic_result": {
+              "Ok": "learned.58394bf92e415a24887c91cc"
+            },
+            "proposal": {
+              "aliases": [
+                "birdwatching walk"
+              ],
+              "decision": "create",
+              "definition": "A birdwatching walk is a guided or self-led outdoor activity where participants observe and identify various bird species in their natural habitats while walking through a designated area.",
+              "evidence_focus": [
+                "venue",
+                "service_area",
+                "experience_duration"
+              ],
+              "existing_id": "",
+              "label": "Birdwatching walk",
+              "negative_examples": [
+                "a racewalking competition where participants speed-walk without focusing on nature observation",
+                "a casual walk in the city focusing on architecture rather than birds"
+              ],
+              "parent_id": "",
+              "positive_examples": [
+                "a guided morning walk in a nature reserve to spot different local bird species",
+                "a self-guided walk along a woodland path with a bird identification map to observe birds"
+              ]
+            },
+            "review": {
+              "approve": true,
+              "compatible_kind_and_parent": true,
+              "correct_meaning": true,
+              "equivalent_aliases": true,
+              "examples_correct": true,
+              "generic_no_private_identity": true,
+              "no_existing_duplicate": true,
+              "safe_optional_focus": true
+            }
+          },
+          "term": "birdwatching walk"
+        },
+        {
+          "elapsed_ms": 2843,
+          "entity_kind": "person_service",
+          "output": {
+            "deterministic_result": {
+              "Ok": "service.taxi"
+            },
+            "proposal": {
+              "aliases": [
+                "cab provider"
+              ],
+              "decision": "alias",
+              "definition": "A taxi service is a service providing vehicles for hire with a driver to transport passengers from one location to another.",
+              "evidence_focus": [
+                "work_performed",
+                "service_area",
+                "compatibility"
+              ],
+              "existing_id": "service.taxi",
+              "label": "Taxi service",
+              "negative_examples": [
+                "A mechanic who repairs vehicles but does not provide transportation services.",
+                "A private chauffeur employed directly by an individual, not offering general hire services."
+              ],
+              "parent_id": "",
+              "positive_examples": [
+                "A company that offers cars for hire with a driver to transport customers.",
+                "An individual providing transportation services in a car to passengers for a fee."
+              ]
+            },
+            "review": {
+              "approve": true,
+              "compatible_kind_and_parent": true,
+              "correct_meaning": true,
+              "equivalent_aliases": true,
+              "examples_correct": true,
+              "generic_no_private_identity": true,
+              "no_existing_duplicate": true,
+              "safe_optional_focus": true
+            }
+          },
+          "term": "cab provider"
+        },
+        {
+          "elapsed_ms": 2887,
+          "entity_kind": "person_service",
+          "output": {
+            "deterministic_result": {
+              "Ok": "learned.85d5ceb4ab37cb6a7bba4e8e"
+            },
+            "proposal": {
+              "aliases": [
+                "airport pickup"
+              ],
+              "decision": "create",
+              "definition": "An airport pickup service involves a person or service that transports passengers from an airport to a specified destination, often including vehicle provision and driver assistance.",
+              "evidence_focus": [
+                "service_area",
+                "work_performed",
+                "experience_duration",
+                "limitations",
+                "price_basis"
+              ],
+              "existing_id": "",
+              "label": "Airport pickup",
+              "negative_examples": [
+                "A taxi service that only offers rides within a city without airport transfers",
+                "A chauffeur service that requires pre-booking but doesn't pick up from airports"
+              ],
+              "parent_id": "",
+              "positive_examples": [
+                "A driver service that meets clients at the airport arrivals and takes them to their hotel",
+                "A private car rental service specializing in airport pickup and drop-off"
+              ]
+            },
+            "review": {
+              "approve": false,
+              "compatible_kind_and_parent": false,
+              "correct_meaning": false,
+              "equivalent_aliases": true,
+              "examples_correct": false,
+              "generic_no_private_identity": true,
+              "no_existing_duplicate": false,
+              "safe_optional_focus": true
+            }
+          },
+          "term": "airport pickup"
+        },
+        {
+          "elapsed_ms": 1142,
+          "entity_kind": "person_service",
+          "output": {
+            "deterministic_result": {
+              "Err": "provisional"
+            },
+            "proposal": {
+              "aliases": [
+                "patient and helpful"
+              ],
+              "decision": "defer",
+              "definition": "",
+              "evidence_focus": [],
+              "existing_id": "",
+              "label": "",
+              "negative_examples": [],
+              "parent_id": "",
+              "positive_examples": []
+            },
+            "review": null
+          },
+          "term": "patient and helpful"
+        }
+      ]
+    }
+  ]
+}

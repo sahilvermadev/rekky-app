@@ -30,6 +30,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         extractor,
         places: Arc::new(rekky_backend::places::GooglePlaces::from_env()),
     };
+    let learning_pool = state.pool.clone();
+    let learning_worker = tokio::spawn(async move {
+        let learner = rekky_backend::category_learning::OpenAiCategoryLearner::from_env();
+        loop {
+            if rekky_backend::category_learning::process_one(&learning_pool, &learner)
+                .await
+                .is_err()
+            {
+                // Never log private candidate phrases or provider payloads.
+                eprintln!("Category learning worker failed; retry remains bounded");
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        }
+    });
     let listener = tokio::net::TcpListener::bind(address).await?;
     let worker_state = state.clone();
     let worker = tokio::spawn(async move {
@@ -48,5 +62,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .await?;
     worker.abort();
+    learning_worker.abort();
     Ok(())
 }
