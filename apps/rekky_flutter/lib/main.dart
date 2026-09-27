@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'identity.dart';
+import 'appearance.dart';
 import 'contact_matching.dart';
 import 'contact_sheet.dart';
 import 'recommendation_editor.dart';
@@ -19,7 +20,10 @@ import 'voice_drafts.dart';
 import 'voice_processing.dart';
 
 const apiBaseUrl = String.fromEnvironment('API_BASE_URL');
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  final themeMode = await AppearancePreference.load();
   LicenseRegistry.addLicense(() async* {
     for (final family in ['Fraunces', 'Manrope']) {
       yield LicenseEntryWithLineBreaks([
@@ -30,23 +34,44 @@ void main() {
       'Liberation Serif',
     ], await rootBundle.loadString('assets/fonts/LICENSE-Liberation.txt'));
   });
-  runApp(const RekkyApp());
+  runApp(RekkyApp(initialThemeMode: themeMode));
 }
 
-class RekkyApp extends StatelessWidget {
-  const RekkyApp({super.key});
+class RekkyApp extends StatefulWidget {
+  const RekkyApp({super.key, this.initialThemeMode = ThemeMode.system});
+  final ThemeMode initialThemeMode;
+
+  @override
+  State<RekkyApp> createState() => _RekkyAppState();
+}
+
+class _RekkyAppState extends State<RekkyApp> {
+  late ThemeMode themeMode = widget.initialThemeMode;
+
+  Future<void> changeTheme(ThemeMode mode) async {
+    await AppearancePreference.save(mode);
+    if (mounted) setState(() => themeMode = mode);
+  }
+
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'Rekky',
     debugShowCheckedModeBanner: false,
     theme: RekkyTheme.build(Brightness.light),
     darkTheme: RekkyTheme.build(Brightness.dark),
-    home: const RekkyHome(),
+    themeMode: themeMode,
+    home: RekkyHome(themeMode: themeMode, onThemeChanged: changeTheme),
   );
 }
 
 class RekkyHome extends StatefulWidget {
-  const RekkyHome({super.key});
+  const RekkyHome({
+    super.key,
+    required this.themeMode,
+    required this.onThemeChanged,
+  });
+  final ThemeMode themeMode;
+  final Future<void> Function(ThemeMode) onThemeChanged;
   @override
   State<RekkyHome> createState() => _RekkyHomeState();
 }
@@ -874,8 +899,20 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
   }
 
   Widget _accountMenu() => PopupMenuButton<String>(
-    tooltip: 'Account and recovery',
+    tooltip: 'Settings',
     onSelected: (value) {
+      if (value == 'appearance') {
+        showModalBottomSheet<void>(
+          context: context,
+          useSafeArea: true,
+          isScrollControlled: true,
+          showDragHandle: true,
+          builder: (_) => AppearanceSheet(
+            mode: widget.themeMode,
+            onChanged: widget.onThemeChanged,
+          ),
+        );
+      }
       if (value == 'contacts') unawaited(_contactSettings());
       if (value == 'recordings') unawaited(_openVoiceDrafts());
       if (value == 'processing') unawaited(_processingSettings());
@@ -893,6 +930,7 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
       if (value == 'signout') unawaited(_signOut());
     },
     itemBuilder: (_) => const [
+      PopupMenuItem(value: 'appearance', child: Text('Appearance')),
       PopupMenuItem(value: 'contacts', child: Text('Contact matching')),
       PopupMenuItem(value: 'processing', child: Text('Voice processing')),
       PopupMenuItem(value: 'recordings', child: Text('Pending recordings')),
