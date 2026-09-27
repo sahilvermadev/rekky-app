@@ -397,6 +397,7 @@ impl TestApp {
         });
         let state = AppState {
             pool: pool.clone(),
+            daily_account_limit: 12,
             verifier,
             transcriber,
             extractor: Arc::new(TestExtractor),
@@ -520,6 +521,7 @@ async fn wire_fixtures() {
         "voice_knowledge_saved",
         "structured_recommendation",
         "remember_queued",
+        "remember_waiting_limit",
         "remember_saved",
         "remember_partial",
         "remember_cancelled",
@@ -3004,4 +3006,109 @@ async fn unfamiliar_type_survives_rejected_assignment_and_reaches_learning_queue
         rekky_backend::category_learning::job_key("person_service", "caterer")
     );
     t.cleanup().await;
+}
+
+#[tokio::test]
+async fn remember_reports_quota_wait_and_resumes_without_retranscription() {
+    for raise_limit in [false, true] {
+        let Some(mut t) = TestApp::new().await else {
+            return;
+        };
+        t.state.daily_account_limit = 2;
+        t.app = router(t.state.clone());
+        let (owner, token) = t.sign_in("google", "valid-a").await;
+        t.call(
+            Method::POST,
+            "/v1/me/visibility-disclosure",
+            Some(&token),
+            Some(json!({"accept":true})),
+            &[],
+        )
+        .await;
+        for permission in ["voice-transcription", "transcript-extraction"] {
+            t.call(
+                Method::POST,
+                &format!("/v1/me/{permission}-permission"),
+                Some(&token),
+                Some(json!({"enabled":true,"disclosure_version":1})),
+                &[],
+            )
+            .await;
+        }
+        let mut audio = vec![0u8; 256];
+        audio[4..8].copy_from_slice(b"ftyp");
+        let now = chrono::Utc::now().timestamp_millis();
+        let first = "/v1/remember/quota-first-recording";
+        let second = "/v1/remember/quota-second-recording";
+        assert_eq!(
+            t.call_audio(first, &token, audio.clone(), now).await.0,
+            StatusCode::ACCEPTED
+        );
+        rekky_backend::app::process_pending_voice(&t.state, Some(owner))
+            .await
+            .unwrap();
+        sqlx::query("UPDATE transcript_extraction_jobs SET created_at=now()-interval '2 hours' WHERE account_id=$1").bind(owner).execute(&t.pool).await.unwrap();
+        sqlx::query("INSERT INTO recommendation_refinement_jobs(item_id,account_id,attempt_id,status,permission_generation,source_revision,item_revision,lease_until,created_at) SELECT id,owner_id,$2,'completed',1,1,revision,now(),now()-interval '1 hour' FROM knowledge_items WHERE owner_id=$1")
+            .bind(owner).bind(Uuid::new_v4()).execute(&t.pool).await.unwrap();
+        assert_eq!(
+            t.call_audio(second, &token, audio, now).await.0,
+            StatusCode::ACCEPTED
+        );
+        rekky_backend::app::process_pending_voice(&t.state, Some(owner))
+            .await
+            .unwrap();
+        let (_, receipt) = t.call(Method::GET, second, Some(&token), None, &[]).await;
+        assert_eq!(receipt["remember"]["status"], "transcribed");
+        assert_eq!(receipt["remember"]["transcript_saved"], true);
+        assert_eq!(receipt["remember"]["waiting_reason"], "processing_limit");
+        let retry =
+            chrono::DateTime::parse_from_rfc3339(receipt["remember"]["retry_at"].as_str().unwrap())
+                .unwrap();
+        assert!((retry.with_timezone(&chrono::Utc) - chrono::Utc::now()).num_minutes() >= 1319);
+        assert!((retry.with_timezone(&chrono::Utc) - chrono::Utc::now()).num_minutes() <= 1321);
+        let capture = Uuid::parse_str(receipt["remember"]["capture_id"].as_str().unwrap()).unwrap();
+        let count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM transcript_extraction_jobs WHERE capture_id=$1",
+        )
+        .bind(capture)
+        .fetch_one(&t.pool)
+        .await
+        .unwrap();
+        assert_eq!(count, 0); // Waiting must not consume an attempt or call extraction.
+        let audio_gone: bool =
+            sqlx::query_scalar("SELECT audio IS NULL FROM voice_uploads WHERE capture_id=$1")
+                .bind(capture)
+                .fetch_one(&t.pool)
+                .await
+                .unwrap();
+        assert!(audio_gone);
+        // Lowering a limit must wait for the limit-th newest job, not the oldest.
+        t.state.daily_account_limit = 1;
+        t.app = router(t.state.clone());
+        let (_, receipt) = t.call(Method::GET, second, Some(&token), None, &[]).await;
+        let retry =
+            chrono::DateTime::parse_from_rfc3339(receipt["remember"]["retry_at"].as_str().unwrap())
+                .unwrap();
+        assert!((retry.with_timezone(&chrono::Utc) - chrono::Utc::now()).num_minutes() >= 1379);
+        t.state.daily_account_limit = if raise_limit { 3 } else { 2 };
+        t.app = router(t.state.clone());
+        if !raise_limit {
+            sqlx::query("UPDATE transcript_extraction_jobs SET created_at=now()-interval '25 hours' WHERE account_id=$1").bind(owner).execute(&t.pool).await.unwrap();
+        }
+        sqlx::query("UPDATE captures SET auto_next_attempt_at=now() WHERE id=$1")
+            .bind(capture)
+            .execute(&t.pool)
+            .await
+            .unwrap();
+        rekky_backend::app::process_pending_voice(&t.state, Some(owner))
+            .await
+            .unwrap();
+        let (_, receipt) = t.call(Method::GET, second, Some(&token), None, &[]).await;
+        assert_eq!(receipt["remember"]["capture_status"], "completed");
+        assert!(receipt["remember"]["waiting_reason"].is_null());
+        assert!(receipt["remember"]["retry_at"].is_null());
+        let attempts:i32 = sqlx::query_scalar("SELECT attempts FROM voice_transcription_jobs WHERE account_id=$1 AND draft_id='quota-second-recording'").bind(owner).fetch_one(&t.pool).await.unwrap();
+        assert_eq!(attempts, 1);
+        t.cleanup().await;
+    }
 }

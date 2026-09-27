@@ -30,6 +30,7 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct AppState {
     pub pool: PgPool,
+    pub daily_account_limit: i64,
     pub verifier: Arc<dyn IdentityVerifier>,
     pub transcriber: Arc<dyn VoiceTranscriber>,
     pub extractor: Arc<dyn TranscriptExtractor>,
@@ -646,7 +647,7 @@ async fn process_voice_capture(
             .bind(owner_id).fetch_one(&mut *tx).await?;
         let global_count: i64 = sqlx::query_scalar("SELECT (SELECT count(*) FROM transcript_extraction_jobs WHERE created_at>now()-interval '24 hours')+(SELECT count(*) FROM recommendation_refinement_jobs WHERE created_at>now()-interval '24 hours')")
             .fetch_one(&mut *tx).await?;
-        if account_count >= 12 || global_count >= 100 {
+        if account_count >= state.daily_account_limit || global_count >= 100 {
             return Err(ApiError::new(
                 StatusCode::TOO_MANY_REQUESTS,
                 "extraction_budget_reached",
@@ -869,7 +870,9 @@ async fn refine_item(
             .await?;
         let counts=sqlx::query("SELECT (SELECT count(*) FROM transcript_extraction_jobs WHERE account_id=$1 AND created_at>now()-interval '24 hours')+(SELECT count(*) FROM recommendation_refinement_jobs WHERE account_id=$1 AND created_at>now()-interval '24 hours') own_count, (SELECT count(*) FROM transcript_extraction_jobs WHERE created_at>now()-interval '24 hours')+(SELECT count(*) FROM recommendation_refinement_jobs WHERE created_at>now()-interval '24 hours') total_count")
             .bind(owner_id).fetch_one(&mut *tx).await?;
-        if counts.get::<i64, _>("own_count") >= 12 || counts.get::<i64, _>("total_count") >= 100 {
+        if counts.get::<i64, _>("own_count") >= state.daily_account_limit
+            || counts.get::<i64, _>("total_count") >= 100
+        {
             return Err(ApiError::new(
                 StatusCode::TOO_MANY_REQUESTS,
                 "extraction_budget_reached",
@@ -1015,16 +1018,37 @@ async fn transcribe_voice(
     transcribe_for_owner(&state, owner_id, headers, draft_id, audio, None).await
 }
 
-async fn remember_receipt(pool: &PgPool, owner_id: Uuid, draft_id: &str) -> ApiResult {
-    let row = sqlx::query("SELECT u.status,u.capture_id,CASE WHEN c.status='transcript_ready' AND (NOT c.auto_processing OR NOT EXISTS(SELECT 1 FROM source_texts s WHERE s.capture_id=c.id)) THEN 'failed' ELSE c.status END capture_status,EXISTS(SELECT 1 FROM source_texts s WHERE s.capture_id=u.capture_id AND s.owner_id=u.account_id) transcript_saved FROM voice_uploads u LEFT JOIN captures c ON c.id=u.capture_id WHERE u.account_id=$1 AND u.draft_id=$2")
+// The limit-th newest job is the one that must expire before a new job can
+// start, including when a configured limit was lowered below current usage.
+async fn extraction_retry_at(
+    state: &AppState,
+    owner_id: Uuid,
+) -> Result<Option<DateTime<Utc>>, sqlx::Error> {
+    sqlx::query_scalar("WITH jobs AS (SELECT account_id,created_at FROM transcript_extraction_jobs WHERE created_at>now()-interval '24 hours' UNION ALL SELECT account_id,created_at FROM recommendation_refinement_jobs WHERE created_at>now()-interval '24 hours') SELECT greatest((SELECT created_at+interval '24 hours 1 second' FROM jobs WHERE account_id=$1 ORDER BY created_at DESC OFFSET ($2-1) LIMIT 1),(SELECT created_at+interval '24 hours 1 second' FROM jobs ORDER BY created_at DESC OFFSET 99 LIMIT 1))")
+        .bind(owner_id).bind(state.daily_account_limit).fetch_one(&state.pool).await
+}
+
+async fn remember_receipt(state: &AppState, owner_id: Uuid, draft_id: &str) -> ApiResult {
+    let pool = &state.pool;
+    let row = sqlx::query("SELECT u.status,u.capture_id,EXISTS(SELECT 1 FROM transcript_extraction_jobs j WHERE j.capture_id=c.id) extraction_started,CASE WHEN c.status='transcript_ready' AND (NOT c.auto_processing OR NOT EXISTS(SELECT 1 FROM source_texts s WHERE s.capture_id=c.id)) THEN 'failed' ELSE c.status END capture_status,EXISTS(SELECT 1 FROM source_texts s WHERE s.capture_id=u.capture_id AND s.owner_id=u.account_id) transcript_saved FROM voice_uploads u LEFT JOIN captures c ON c.id=u.capture_id WHERE u.account_id=$1 AND u.draft_id=$2")
         .bind(owner_id).bind(draft_id).fetch_optional(pool).await?
         .ok_or_else(|| ApiError::not_found("Recording not found"))?;
+    let retry_at = if row.get::<Option<String>, _>("capture_status").as_deref()
+        == Some("transcript_ready")
+        && !row.get::<bool, _>("extraction_started")
+    {
+        extraction_retry_at(state, owner_id).await?
+    } else {
+        None
+    };
     Ok(ok(json!({"remember":{
         "draft_id":draft_id,
         "status":row.get::<String,_>("status"),
         "capture_id":row.get::<Option<Uuid>,_>("capture_id"),
         "capture_status":row.get::<Option<String>,_>("capture_status"),
-        "transcript_saved":row.get::<bool,_>("transcript_saved")
+        "transcript_saved":row.get::<bool,_>("transcript_saved"),
+        "waiting_reason":retry_at.map(|_| "processing_limit"),
+        "retry_at":retry_at
     }})))
 }
 
@@ -1070,7 +1094,7 @@ async fn remember_status(
     Path(draft_id): Path<String>,
 ) -> ApiResult {
     let owner_id = owner(&state, &headers, true).await?;
-    remember_receipt(&state.pool, owner_id, &draft_id).await
+    remember_receipt(&state, owner_id, &draft_id).await
 }
 
 async fn queue_voice(
@@ -1126,7 +1150,7 @@ async fn queue_voice(
             return Err(ApiError::conflict("Draft ID belongs to different audio"));
         }
         tx.commit().await?;
-        return remember_receipt(&state.pool, owner_id, &draft_id).await;
+        return remember_receipt(&state, owner_id, &draft_id).await;
     }
     if !state.transcriber.available() || !state.extractor.available() {
         return Err(ApiError::new(
@@ -1142,7 +1166,7 @@ async fn queue_voice(
         .bind(owner_id).fetch_one(&mut *tx).await?;
     let global_count: i64 = sqlx::query_scalar("SELECT count(*) FROM voice_uploads WHERE created_at>now()-interval '24 hours' OR audio IS NOT NULL")
         .fetch_one(&mut *tx).await?;
-    if account_count >= 12 || global_count >= 100 {
+    if account_count >= state.daily_account_limit || global_count >= 100 {
         return Err(ApiError::new(
             StatusCode::TOO_MANY_REQUESTS,
             "voice_budget_reached",
@@ -1154,7 +1178,7 @@ async fn queue_voice(
         .bind(voice.unwrap().get::<i64,_>("generation")).bind(extraction.unwrap().get::<i64,_>("generation"))
         .execute(&mut *tx).await?;
     tx.commit().await?;
-    let mut response = remember_receipt(&state.pool, owner_id, &draft_id).await?;
+    let mut response = remember_receipt(&state, owner_id, &draft_id).await?;
     *response.status_mut() = StatusCode::ACCEPTED;
     Ok(response)
 }
@@ -1354,7 +1378,7 @@ async fn transcribe_for_owner(
         )
         .fetch_one(&mut *tx)
         .await?;
-        if account_count >= 12 || global_count >= 100 {
+        if account_count >= state.daily_account_limit || global_count >= 100 {
             return Err(ApiError::new(
                 StatusCode::TOO_MANY_REQUESTS,
                 "voice_budget_reached",

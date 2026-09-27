@@ -23,7 +23,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let verifier = Arc::new(OidcVerifier::from_env());
     let transcriber = Arc::new(OpenAiTranscriber::from_env());
     let extractor = Arc::new(OpenAiExtractor::from_env());
+    let daily_account_limit: i64 = env::var("PILOT_DAILY_ACCOUNT_LIMIT")
+        .unwrap_or_else(|_| "12".into())
+        .parse()?;
+    if !(1..=100).contains(&daily_account_limit) {
+        return Err("PILOT_DAILY_ACCOUNT_LIMIT must be between 1 and 100".into());
+    }
     let state = AppState {
+        daily_account_limit,
         pool,
         verifier,
         transcriber,

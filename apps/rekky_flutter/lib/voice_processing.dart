@@ -58,9 +58,6 @@ class VoiceProcessingCoordinator {
             .toList();
         final tracked = await store.pendingRemembers(ownerId);
         final ids = {...tracked, ...drafts.map((draft) => draft.id)};
-        if (ids.isNotEmpty && !_stopped) {
-          onStatus('Adding your recommendation…');
-        }
         for (final id in ids) {
           if (_stopped || _paused) break;
           final draft = drafts.where((value) => value.id == id).firstOrNull;
@@ -90,6 +87,16 @@ class VoiceProcessingCoordinator {
                 issue = 'A recording needs attention. Open Pending recordings in settings.';
               } else {
                 pending = true;
+                if (receipt['waiting_reason'] == 'processing_limit') {
+                  final retry = DateTime.tryParse(
+                    receipt['retry_at'] as String? ?? '',
+                  )?.toLocal();
+                  final when = retry == null
+                      ? 'when a slot opens'
+                      : 'after ${retry.day}/${retry.month} at ${retry.hour.toString().padLeft(2, '0')}:${retry.minute.toString().padLeft(2, '0')}';
+                  issue =
+                      'Daily processing limit reached. Your transcript is saved; we’ll resume $when.';
+                }
               }
             } else if (['failed', 'cancelled', 'expired'].contains(status)) {
               issue = 'A recording could not be saved. Open Pending recordings in settings.';
@@ -101,6 +108,10 @@ class VoiceProcessingCoordinator {
               issue = failure.status == 401
                   ? 'Sign in again to finish saving your recording.'
                   : 'Processing is off. Turn it on in settings to save new recordings.';
+            } else if (failure.code == 'voice_budget_reached' ||
+                failure.code == 'extraction_budget_reached') {
+              pending = true;
+              issue = 'Daily processing limit reached. We’ll retry automatically when a slot opens.';
             } else {
               pending = true;
               issue = 'Your recording is safe. We’ll try again shortly.';

@@ -230,6 +230,7 @@ async fn background_learning_deduplicates_reuses_and_fences_results() {
     sqlx::query("INSERT INTO sessions(token_hash,account_id,expires_at) VALUES($1,$2,now()+interval '1 hour')").bind(rekky_backend::auth::hash_token(&token)).bind(owner).execute(&pool).await.unwrap();
     let app = rekky_backend::router(rekky_backend::AppState {
         pool: pool.clone(),
+        daily_account_limit: 12,
         verifier: Arc::new(rekky_backend::auth::OidcVerifier::from_env()),
         transcriber: Arc::new(rekky_backend::voice::OpenAiTranscriber::from_env()),
         extractor: Arc::new(rekky_backend::extraction::OpenAiExtractor::from_env()),

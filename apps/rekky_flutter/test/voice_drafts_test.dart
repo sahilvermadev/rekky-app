@@ -40,6 +40,7 @@ class _FakeRecorder implements VoiceRecorder {
 class _FakeProcessingApi extends RekkyApi {
   _FakeProcessingApi() : super('https://example.invalid');
   int uploads = 0;
+  bool limitReached = false;
   String captureStatus = 'transcript_ready';
   final uploaded = <String>{};
 
@@ -53,6 +54,8 @@ class _FakeProcessingApi extends RekkyApi {
       'capture_id': 'capture-$id',
       'capture_status': captureStatus,
       'transcript_saved': true,
+      if (limitReached) 'waiting_reason': 'processing_limit',
+      if (limitReached) 'retry_at': '2026-09-27T09:36:58Z',
     };
   }
 
@@ -292,16 +295,20 @@ void main() {
       await store.start('owner-a');
       final draft = await store.finish('owner-a');
       expect(draft.autoProcess, isTrue);
-      final api = _FakeProcessingApi();
+      final api = _FakeProcessingApi()..limitReached = true;
+      final statuses = <String?>[];
       final processing = VoiceProcessingCoordinator(
         ownerId: 'owner-a',
         store: store,
         api: api,
         onChanged: () async {},
-        onStatus: (_) {},
+        onStatus: statuses.add,
       );
       await processing.process();
       expect(api.uploads, 1);
+      expect(statuses.last, contains('Daily processing limit reached'));
+      expect(statuses.last, contains('Your transcript is saved'));
+      expect(statuses, isNot(contains('Adding your recommendation…')));
       processing.stop();
       expect(await store.forOwner('owner-a'), isEmpty);
       expect(await store.pendingRemembers('owner-a'), [draft.id]);
@@ -309,6 +316,7 @@ void main() {
 
       await store.dispose();
       store = createStore(_FakeRecorder());
+      api.limitReached = false;
       api.captureStatus = 'completed';
       final resumed = VoiceProcessingCoordinator(
         ownerId: 'owner-a',

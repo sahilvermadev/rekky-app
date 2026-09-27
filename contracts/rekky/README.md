@@ -13,3 +13,5 @@ Understanding v2 adds an optional `recommendation` item field (summary, entity k
 Personal ratings are additive inside recommendation v2. [Rating fixtures](v1/fixtures/ratings.json) distinguish an estimate, spoken score, owner-set zero and no score. Detail consumers retain origin; raw support remains private. Content edits accept optional `rating` with keep/none/set modes, defaulting to keep for older clients, subject to changed-content invalidation. See [contract and semantics](../../docs/RATINGS.md).
 
 Provider contact snapshots and matching preferences are illustrated in `v1/fixtures/contact.json`. The number inherits the containing item's audience, with no separate visibility property. See [contact API and precedence](../../docs/CONTACTS.md).
+
+Quota waiting is an additive receipt state: `waiting_reason: "processing_limit"` with UTC `retry_at` for a transcribed capture awaiting a new extraction slot. Both fields are null otherwise; old clients may ignore them. The time is earliest eligibility, not guaranteed completion. The `remember_waiting_limit` fixture is shared by Rust and Dart.

@@ -28,6 +28,10 @@ void main() {
           as Map<String, dynamic>,
     );
     expect(examples['remember_queued']!['status'], 202);
+    final waiting = examples['remember_waiting_limit']!['body']['remember'];
+    expect(waiting['waiting_reason'], 'processing_limit');
+    expect(waiting['transcript_saved'], true);
+    expect(DateTime.parse(waiting['retry_at']).isUtc, isTrue);
     expect(
       examples['remember_queued']!['body']['remember']['transcript_saved'],
       false,
