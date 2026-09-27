@@ -101,6 +101,12 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/ask", post(ask))
         .route("/v1/ask/agent", post(crate::ask::run))
         .route(
+            "/v1/ask/dictations/{id}",
+            post(crate::ask_voice::transcribe)
+                .delete(crate::ask_voice::cancel)
+                .layer(DefaultBodyLimit::max(600_000)),
+        )
+        .route(
             "/v1/ask/answers/{id}",
             get(crate::ask::page).delete(crate::ask::cancel),
         )

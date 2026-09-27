@@ -88,7 +88,7 @@ fn tools() -> Vec<Value> {
             "Present all useful seen items with cited evidence, or a clarification. No made-up actions.",
             object(json!({
                 "intent":{"type":"string","enum":["recall","discovery"]},"title":{"type":"string"},"location":{"type":"string"},
-                "clarification":{"type":"string"},"choices":strings(),
+                "clarification":{"type":"string"},"choices":strings(),"new_topic":{"type":"boolean","description":"True only for a clearly unrelated new request; false for refinements and clarification replies."},
                 "results":{"type":"array","items":object(json!({"item_id":{"type":"string"},"section":{"type":"string","enum":["supported","worth_checking"],"description":"Suitability for the user request, NOT whether an exclusion statement has evidence. Include only viable options; omit irrelevant or contradicted candidates."},"reason":{"type":"string"},"caveat":{"type":"string"},"evidence_ids":strings()}))}
             })),
         ),
@@ -165,11 +165,17 @@ pub struct Candidate {
     pub evidence: Vec<Evidence>,
     pub locations: Value,
 }
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Input {
     request_id: Uuid,
     question: String,
+    #[serde(default)]
+    previous_request_id: Option<Uuid>,
+    #[serde(default)]
+    selected_item_ids: Vec<Uuid>,
+    #[serde(default)]
+    excluded_item_ids: Vec<Uuid>,
 }
 #[derive(Deserialize, Default)]
 pub struct PageQuery {
@@ -188,6 +194,8 @@ pub struct ProposedResult {
 #[serde(deny_unknown_fields)]
 pub struct Answer {
     pub intent: String,
+    #[serde(default)]
+    pub new_topic: bool,
     pub title: String,
     pub location: String,
     pub clarification: String,
@@ -196,6 +204,8 @@ pub struct Answer {
 }
 #[derive(Serialize, Deserialize)]
 struct Snapshot {
+    #[serde(default)]
+    conversation: Conversation,
     answer: Answer,
     candidates: Vec<Candidate>,
     mode: String,
@@ -204,6 +214,126 @@ struct Snapshot {
     #[serde(default)]
     search_incomplete: bool,
 }
+#[derive(Clone, Default, Serialize, Deserialize)]
+struct Conversation {
+    turns: Vec<String>,
+    selected_item_ids: Vec<Uuid>,
+    excluded_item_ids: Vec<Uuid>,
+}
+struct TurnContext {
+    conversation: Conversation,
+    previous_items: Vec<Candidate>,
+    clarification: String,
+}
+async fn turn_context(
+    state: &AppState,
+    owner_id: Uuid,
+    generation: i64,
+    input: &Input,
+) -> Result<TurnContext, ApiError> {
+    let mut conversation = Conversation::default();
+    let mut previous_items = vec![];
+    let mut clarification = String::new();
+    if let Some(id) = input.previous_request_id {
+        let value:Option<Value>=sqlx::query_scalar("SELECT result FROM ask_runs WHERE id=$1 AND owner_id=$2 AND permission_generation=$3 AND status='completed' AND expires_at>now() AND result IS NOT NULL")
+            .bind(id).bind(owner_id).bind(generation).fetch_optional(&state.pool).await?;
+        let snapshot: Snapshot = value
+            .and_then(|v| serde_json::from_value(v).ok())
+            .ok_or_else(|| {
+                ApiError::new(
+                    StatusCode::CONFLICT,
+                    "ask_context_expired",
+                    "This conversation expired. Start a new question.",
+                )
+            })?;
+        conversation = snapshot.conversation;
+        if conversation.turns.len() >= 8 {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "ask_context_full",
+                "Start a new question to continue exploring.",
+            ));
+        }
+        let allowed: HashSet<_> = snapshot.answer.results.iter().map(|r| r.item_id).collect();
+        if input
+            .selected_item_ids
+            .iter()
+            .chain(input.excluded_item_ids.iter())
+            .any(|id| !allowed.contains(id))
+        {
+            return Err(ApiError::bad(
+                "Choose a recommendation from the previous answer",
+            ));
+        }
+        // Selection applies to the next turn only. Exclusions remain session-scoped.
+        conversation.selected_item_ids = input.selected_item_ids.clone();
+        conversation
+            .excluded_item_ids
+            .extend(&input.excluded_item_ids);
+        conversation.excluded_item_ids.sort();
+        conversation.excluded_item_ids.dedup();
+        if conversation.excluded_item_ids.len() > 32 {
+            return Err(ApiError::bad(
+                "Start a new question to reset excluded options",
+            ));
+        }
+        let mut ids = input.selected_item_ids.clone();
+        ids.extend(snapshot.answer.results.iter().map(|r| r.item_id));
+        let mut used = HashSet::new();
+        let mut changed = false;
+        for id in ids {
+            if !used.insert(id) || conversation.excluded_item_ids.contains(&id) {
+                continue;
+            }
+            if let Some(item) = crate::app::owner_item(state, owner_id, id).await? {
+                let revision = item["revision"].as_i64().unwrap_or(0) as i32;
+                changed |= !snapshot
+                    .candidates
+                    .iter()
+                    .any(|c| c.item_id == id && c.revision == revision);
+                let rec = &item["recommendation"];
+                previous_items.push(Candidate {
+                    item_id: id,
+                    revision,
+                    subject: item["subject"].as_str().unwrap_or_default().into(),
+                    entity_kind: rec["entity_kind"].as_str().unwrap_or("note").into(),
+                    evidence: evidence(rec, item["body"].as_str().unwrap_or_default()),
+                    locations: rec["locations"].clone(),
+                });
+            } else {
+                changed = true;
+            }
+            if previous_items.len() >= 8 {
+                break;
+            }
+        }
+        if conversation
+            .selected_item_ids
+            .iter()
+            .any(|id| !previous_items.iter().any(|c| c.item_id == *id))
+        {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "ask_reference_changed",
+                "The selected recommendation is no longer available. Choose another or start a new question.",
+            ));
+        }
+        if !changed {
+            clarification = snapshot.answer.clarification;
+        }
+    } else if !input.selected_item_ids.is_empty() || !input.excluded_item_ids.is_empty() {
+        return Err(ApiError::bad(
+            "A previous answer is required for a selection",
+        ));
+    }
+    conversation.turns.push(input.question.clone());
+    Ok(TurnContext {
+        conversation,
+        previous_items,
+        clarification,
+    })
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Search {
@@ -317,6 +447,7 @@ fn fallback(question: &str, candidates: &HashMap<Uuid, Candidate>) -> Answer {
     values.sort_by_key(|c| c.item_id);
     Answer {
         intent: "recall".into(),
+        new_topic: false,
         title: "Saved matches".into(),
         location: String::new(),
         clarification: if values.is_empty() {
@@ -387,7 +518,14 @@ pub async fn run(State(state): State<AppState>, headers: HeaderMap, body: Bytes)
             "Enable understanding in Voice processing to use intelligent Ask.",
         )
     })?;
-    let request_hash = crate::auth::hash_token(&input.question);
+    if input.selected_item_ids.len() > 4 || input.excluded_item_ids.len() > 8 {
+        return Err(ApiError::bad("Too many selected recommendations"));
+    }
+    input.selected_item_ids.sort();
+    input.selected_item_ids.dedup();
+    input.excluded_item_ids.sort();
+    input.excluded_item_ids.dedup();
+    let request_hash = crate::auth::hash_token(&serde_json::to_string(&input).expect("input"));
     // Serialize admission across accounts: cap aggregate reserved spend, including unknown outcomes.
     let mut tx = state.pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock(827713)")
@@ -416,6 +554,7 @@ pub async fn run(State(state): State<AppState>, headers: HeaderMap, body: Bytes)
         }
         return page_response(&state, owner_id, input.request_id, 0).await;
     }
+    let context = turn_context(&state, owner_id, generation, &input).await?;
     if !state.ask_model.available() {
         return Err(ApiError::new(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -446,6 +585,7 @@ pub async fn run(State(state): State<AppState>, headers: HeaderMap, body: Bytes)
             generation,
             input.request_id,
             &input.question,
+            context,
         ),
     )
     .await;
@@ -482,8 +622,14 @@ async fn execute(
     generation: i64,
     run: Uuid,
     question: &str,
+    turn: TurnContext,
 ) -> Result<Snapshot, ApiError> {
-    let mut seen: HashMap<Uuid, Candidate> = HashMap::new();
+    let mut conversation = turn.conversation;
+    let mut seen: HashMap<Uuid, Candidate> = turn
+        .previous_items
+        .iter()
+        .map(|c| (c.item_id, c.clone()))
+        .collect();
     let mut observations = vec![];
     let mut calls = HashSet::new();
     let mut reads = 0;
@@ -514,7 +660,7 @@ async fn execute(
                 return Err(ApiError::conflict("A recommendation changed. Ask again."));
             }
         }
-        let context = json!({"question":question,"tool_observations":observations,"decisions_left":MAX_DECISIONS-step,"read_tools_left":4-reads});
+        let context = json!({"question":question,"conversation":conversation,"previous_results":turn.previous_items,"previous_clarification":turn.clarification,"tool_observations":observations,"decisions_left":MAX_DECISIONS-step,"read_tools_left":4-reads});
         let decision = match state
             .ask_model
             .decide(context, step == MAX_DECISIONS - 1)
@@ -530,11 +676,17 @@ async fn execute(
                     .ok()
                     .and_then(|a| validate_answer(a, &seen).ok())
                 {
+                    if a.new_topic && conversation.selected_item_ids.is_empty() {
+                        conversation.turns = vec![question.to_owned()];
+                        conversation.excluded_item_ids.clear();
+                    }
+                    a.results
+                        .retain(|r| !conversation.excluded_item_ids.contains(&r.item_id));
                     if a.intent == "recall" {
                         a.location.clear();
                     }
                     if !a.location.is_empty()
-                        && !crate::geography::normalized(question)
+                        && !crate::geography::normalized(&conversation.turns.join(" "))
                             .contains(&crate::geography::normalized(&a.location))
                     {
                         observations.push(json!({"error":"Location must be an explicit phrase from the original question; otherwise leave it empty."}));
@@ -544,6 +696,7 @@ async fn execute(
                     let mut connection = state.pool.acquire().await?;
                     crate::geography::enrich(&mut connection, &mut locations).await?;
                     return Ok(Snapshot {
+                        conversation,
                         answer: a,
                         candidates: seen.into_values().collect(),
                         mode: "agent".into(),
@@ -595,7 +748,9 @@ async fn execute(
             observations.push(json!({"tool":call.name,"arguments":call.arguments,"result":output}));
         }
     }
+    seen.retain(|id, _| !conversation.excluded_item_ids.contains(id));
     Ok(Snapshot {
+        conversation,
         answer: fallback(question, &seen),
         candidates: seen.into_values().collect(),
         mode: "limited".into(),
@@ -679,7 +834,7 @@ async fn page_response(state: &AppState, owner_id: Uuid, id: Uuid, offset: usize
         None
     };
     Ok(ok(
-        json!({"version":1,"request_id":id,"mode":snapshot.mode,"search_incomplete":snapshot.search_incomplete,"intent":snapshot.answer.intent,
+        json!({"version":1,"request_id":id,"question":snapshot.conversation.turns.last(),"turn_count":snapshot.conversation.turns.len(),"selected_item_ids":snapshot.conversation.selected_item_ids,"excluded_item_ids":snapshot.conversation.excluded_item_ids,"mode":snapshot.mode,"search_incomplete":snapshot.search_incomplete,"intent":snapshot.answer.intent,
         "title":if changed {"Saved recommendations"}else{&snapshot.answer.title},"clarification":if changed {""}else{&snapshot.answer.clarification},
         "choices":if changed {vec![]}else{snapshot.answer.choices},"location":snapshot.answer.location,"changed":changed,
         "results":valid.into_iter().skip(offset).take(PAGE).collect::<Vec<_>>(),"next_offset":next}),
@@ -815,6 +970,7 @@ mod tests {
         fake_evidence.evidence_ids = vec!["invented".into()];
         let a = Answer {
             intent: "discovery".into(),
+            new_topic: false,
             title: "For dinner".into(),
             location: String::new(),
             clarification: String::new(),

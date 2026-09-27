@@ -69,6 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let worker = tokio::spawn(async move {
         loop {
             let _ = rekky_backend::ask::sweep(&worker_state.pool).await;
+            let _ = rekky_backend::ask_voice::sweep(&worker_state.pool).await;
             if let Err(error) = rekky_backend::app::process_pending_voice(&worker_state, None).await
             {
                 eprintln!("Voice worker database error: {error}");

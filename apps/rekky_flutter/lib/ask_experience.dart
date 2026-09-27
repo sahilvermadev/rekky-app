@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'ask_answer.dart';
+import 'ask_voice_sheet.dart';
+import 'ask_recorder.dart';
 import 'rekky_api.dart';
 import 'rekky_haptics.dart';
 import 'library_style.dart';
@@ -23,11 +25,25 @@ class AskExperience extends StatefulWidget {
 
 class _AskExperienceState extends State<AskExperience> {
   final input = TextEditingController();
+  final inputFocus = FocusNode();
+  final history = <({AskAnswer answer, String question})>[];
+  final selected = <String>[];
+  final excluded = <String>[];
+  List<String> pendingSelected = [], pendingExcluded = [];
+  String? pendingParent, editParent;
+  bool speaking = false, restoring = false, editing = false;
+
   AskAnswer? answer;
   String asked = '', pending = '', requestId = '', openingId = '';
   String? error;
   bool working = false, paging = false;
   int generation = 0;
+  @override
+  void initState() {
+    super.initState();
+    unawaited(AskRecorder.clearAbandoned().catchError((_) {}));
+  }
+
   Future<void> cancelRequest(String id) async {
     if (id.isEmpty) return;
     try {
@@ -42,6 +58,7 @@ class _AskExperienceState extends State<AskExperience> {
     if (working) unawaited(cancelRequest(requestId));
     generation++;
     input.dispose();
+    inputFocus.dispose();
     super.dispose();
   }
 
@@ -61,19 +78,37 @@ class _AskExperienceState extends State<AskExperience> {
     final turn = ++generation;
     setState(() {
       working = true;
+      restoring = false;
       paging = false;
       error = null;
       pending = question;
-      if (!retry) requestId = newId();
+      if (!retry) {
+        requestId = newId();
+        pendingParent = editing ? editParent : answer?.requestId;
+        pendingSelected = List.of(selected);
+        pendingExcluded = List.of(excluded);
+      }
     });
     try {
       if (previousRequest != null) await cancelRequest(previousRequest);
       if (!mounted || turn != generation) return;
-      final result = await widget.api.askAgent(question, requestId);
+      final result = await widget.api.askAgent(
+        question,
+        requestId,
+        previousRequestId: pendingParent,
+        selectedItemIds: pendingSelected,
+        excludedItemIds: pendingExcluded,
+      );
       if (!mounted || turn != generation) return;
       setState(() {
+        if (answer != null) history.add((answer: answer!, question: asked));
+        if (history.length > 8) history.removeAt(0);
         answer = result;
         asked = question;
+        selected.clear();
+        excluded.clear();
+        editing = false;
+        input.clear();
         working = false;
       });
     } catch (e) {
@@ -87,6 +122,157 @@ class _AskExperienceState extends State<AskExperience> {
             : 'Couldn’t connect. Your previous answer is still here.';
       });
     }
+  }
+
+  void newQuestion() {
+    if (working) unawaited(cancelRequest(requestId));
+    generation++;
+    setState(() {
+      answer = null;
+      asked = '';
+      pending = '';
+      requestId = '';
+      working = false;
+      restoring = false;
+      paging = false;
+      error = null;
+      editing = false;
+      history.clear();
+      selected.clear();
+      excluded.clear();
+      input.clear();
+    });
+    inputFocus.requestFocus();
+  }
+
+  Future<void> previousAnswer() async {
+    if (history.isEmpty || restoring) return;
+    if (working) unawaited(cancelRequest(requestId));
+    final turn = ++generation;
+    final previous = history.last;
+    setState(() {
+      restoring = true;
+      working = false;
+      error = null;
+    });
+    try {
+      final fresh = await widget.api.askPage(previous.answer.requestId, 0);
+      if (!mounted || turn != generation) return;
+      setState(() {
+        history.removeLast();
+        answer = fresh;
+        asked = previous.question;
+        input.clear();
+        selected.clear();
+        excluded.clear();
+        editing = false;
+      });
+    } catch (e) {
+      if (mounted && turn == generation) {
+        setState(
+          () => error = e is ApiFailure ? e.message : 'Couldn’t restore that answer. Your current answer is still here.',
+        );
+      }
+    } finally {
+      if (mounted && turn == generation) setState(() => restoring = false);
+    }
+  }
+
+  Future<void> speak() async {
+    if (speaking || restoring) return;
+    if (working) {
+      unawaited(cancelRequest(requestId));
+      generation++;
+      setState(() => working = false);
+    }
+    inputFocus.unfocus();
+    setState(() => speaking = true);
+    // Bind the sheet to the current session so an account switch cannot rebind audio.
+    final scoped = RekkyApi(widget.api.baseUrl)..token = widget.api.token;
+    final text = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      isDismissible: false,
+      enableDrag: false,
+      showDragHandle: false,
+      builder: (_) => AskVoiceSheet(api: scoped, requestId: newId()),
+    );
+    if (!mounted) return;
+    setState(() => speaking = false);
+    if (text != null && text.trim().isNotEmpty) {
+      input.text = text;
+      await submit();
+    }
+  }
+
+  Widget composer(BuildContext context) {
+    final current = answer;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (selected.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Wrap(
+              children: [
+                for (final id in selected)
+                  InputChip(
+                    label: Text(
+                      current?.results
+                              .where((r) => r.item.id == id)
+                              .firstOrNull
+                              ?.item
+                              .subject ??
+                          'Selected recommendation',
+                    ),
+                    onDeleted: working
+                        ? null
+                        : () => setState(() => selected.remove(id)),
+                  ),
+              ],
+            ),
+          ),
+        TextField(
+          controller: input,
+          focusNode: inputFocus,
+          minLines: 1,
+          maxLines: 3,
+          maxLength: 500,
+          textInputAction: TextInputAction.search,
+          onSubmitted: (_) => submit(),
+          decoration: InputDecoration(
+            hintText: current == null
+                ? 'Somewhere we can sit and talk…'
+                : editing
+                ? 'Edit your question…'
+                : 'Ask a follow-up…',
+            counterText: '',
+            prefixIcon: IconButton(
+              tooltip: 'Speak a question',
+              onPressed: speaking || restoring ? null : speak,
+              icon: Icon(
+                Icons.mic_none_rounded,
+                color: LibraryStyle.searchFocus(context),
+              ),
+            ),
+            suffixIcon: IconButton(
+              tooltip: current == null ? 'Ask' : 'Ask follow-up',
+              onPressed: speaking || restoring ? null : () => submit(),
+              icon: const Icon(Icons.arrow_forward_rounded),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: LibraryStyle.searchFocus(context),
+                width: 2,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Future<void> more() async {
@@ -169,7 +355,7 @@ class _AskExperienceState extends State<AskExperience> {
     final uncertain =
         current?.results.where((r) => r.section != 'supported').toList() ??
         <AskResult>[];
-    return CustomScrollView(
+    final content = CustomScrollView(
       key: const PageStorageKey('intelligent-ask'),
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       slivers: [
@@ -207,31 +393,25 @@ class _AskExperienceState extends State<AskExperience> {
                       ),
                     ),
                   ),
-                TextField(
-                  controller: input,
-                  minLines: 1,
-                  maxLines: 3,
-                  maxLength: 500,
-                  textInputAction: TextInputAction.search,
-                  onSubmitted: (_) => submit(),
-                  decoration: InputDecoration(
-                    hintText: 'Somewhere we can sit and talk…',
-                    counterText: '',
-                    prefixIcon: const Icon(Icons.search_rounded),
-                    suffixIcon: IconButton(
-                      tooltip: working ? 'Ask a new question' : 'Ask',
-                      onPressed: () => submit(),
-                      icon: const Icon(Icons.arrow_forward_rounded),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: LibraryStyle.searchFocus(context),
-                        width: 2,
+                if (current == null) composer(context),
+                if (current != null)
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      if (history.isNotEmpty)
+                        TextButton.icon(
+                          onPressed: restoring ? null : previousAnswer,
+                          icon: const Icon(Icons.undo_rounded, size: 18),
+                          label: Text(
+                            restoring ? 'Restoring…' : 'Previous answer',
+                          ),
+                        ),
+                      TextButton(
+                        onPressed: newQuestion,
+                        child: const Text('New question'),
                       ),
-                    ),
+                    ],
                   ),
-                ),
                 if (working)
                   Padding(
                     padding: const EdgeInsets.only(top: 14),
@@ -321,10 +501,36 @@ class _AskExperienceState extends State<AskExperience> {
                 ],
                 if (current != null) ...[
                   const SizedBox(height: 24),
-                  Text(
-                    asked,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colors.onSurfaceVariant,
+                  InkWell(
+                    onTap: working
+                        ? null
+                        : () {
+                            setState(() {
+                              editing = true;
+                              editParent = answer?.turnCount == 1
+                                  ? null
+                                  : history.lastOrNull?.answer.requestId;
+                              input.text = asked;
+                            });
+                            inputFocus.requestFocus();
+                          },
+                    child: Semantics(
+                      button: true,
+                      label: 'Edit question: $asked',
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              asked,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colors.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Icon(Icons.edit_outlined, size: 16),
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -381,7 +587,7 @@ class _AskExperienceState extends State<AskExperience> {
                                 (choice) => ActionChip(
                                   label: Text(choice),
                                   onPressed: () {
-                                    input.text = '$asked — $choice';
+                                    input.text = choice;
                                     submit();
                                   },
                                 ),
@@ -428,6 +634,16 @@ class _AskExperienceState extends State<AskExperience> {
                 child: Text(paging ? 'Loading…' : 'More recommendations'),
               ),
             ),
+          ),
+      ],
+    );
+    return Column(
+      children: [
+        Expanded(child: content),
+        if (current != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: composer(context),
           ),
       ],
     );
@@ -520,6 +736,31 @@ class _AskExperienceState extends State<AskExperience> {
             child: Wrap(
               spacing: 8,
               children: [
+                TextButton(
+                  onPressed: working
+                      ? null
+                      : () {
+                          setState(() {
+                            selected.clear();
+                            selected.add(item.id);
+                            editing = false;
+                          });
+                          inputFocus.requestFocus();
+                        },
+                  child: const Text('Ask about this'),
+                ),
+                IconButton(
+                  tooltip: 'Exclude this option for this conversation',
+                  onPressed: working
+                      ? null
+                      : () {
+                          selected.clear();
+                          excluded.add(item.id);
+                          input.text = 'Exclude this option and show other possibilities.';
+                          submit();
+                        },
+                  icon: const Icon(Icons.remove_circle_outline, size: 18),
+                ),
                 if (phone != null || maps != null)
                   TextButton.icon(
                     onPressed: openingId.isEmpty

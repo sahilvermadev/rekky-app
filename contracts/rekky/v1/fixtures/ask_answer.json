@@ -36,5 +36,9 @@
     }
   ],
   "next_offset": null,
-  "search_incomplete": false
+  "search_incomplete": false,
+  "question": "Somewhere we can talk",
+  "turn_count": 1,
+  "selected_item_ids": [],
+  "excluded_item_ids": []
 }

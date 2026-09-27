@@ -664,15 +664,46 @@ class RekkyApi {
     (await request('GET', '/v1/items/$id'))['item'] as Map<String, dynamic>,
   );
 
-  Future<AskAnswer> askAgent(String question, String requestId) async =>
-      AskAnswer.fromJson(
-        await request(
-          'POST',
-          '/v1/ask/agent',
-          body: {'question': question, 'request_id': requestId},
-          timeout: const Duration(seconds: 55),
-        ),
-      );
+  Future<AskAnswer> askAgent(
+    String question,
+    String requestId, {
+    String? previousRequestId,
+    List<String> selectedItemIds = const [],
+    List<String> excludedItemIds = const [],
+  }) async => AskAnswer.fromJson(
+    await request(
+      'POST',
+      '/v1/ask/agent',
+      body: {
+        'question': question,
+        'request_id': requestId,
+        'previous_request_id': ?previousRequestId,
+        'selected_item_ids': selectedItemIds,
+        'excluded_item_ids': excludedItemIds,
+      },
+      timeout: const Duration(seconds: 55),
+    ),
+  );
+
+  Future<String> transcribeQuestion(String id, List<int> audio) async {
+    final request = http.Request('POST', _uri('/v1/ask/dictations/$id'));
+    request.headers.addAll({
+      'content-type': 'audio/mp4',
+      'accept': 'application/json',
+      if (token != null) 'authorization': 'Bearer $token',
+    });
+    request.bodyBytes = audio;
+    final streamed = await _client
+        .send(request)
+        .timeout(const Duration(seconds: 40));
+    final response = await http.Response.fromStream(streamed)
+        .timeout(const Duration(seconds: 40));
+    return _decode(response)['text'] as String;
+  }
+
+  Future<void> cancelDictation(String id) async {
+    await request('DELETE', '/v1/ask/dictations/$id');
+  }
 
   Future<void> cancelAsk(String id) async {
     await request('DELETE', '/v1/ask/answers/$id');

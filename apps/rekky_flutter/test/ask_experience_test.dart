@@ -9,20 +9,35 @@ import 'package:rekky_flutter/ask_experience.dart';
 import 'package:rekky_flutter/rekky_api.dart';
 import 'package:rekky_flutter/rekky_theme.dart';
 
-AskAnswer fixture() => AskAnswer.fromJson(
-  jsonDecode(
+AskAnswer fixture({int turn = 1}) => AskAnswer.fromJson({
+  ...(jsonDecode(
     File('../../contracts/rekky/v1/fixtures/ask_answer.json')
         .readAsStringSync(),
-  ) as Map<String, dynamic>,
-);
+  ) as Map<String, dynamic>),
+  'turn_count': turn,
+  if (turn > 1) 'request_id': '44444444-4444-4444-8444-444444444444',
+});
 
 class FakeAsk extends RekkyApi {
   FakeAsk() : super('http://unused');
+  final contexts = <Map<String, dynamic>>[];
   final requestIds = <String>[];
   final pending = <Completer<AskAnswer>>[];
   int cancelled = 0, reads = 0, pages = 0;
   @override
-  Future<AskAnswer> askAgent(String question, String requestId) {
+  Future<AskAnswer> askAgent(
+    String question,
+    String requestId, {
+    String? previousRequestId,
+    List<String> selectedItemIds = const [],
+    List<String> excludedItemIds = const [],
+  }) {
+    contexts.add({
+      'parent': previousRequestId,
+      'selected': List.of(selectedItemIds),
+      'excluded': List.of(excludedItemIds),
+      'question': question,
+    });
     requestIds.add(requestId);
     final c = Completer<AskAnswer>();
     pending.add(c);
@@ -105,6 +120,42 @@ void main() {
       );
     },
   );
+  testWidgets(
+    'follow-up carries selection, restores prior answer without AI and resets context',
+    (t) async {
+      final api = FakeAsk();
+      await t.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AskExperience(api: api, onOpen: (_) async {}),
+          ),
+        ),
+      );
+      await submit(t, 'quiet dinner in Delhi');
+      api.pending[0].complete(fixture());
+      await t.pumpAndSettle();
+      await t.ensureVisible(find.text('Ask about this'));
+      await t.tap(find.text('Ask about this'));
+      await t.pump();
+      await submit(t, 'Can this one fit six people?');
+      expect(api.contexts[1]['parent'], fixture().requestId);
+      expect(api.contexts[1]['selected'], [fixture().results.single.item.id]);
+      api.pending[1].complete(fixture(turn: 2));
+      await t.pumpAndSettle();
+      await t.ensureVisible(find.text('Previous answer'));
+      await t.tap(find.text('Previous answer'));
+      await t.pumpAndSettle();
+      expect(api.pages, 1);
+      expect(api.pending.length, 2);
+      await t.tap(find.text('New question'));
+      await t.pumpAndSettle();
+      await submit(t, 'A doctor');
+      expect(api.contexts.last['parent'], isNull);
+      expect(api.contexts.last['selected'], isEmpty);
+      api.pending.last.complete(fixture());
+      await t.pumpAndSettle();
+    },
+  );
   for (final width in [320.0, 375.0, 414.0, 768.0]) {
     testWidgets('answer at $width with large text stays scrollable', (t) async {
       t.view.physicalSize = Size(width, 800);
@@ -129,6 +180,9 @@ void main() {
       api.pending.single.complete(fixture());
       await t.pumpAndSettle();
       await t.ensureVisible(find.text('Why this fits'));
+      await t.ensureVisible(find.text('Ask about this'));
+      await t.tap(find.text('Ask about this'));
+      await t.pump();
       expect(t.takeException(), isNull);
     });
   }

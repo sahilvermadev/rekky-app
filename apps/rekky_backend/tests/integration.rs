@@ -4086,3 +4086,489 @@ async fn live_ask_development_probe() {
         "Inspect the development report before enabling Ask"
     );
 }
+
+struct ContextAsk {
+    seen: std::sync::Mutex<Vec<Value>>,
+}
+#[async_trait]
+impl rekky_backend::ask::AskModel for ContextAsk {
+    fn available(&self) -> bool {
+        true
+    }
+    async fn decide(
+        &self,
+        context: Value,
+        _: bool,
+    ) -> Result<rekky_backend::ask::Decision, rekky_backend::ask::AgentError> {
+        self.seen.lock().unwrap().push(context.clone());
+        let previous = context["previous_results"].as_array().unwrap();
+        let history = context["tool_observations"].as_array().unwrap();
+        let (name, arguments) = if previous.is_empty() && history.is_empty() {
+            ("search_knowledge", json!({"terms":["Lantern"],"page":0}))
+        } else {
+            let items = if previous.is_empty() {
+                history[0]["result"]["items"].as_array().unwrap()
+            } else {
+                previous
+            };
+            (
+                "present_answer",
+                json!({"intent":"discovery","new_topic":context["question"]=="Unrelated new topic","title":"Useful options","location":"","clarification":"","choices":[],"results":items.iter().map(|i|json!({"item_id":i["item_id"],"section":"supported","reason":"A saved option.","caveat":"","evidence_ids":[i["evidence"][0]["id"]]})).collect::<Vec<_>>()}),
+            )
+        };
+        Ok(rekky_backend::ask::Decision {
+            calls: vec![rekky_backend::ask::ToolCall {
+                name: name.into(),
+                arguments,
+            }],
+            input_tokens: 10,
+            output_tokens: 10,
+        })
+    }
+}
+async fn ask_account(t: &mut TestApp) -> (Uuid, String) {
+    let (id, token) = t.sign_in("google", "valid-a").await;
+    t.call(
+        Method::POST,
+        "/v1/me/visibility-disclosure",
+        Some(&token),
+        Some(json!({"accept":true})),
+        &[],
+    )
+    .await;
+    t.call(
+        Method::POST,
+        "/v1/me/voice-transcription-permission",
+        Some(&token),
+        Some(json!({"enabled":true,"disclosure_version":1})),
+        &[],
+    )
+    .await;
+    t.call(
+        Method::POST,
+        "/v1/me/transcript-extraction-permission",
+        Some(&token),
+        Some(json!({"enabled":true,"disclosure_version":1})),
+        &[],
+    )
+    .await;
+    (id, token)
+}
+#[tokio::test]
+async fn ask_followups_refresh_evidence_scope_references_and_preserve_constraints() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    let model = Arc::new(ContextAsk {
+        seen: std::sync::Mutex::new(vec![]),
+    });
+    t.state.ask_model = model.clone();
+    t.app = router(t.state.clone());
+    let (_owner, token) = ask_account(&mut t).await;
+    let mut ids = vec![];
+    for name in ["Lantern One", "Lantern Two"] {
+        let (_, v) = t
+            .call(
+                Method::POST,
+                "/v1/items",
+                Some(&token),
+                Some(
+                    json!({"subject":name,"body":"A quiet place in Delhi.","visibility":"private"}),
+                ),
+                &[("idempotency-key", &Uuid::new_v4().to_string())],
+            )
+            .await;
+        ids.push(v["item"]["id"].as_str().unwrap().to_owned());
+    }
+    let first = Uuid::new_v4();
+    let (code, a) = t
+        .call(
+            Method::POST,
+            "/v1/ask/agent",
+            Some(&token),
+            Some(json!({"request_id":first,"question":"quiet dinner in Delhi"})),
+            &[],
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{a}");
+    assert_eq!(a["turn_count"], 1);
+    // An edited recommendation is fetched afresh, not copied from the previous answer.
+    sqlx::query(
+        "UPDATE knowledge_items SET body='Tables for two only.',revision=revision+1 WHERE id=$1",
+    )
+    .bind(Uuid::parse_str(&ids[0]).unwrap())
+    .execute(&t.pool)
+    .await
+    .unwrap();
+    let second = Uuid::new_v4();
+    let (code,a)=t.call(Method::POST,"/v1/ask/agent",Some(&token),Some(json!({"request_id":second,"question":"What about this one for six people?","previous_request_id":first,"selected_item_ids":[ids[0]],"excluded_item_ids":[ids[1]]})),&[]).await;
+    assert_eq!(code, StatusCode::OK, "{a}");
+    assert_eq!(a["turn_count"], 2);
+    assert_eq!(a["results"].as_array().unwrap().len(), 1);
+    assert_eq!(a["results"][0]["item"]["id"], ids[0]);
+    let context = model.seen.lock().unwrap().last().unwrap().clone();
+    assert_eq!(
+        context["conversation"]["turns"],
+        json!([
+            "quiet dinner in Delhi",
+            "What about this one for six people?"
+        ])
+    );
+    assert_eq!(
+        context["previous_results"][0]["evidence"][0]["text"],
+        "Tables for two only."
+    );
+    assert_eq!(
+        context["conversation"]["selected_item_ids"],
+        json!([ids[0]])
+    );
+    let calls = model.seen.lock().unwrap().len();
+    let (code,_)=t.call(Method::POST,"/v1/ask/agent",Some(&token),Some(json!({"request_id":Uuid::new_v4(),"question":"This one","previous_request_id":second,"selected_item_ids":[Uuid::new_v4()]})),&[]).await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+    assert_eq!(calls, model.seen.lock().unwrap().len());
+    let (_,a)=t.call(Method::POST,"/v1/ask/agent",Some(&token),Some(json!({"request_id":Uuid::new_v4(),"question":"Unrelated new topic","previous_request_id":second})),&[]).await;
+    assert_eq!(a["turn_count"], 1);
+    assert_eq!(a["excluded_item_ids"], json!([]));
+    let (_, other) = t.sign_in("google", "valid-b").await;
+    t.call(
+        Method::POST,
+        "/v1/me/visibility-disclosure",
+        Some(&other),
+        Some(json!({"accept":true})),
+        &[],
+    )
+    .await;
+    t.call(
+        Method::POST,
+        "/v1/me/transcript-extraction-permission",
+        Some(&other),
+        Some(json!({"enabled":true,"disclosure_version":1})),
+        &[],
+    )
+    .await;
+    let (code,_)=t.call(Method::POST,"/v1/ask/agent",Some(&other),Some(json!({"request_id":Uuid::new_v4(),"question":"Tell me more","previous_request_id":first})),&[]).await;
+    assert_eq!(code, StatusCode::CONFLICT);
+    sqlx::query("UPDATE ask_runs SET expires_at=now()-interval '1 second' WHERE id=$1")
+        .bind(second)
+        .execute(&t.pool)
+        .await
+        .unwrap();
+    let (code,e)=t.call(Method::POST,"/v1/ask/agent",Some(&token),Some(json!({"request_id":Uuid::new_v4(),"question":"Tell me more","previous_request_id":second})),&[]).await;
+    assert_eq!(code, StatusCode::CONFLICT);
+    assert_eq!(e["error"]["code"], "ask_context_expired");
+    sqlx::query("UPDATE knowledge_items SET deleted_at=now() WHERE id=$1")
+        .bind(Uuid::parse_str(&ids[0]).unwrap())
+        .execute(&t.pool)
+        .await
+        .unwrap();
+    let (status,error)=t.call(Method::POST,"/v1/ask/agent",Some(&token),Some(json!({"request_id":Uuid::new_v4(),"previous_request_id":first,"question":"This one","selected_item_ids":[ids[0]]})),&[]).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["error"]["code"], "ask_reference_changed");
+    t.cleanup().await;
+}
+fn question_audio() -> Vec<u8> {
+    let mut audio = vec![0u8; 128];
+    audio[0..4].copy_from_slice(&24u32.to_be_bytes());
+    audio[4..8].copy_from_slice(b"ftyp");
+    audio[24..28].copy_from_slice(&104u32.to_be_bytes());
+    audio[28..32].copy_from_slice(b"moov");
+    audio[32..36].copy_from_slice(&96u32.to_be_bytes());
+    audio[36..40].copy_from_slice(b"mvhd");
+    audio[52..56].copy_from_slice(&1000u32.to_be_bytes());
+    audio[56..60].copy_from_slice(&5000u32.to_be_bytes());
+    audio
+}
+#[tokio::test]
+async fn ask_dictation_is_temporary_idempotent_and_never_creates_a_recommendation() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    let (owner, token) = ask_account(&mut t).await;
+    let id = Uuid::new_v4();
+    let path = format!("/v1/ask/dictations/{id}");
+    let (code, a) = t.call_audio(&path, &token, question_audio(), 0).await;
+    assert_eq!(code, StatusCode::OK, "{a}");
+    assert_eq!(a["text"], "Ravi fixed the kitchen tap on Tuesday.");
+    let (code, b) = t.call_audio(&path, &token, question_audio(), 0).await;
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!(a, b);
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM captures WHERE owner_id=$1")
+        .bind(owner)
+        .fetch_one(&t.pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+    let (_, other) = t.sign_in("google", "valid-b").await;
+    assert_eq!(
+        t.call_audio(&path, &other, question_audio(), 0).await.0,
+        StatusCode::FORBIDDEN
+    );
+    t.call(Method::DELETE, &path, Some(&token), None, &[]).await;
+    let text: Option<String> =
+        sqlx::query_scalar("SELECT transcript FROM ask_dictations WHERE id=$1")
+            .bind(id)
+            .fetch_one(&t.pool)
+            .await
+            .unwrap();
+    assert!(text.is_none());
+    assert_eq!(
+        t.call_audio(&path, &token, question_audio(), 0).await.0,
+        StatusCode::CONFLICT
+    );
+    let early = format!("/v1/ask/dictations/{}", Uuid::new_v4());
+    t.call(Method::DELETE, &early, Some(&token), None, &[])
+        .await;
+    assert_eq!(
+        t.call_audio(&early, &token, question_audio(), 0).await.0,
+        StatusCode::CONFLICT
+    );
+    let mut long = question_audio();
+    long[56..60].copy_from_slice(&120000u32.to_be_bytes());
+    assert_eq!(
+        t.call_audio(
+            &format!("/v1/ask/dictations/{}", Uuid::new_v4()),
+            &token,
+            long,
+            0
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    let expiry_id = Uuid::new_v4();
+    assert_eq!(
+        t.call_audio(
+            &format!("/v1/ask/dictations/{expiry_id}"),
+            &token,
+            question_audio(),
+            0
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    sqlx::query("UPDATE ask_dictations SET expires_at=now()-interval '1 second' WHERE id=$1")
+        .bind(expiry_id)
+        .execute(&t.pool)
+        .await
+        .unwrap();
+    rekky_backend::ask_voice::sweep(&t.pool).await.unwrap();
+    let erased: bool =
+        sqlx::query_scalar("SELECT transcript IS NULL FROM ask_dictations WHERE id=$1")
+            .bind(expiry_id)
+            .fetch_one(&t.pool)
+            .await
+            .unwrap();
+    assert!(erased);
+    t.cleanup().await;
+}
+#[tokio::test]
+async fn ask_dictation_cancel_and_withdrawal_discard_late_transcript() {
+    for withdraw in [false, true] {
+        let transcriber = Arc::new(BlockingTranscriber {
+            started: Notify::new(),
+            release: Notify::new(),
+        });
+        let Some(mut t) = TestApp::new_with_transcriber(transcriber.clone()).await else {
+            return;
+        };
+        let (_, token) = ask_account(&mut t).await;
+        let id = Uuid::new_v4();
+        let app = t.app.clone();
+        let auth = token.clone();
+        let task = tokio::spawn(async move {
+            app.oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri(format!("/v1/ask/dictations/{id}"))
+                    .header("authorization", format!("Bearer {auth}"))
+                    .header("content-type", "audio/mp4")
+                    .body(Body::from(question_audio()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+        });
+        tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            transcriber.started.notified(),
+        )
+        .await
+        .unwrap();
+        if withdraw {
+            t.call(
+                Method::POST,
+                "/v1/me/processing-withdrawal",
+                Some(&token),
+                Some(json!({})),
+                &[],
+            )
+            .await;
+        } else {
+            t.call(
+                Method::DELETE,
+                &format!("/v1/ask/dictations/{id}"),
+                Some(&token),
+                None,
+                &[],
+            )
+            .await;
+        }
+        transcriber.release.notify_one();
+        assert!(!task.await.unwrap().status().is_success());
+        let text: Option<String> =
+            sqlx::query_scalar("SELECT transcript FROM ask_dictations WHERE id=$1")
+                .bind(id)
+                .fetch_one(&t.pool)
+                .await
+                .unwrap();
+        assert!(text.is_none());
+        t.cleanup().await;
+    }
+}
+
+#[tokio::test]
+#[ignore = "Explicit synthetic live-model follow-up development probe"]
+async fn live_ask_refinement_probe() {
+    let mut t = TestApp::new()
+        .await
+        .expect("isolated test database required");
+    assert!(t.state.ask_model.available());
+    let model = Arc::new(RecordingAsk {
+        model: rekky_backend::ask::OpenAiAsk::from_env(),
+        trace: std::sync::Mutex::new(vec![]),
+    });
+    t.state.ask_model = model.clone();
+    t.app = router(t.state.clone());
+    let (_, token) = ask_account(&mut t).await;
+    let mut ids = std::collections::HashMap::new();
+    for (name, body) in [
+        (
+            "Lantern Two",
+            "An Italian restaurant where we could talk easily. Very quiet. It can accommodate a maximum of two guests; no larger groups.",
+        ),
+        (
+            "Maple Table",
+            "We had an Italian dinner. Quiet enough to talk easily. Our group of eight fitted comfortably, with room for ten.",
+        ),
+        (
+            "Loud Kitchen",
+            "Italian dinner for eight was tasty but the music was so loud we could not hear each other.",
+        ),
+        (
+            "Mohan Taxi",
+            "Mohan drove us from Mussoorie to Landour. He was punctual. Current service area is unknown.",
+        ),
+    ] {
+        let (_, v) = t
+            .call(
+                Method::POST,
+                "/v1/items",
+                Some(&token),
+                Some(json!({"subject":name,"body":body,"visibility":"private"})),
+                &[("idempotency-key", &Uuid::new_v4().to_string())],
+            )
+            .await;
+        ids.insert(name, v["item"]["id"].clone());
+    }
+    let first = Uuid::new_v4();
+    let second = Uuid::new_v4();
+    let inputs = [
+        json!({"request_id":first,"question":"A quiet Italian dinner where we can talk"}),
+        json!({"request_id":second,"previous_request_id":first,"question":"We will be eight people"}),
+        json!({"request_id":Uuid::new_v4(),"previous_request_id":first,"question":"Would this one fit eight people?"}),
+        json!({"request_id":Uuid::new_v4(),"previous_request_id":first,"question":"Would this one fit eight people?","selected_item_ids":[ids["Lantern Two"]]}),
+        json!({"request_id":Uuid::new_v4(),"previous_request_id":second,"question":"Who was that taxi driver around Landour?"}),
+    ];
+    let mut report = vec![];
+    for (i, input) in inputs.into_iter().enumerate() {
+        let start = std::time::Instant::now();
+        let (code, answer) = t
+            .call(
+                Method::POST,
+                "/v1/ask/agent",
+                Some(&token),
+                Some(input.clone()),
+                &[],
+            )
+            .await;
+        let results = answer["results"].as_array().cloned().unwrap_or_default();
+        let has = |name: &str| results.iter().any(|r| r["item"]["id"] == ids[name]);
+        let supported = |name: &str| {
+            results
+                .iter()
+                .any(|r| r["item"]["id"] == ids[name] && r["section"] == "supported")
+        };
+        let passed = code == StatusCode::OK
+            && answer["mode"] == "agent"
+            && match i {
+                0 => has("Lantern Two") && has("Maple Table") && !has("Loud Kitchen"),
+                1 => {
+                    supported("Maple Table")
+                        && !has("Lantern Two")
+                        && !has("Loud Kitchen")
+                        && answer["turn_count"] == 2
+                }
+                2 => !answer["clarification"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .is_empty(),
+                3 => !supported("Lantern Two"),
+                4 => {
+                    has("Mohan Taxi")
+                        && !has("Lantern Two")
+                        && !has("Maple Table")
+                        && answer["turn_count"] == 1
+                }
+                _ => false,
+            };
+        report.push(json!({"input":input,"passed":passed,"elapsed_ms":start.elapsed().as_millis(),"answer":answer,"trace":std::mem::take(&mut *model.trace.lock().unwrap())}));
+        println!("Follow-up case {i}: passed={passed}");
+    }
+    std::fs::write(
+        std::env::var("ASK_PROBE_OUTPUT").unwrap(),
+        serde_json::to_string_pretty(&report).unwrap(),
+    )
+    .unwrap();
+    t.cleanup().await;
+    assert!(
+        report.iter().all(|r| r["passed"] == true),
+        "Inspect synthetic follow-up report"
+    );
+}
+
+#[tokio::test]
+#[ignore = "Explicit live transcription of a locally synthesized question only"]
+async fn live_ask_synthetic_dictation_probe() {
+    let transcriber = Arc::new(rekky_backend::voice::OpenAiTranscriber::from_env());
+    assert!(transcriber.available());
+    let mut t = TestApp::new_with_transcriber(transcriber)
+        .await
+        .expect("isolated DB required");
+    let (owner, token) = ask_account(&mut t).await;
+    let audio = std::fs::read(std::env::var("ASK_SYNTHETIC_AUDIO").unwrap()).unwrap();
+    let id = Uuid::new_v4();
+    let path = format!("/v1/ask/dictations/{id}");
+    let start = std::time::Instant::now();
+    let (code, response) = t.call_audio(&path, &token, audio, 0).await;
+    let elapsed = start.elapsed().as_millis();
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM captures WHERE owner_id=$1")
+        .bind(owner)
+        .fetch_one(&t.pool)
+        .await
+        .unwrap();
+    t.call(Method::DELETE, &path, Some(&token), None, &[]).await;
+    let erased: bool =
+        sqlx::query_scalar("SELECT transcript IS NULL FROM ask_dictations WHERE id=$1")
+            .bind(id)
+            .fetch_one(&t.pool)
+            .await
+            .unwrap();
+    std::fs::write(std::env::var("ASK_PROBE_OUTPUT").unwrap(),serde_json::to_string_pretty(&json!({"synthetic_utterance":"A quiet Italian dinner for eight people.","model":"gpt-transcribe","status":code.as_u16(),"response":response,"elapsed_ms":elapsed,"captures_created":count,"temporary_text_erased":erased})).unwrap()).unwrap();
+    t.cleanup().await;
+    assert_eq!(code, StatusCode::OK, "{response}");
+    assert_eq!(count, 0);
+    assert!(erased);
+    let text = response["text"].as_str().unwrap().to_lowercase();
+    assert!(text.contains("italian") && (text.contains("eight") || text.contains('8')));
+}

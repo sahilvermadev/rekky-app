@@ -45,12 +45,19 @@ class AskAnswer {
     this.nextOffset,
     this.changed = false,
     this.searchIncomplete = false,
+    this.question = '',
+    this.turnCount = 1,
+    this.selectedItemIds = const [],
+    this.excludedItemIds = const [],
   });
   final String requestId, title, intent, mode, clarification, location;
   final List<String> choices;
   final List<AskResult> results;
   final int? nextOffset;
   final bool changed, searchIncomplete;
+  final String question;
+  final int turnCount;
+  final List<String> selectedItemIds, excludedItemIds;
   factory AskAnswer.fromJson(Map<String, dynamic> value) => AskAnswer(
     requestId: value['request_id'] as String,
     title: value['title'] as String,
@@ -65,11 +72,19 @@ class AskAnswer {
     nextOffset: value['next_offset'] as int?,
     changed: value['changed'] as bool? ?? false,
     searchIncomplete: value['search_incomplete'] as bool? ?? false,
+    question: value['question'] as String? ?? '',
+    turnCount: value['turn_count'] as int? ?? 1,
+    selectedItemIds: (value['selected_item_ids'] as List? ?? []).cast<String>(),
+    excludedItemIds: (value['excluded_item_ids'] as List? ?? []).cast<String>(),
   );
   AskAnswer append(AskAnswer page) => page.changed
       ? page
       : AskAnswer(
           requestId: requestId,
+          question: question,
+          turnCount: turnCount,
+          selectedItemIds: selectedItemIds,
+          excludedItemIds: excludedItemIds,
           title: title,
           intent: intent,
           mode: mode,

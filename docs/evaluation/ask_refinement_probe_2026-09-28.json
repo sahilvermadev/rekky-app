@@ -1,0 +1,408 @@
+{
+  "kind": "synthetic-development-not-held-out",
+  "date": "2026-09-28",
+  "data": [
+    {
+      "answer": {
+        "changed": false,
+        "choices": [],
+        "clarification": "How many people are dining?",
+        "excluded_item_ids": [],
+        "intent": "recall",
+        "location": "",
+        "mode": "agent",
+        "next_offset": null,
+        "question": "A quiet Italian dinner where we can talk",
+        "request_id": "a81cbee1-e83e-4133-8162-976a58c60bf5",
+        "results": [
+          {
+            "caveat": "",
+            "evidence": [
+              {
+                "id": "body",
+                "kind": "saved_note",
+                "text": "We had an Italian dinner. Quiet enough to talk easily. Our group of eight fitted comfortably, with room for ten."
+              }
+            ],
+            "item": {
+              "body": "We had an Italian dinner. Quiet enough to talk easily. Our group of eight fitted comfortably, with room for ten.",
+              "capture_id": "187e4cda-d797-4054-96a6-b100f2f17fd9",
+              "created_at": "2026-09-27T18:44:38.576694Z",
+              "id": "7b6669e4-a585-471a-b790-d1439b8c4f23",
+              "needs_review": false,
+              "pin_revision": 1,
+              "pinned": false,
+              "recommendation": null,
+              "revision": 1,
+              "subject": "Maple Table",
+              "visibility": "private"
+            },
+            "reason": "A saved note says the Italian dinner was quiet enough to talk easily; a group of eight fit comfortably.",
+            "section": "supported"
+          },
+          {
+            "caveat": "Saved note says it accommodates a maximum of two guests.",
+            "evidence": [
+              {
+                "id": "body",
+                "kind": "saved_note",
+                "text": "An Italian restaurant where we could talk easily. Very quiet. It can accommodate a maximum of two guests; no larger groups."
+              }
+            ],
+            "item": {
+              "body": "An Italian restaurant where we could talk easily. Very quiet. It can accommodate a maximum of two guests; no larger groups.",
+              "capture_id": "657bed46-85fc-4974-975a-c57acc466939",
+              "created_at": "2026-09-27T18:44:38.564214Z",
+              "id": "21d8042a-2229-4d4d-94c7-31ee740b3aa6",
+              "needs_review": false,
+              "pin_revision": 1,
+              "pinned": false,
+              "recommendation": null,
+              "revision": 1,
+              "subject": "Lantern Two",
+              "visibility": "private"
+            },
+            "reason": "Saved as a very quiet Italian restaurant where people could talk easily.",
+            "section": "worth_checking"
+          }
+        ],
+        "search_incomplete": false,
+        "selected_item_ids": [],
+        "title": "Quiet Italian dinner options",
+        "turn_count": 1,
+        "version": 1
+      },
+      "elapsed_ms": 4860,
+      "input": {
+        "question": "A quiet Italian dinner where we can talk",
+        "request_id": "a81cbee1-e83e-4133-8162-976a58c60bf5"
+      },
+      "passed": true,
+      "trace": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "page": 0,
+                "terms": [
+                  "Italian restaurant",
+                  "Italian dinner",
+                  "quiet restaurant",
+                  "talk conversation"
+                ]
+              },
+              "tool": "search_knowledge"
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "choices": [],
+                "clarification": "How many people are dining?",
+                "intent": "recall",
+                "location": "",
+                "new_topic": false,
+                "results": [
+                  {
+                    "caveat": "",
+                    "evidence_ids": [
+                      "body"
+                    ],
+                    "item_id": "7b6669e4-a585-471a-b790-d1439b8c4f23",
+                    "reason": "A saved note says the Italian dinner was quiet enough to talk easily; a group of eight fit comfortably.",
+                    "section": "supported"
+                  },
+                  {
+                    "caveat": "Saved note says it accommodates a maximum of two guests.",
+                    "evidence_ids": [
+                      "body"
+                    ],
+                    "item_id": "21d8042a-2229-4d4d-94c7-31ee740b3aa6",
+                    "reason": "Saved as a very quiet Italian restaurant where people could talk easily.",
+                    "section": "worth_checking"
+                  }
+                ],
+                "title": "Quiet Italian dinner options"
+              },
+              "tool": "present_answer"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "answer": {
+        "changed": false,
+        "choices": [],
+        "clarification": "",
+        "excluded_item_ids": [],
+        "intent": "recall",
+        "location": "",
+        "mode": "agent",
+        "next_offset": null,
+        "question": "We will be eight people",
+        "request_id": "a2428f09-933b-4358-bf33-7278afd05001",
+        "results": [
+          {
+            "caveat": "",
+            "evidence": [
+              {
+                "id": "body",
+                "kind": "saved_note",
+                "text": "We had an Italian dinner. Quiet enough to talk easily. Our group of eight fitted comfortably, with room for ten."
+              }
+            ],
+            "item": {
+              "body": "We had an Italian dinner. Quiet enough to talk easily. Our group of eight fitted comfortably, with room for ten.",
+              "capture_id": "187e4cda-d797-4054-96a6-b100f2f17fd9",
+              "created_at": "2026-09-27T18:44:38.576694Z",
+              "id": "7b6669e4-a585-471a-b790-d1439b8c4f23",
+              "needs_review": false,
+              "pin_revision": 1,
+              "pinned": false,
+              "recommendation": null,
+              "revision": 1,
+              "subject": "Maple Table",
+              "visibility": "private"
+            },
+            "reason": "Quiet Italian dinner where you could talk easily; your group of eight fitted comfortably, with room for ten.",
+            "section": "supported"
+          }
+        ],
+        "search_incomplete": false,
+        "selected_item_ids": [],
+        "title": "A quiet Italian dinner for eight",
+        "turn_count": 2,
+        "version": 1
+      },
+      "elapsed_ms": 2147,
+      "input": {
+        "previous_request_id": "a81cbee1-e83e-4133-8162-976a58c60bf5",
+        "question": "We will be eight people",
+        "request_id": "a2428f09-933b-4358-bf33-7278afd05001"
+      },
+      "passed": true,
+      "trace": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "choices": [],
+                "clarification": "",
+                "intent": "recall",
+                "location": "",
+                "new_topic": false,
+                "results": [
+                  {
+                    "caveat": "",
+                    "evidence_ids": [
+                      "body"
+                    ],
+                    "item_id": "7b6669e4-a585-471a-b790-d1439b8c4f23",
+                    "reason": "Quiet Italian dinner where you could talk easily; your group of eight fitted comfortably, with room for ten.",
+                    "section": "supported"
+                  }
+                ],
+                "title": "A quiet Italian dinner for eight"
+              },
+              "tool": "present_answer"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "answer": {
+        "changed": false,
+        "choices": [],
+        "clarification": "Which restaurant do you mean—Maple Table or Lantern Two?",
+        "excluded_item_ids": [],
+        "intent": "recall",
+        "location": "",
+        "mode": "agent",
+        "next_offset": null,
+        "question": "Would this one fit eight people?",
+        "request_id": "79509908-239a-438c-9223-6a08b1220393",
+        "results": [],
+        "search_incomplete": false,
+        "selected_item_ids": [],
+        "title": "Which restaurant?",
+        "turn_count": 2,
+        "version": 1
+      },
+      "elapsed_ms": 1471,
+      "input": {
+        "previous_request_id": "a81cbee1-e83e-4133-8162-976a58c60bf5",
+        "question": "Would this one fit eight people?",
+        "request_id": "79509908-239a-438c-9223-6a08b1220393"
+      },
+      "passed": true,
+      "trace": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "choices": [],
+                "clarification": "Which restaurant do you mean—Maple Table or Lantern Two?",
+                "intent": "recall",
+                "location": "",
+                "new_topic": false,
+                "results": [],
+                "title": "Which restaurant?"
+              },
+              "tool": "present_answer"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "answer": {
+        "changed": false,
+        "choices": [],
+        "clarification": "",
+        "excluded_item_ids": [],
+        "intent": "recall",
+        "location": "",
+        "mode": "agent",
+        "next_offset": null,
+        "question": "Would this one fit eight people?",
+        "request_id": "0060e911-7a54-43d7-89d0-4649e89f447b",
+        "results": [],
+        "search_incomplete": false,
+        "selected_item_ids": [
+          "21d8042a-2229-4d4d-94c7-31ee740b3aa6"
+        ],
+        "title": "No — Lantern Two was noted as seating at most two, with no larger groups.",
+        "turn_count": 2,
+        "version": 1
+      },
+      "elapsed_ms": 1778,
+      "input": {
+        "previous_request_id": "a81cbee1-e83e-4133-8162-976a58c60bf5",
+        "question": "Would this one fit eight people?",
+        "request_id": "0060e911-7a54-43d7-89d0-4649e89f447b",
+        "selected_item_ids": [
+          "21d8042a-2229-4d4d-94c7-31ee740b3aa6"
+        ]
+      },
+      "passed": true,
+      "trace": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "choices": [],
+                "clarification": "",
+                "intent": "recall",
+                "location": "",
+                "new_topic": false,
+                "results": [],
+                "title": "No — Lantern Two was noted as seating at most two, with no larger groups."
+              },
+              "tool": "present_answer"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "answer": {
+        "changed": false,
+        "choices": [],
+        "clarification": "",
+        "excluded_item_ids": [],
+        "intent": "recall",
+        "location": "",
+        "mode": "agent",
+        "next_offset": null,
+        "question": "Who was that taxi driver around Landour?",
+        "request_id": "b004fcf4-7fae-4a70-99ed-7d46696d941c",
+        "results": [
+          {
+            "caveat": "The note says his current service area is unknown.",
+            "evidence": [
+              {
+                "id": "body",
+                "kind": "saved_note",
+                "text": "Mohan drove us from Mussoorie to Landour. He was punctual. Current service area is unknown."
+              }
+            ],
+            "item": {
+              "body": "Mohan drove us from Mussoorie to Landour. He was punctual. Current service area is unknown.",
+              "capture_id": "74ca5346-e83d-4e8e-b7d4-8be184e0abc4",
+              "created_at": "2026-09-27T18:44:38.598945Z",
+              "id": "a19c1f15-351d-43e7-991d-f39d25fa46ae",
+              "needs_review": false,
+              "pin_revision": 1,
+              "pinned": false,
+              "recommendation": null,
+              "revision": 1,
+              "subject": "Mohan Taxi",
+              "visibility": "private"
+            },
+            "reason": "It was Mohan; he drove you from Mussoorie to Landour and was punctual.",
+            "section": "supported"
+          }
+        ],
+        "search_incomplete": false,
+        "selected_item_ids": [],
+        "title": "The taxi driver was Mohan",
+        "turn_count": 1,
+        "version": 1
+      },
+      "elapsed_ms": 4107,
+      "input": {
+        "previous_request_id": "a2428f09-933b-4358-bf33-7278afd05001",
+        "question": "Who was that taxi driver around Landour?",
+        "request_id": "b004fcf4-7fae-4a70-99ed-7d46696d941c"
+      },
+      "passed": true,
+      "trace": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "page": 0,
+                "terms": [
+                  "taxi driver Landour",
+                  "cab driver Mussoorie",
+                  "Landour driver"
+                ]
+              },
+              "tool": "search_knowledge"
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "choices": [],
+                "clarification": "",
+                "intent": "recall",
+                "location": "",
+                "new_topic": true,
+                "results": [
+                  {
+                    "caveat": "The note says his current service area is unknown.",
+                    "evidence_ids": [
+                      "body"
+                    ],
+                    "item_id": "a19c1f15-351d-43e7-991d-f39d25fa46ae",
+                    "reason": "It was Mohan; he drove you from Mussoorie to Landour and was punctual.",
+                    "section": "supported"
+                  }
+                ],
+                "title": "The taxi driver was Mohan"
+              },
+              "tool": "present_answer"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

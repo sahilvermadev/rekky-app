@@ -34,3 +34,5 @@ Use a new database, database credentials, app identity, sessions, storage access
 The old app is a reference only. Do not copy its environment files, dependencies, history, accounts or database. Review provider settings individually; keep secrets outside Git and off the mobile client. See [legacy reference and provenance](docs/LEGACY_REFERENCE.md).
 
 The [first agentic Ask pilot](docs/ASK_AGENT_SLICE.md) adds typed fuzzy recall and occasion discovery with cited reasons, useful caveats, Call/Maps actions and cancellation. Set `OPENAI_ASK_ENABLED=true` on the new backend to enable it for accounts with understanding permission. This is an integrated development checkpoint; the full multilingual evaluation, voice/refinement and comparison gates remain open.
+
+The [speak-and-refine pilot](docs/ASK_SPEAK_AND_REFINE.md) adds temporary question dictation, follow-up context, explicit result selection/exclusion, editable questions and previous-answer recovery. It reuses the configured transcription adapter and existing voice permission; spoken questions never create Library content.

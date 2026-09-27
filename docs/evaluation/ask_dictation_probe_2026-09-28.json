@@ -1,0 +1,16 @@
+{
+  "kind": "synthetic-development-not-held-out",
+  "date": "2026-09-28",
+  "data": {
+    "captures_created": 0,
+    "elapsed_ms": 1483,
+    "model": "gpt-transcribe",
+    "response": {
+      "request_id": "55be351d-9be7-40eb-b6a4-6311e94a9ae2",
+      "text": "A quiet Italian dinner for eight people."
+    },
+    "status": 200,
+    "synthetic_utterance": "A quiet Italian dinner for eight people.",
+    "temporary_text_erased": true
+  }
+}
