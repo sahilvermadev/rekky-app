@@ -18,6 +18,36 @@ AskAnswer fixture({int turn = 1}) => AskAnswer.fromJson({
   if (turn > 1) 'request_id': '44444444-4444-4444-8444-444444444444',
 });
 
+AskAnswer comparisonFixture() => AskAnswer.fromJson(
+  jsonDecode(
+    File('../../contracts/rekky/v1/fixtures/ask_comparison.json')
+        .readAsStringSync(),
+  ) as Map<String, dynamic>,
+);
+AskAnswer twoOptions() {
+  final c = comparisonFixture();
+  return AskAnswer(
+    requestId: fixture().requestId,
+    title: 'Dinner options',
+    intent: 'discovery',
+    mode: 'agent',
+    clarification: '',
+    choices: [],
+    location: '',
+    results: c.items
+        .map(
+          (item) => AskResult(
+            item: item,
+            section: 'supported',
+            reason: item.body,
+            caveat: '',
+            evidence: const [],
+          ),
+        )
+        .toList(),
+  );
+}
+
 class FakeAsk extends RekkyApi {
   FakeAsk() : super('http://unused');
   final contexts = <Map<String, dynamic>>[];
@@ -69,6 +99,116 @@ Future<void> submit(WidgetTester t, String text) async {
 }
 
 void main() {
+  test(
+    'comparison contract keeps cells, unknowns and named source citations',
+    () {
+      final a = comparisonFixture();
+      expect(a.comparison!.items.length, 2);
+      expect(
+        a.comparison!.dimensions[1].cells.every(
+          (c) => c.text == 'Not saved' && c.evidence.isEmpty,
+        ),
+        isTrue,
+      );
+      expect(a.comparison!.citations.length, 2);
+      expect(a.append(a).comparison!.items.length, 2);
+    },
+  );
+  testWidgets(
+    'select two results, compare, inspect evidence and ask a follow-up',
+    (t) async {
+      final api = FakeAsk();
+      await t.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AskExperience(api: api, onOpen: (_) async {}),
+          ),
+        ),
+      );
+      await submit(t, 'dinner options');
+      api.pending.single.complete(twoOptions());
+      await t.pumpAndSettle();
+      for (var i = 0; i < 2; i++) {
+        await t.ensureVisible(find.widgetWithText(FilterChip, 'Compare').at(i));
+        await t.pumpAndSettle();
+        await t.tap(find.widgetWithText(FilterChip, 'Compare').at(i));
+        await t.pumpAndSettle();
+      }
+      await t.tap(find.text('Compare 2'));
+      await t.pump();
+      expect(
+        api.contexts.last['selected'],
+        comparisonFixture().items.map((i) => i.id).toList(),
+      );
+      expect(api.contexts.last['parent'], fixture().requestId);
+      api.pending.last.complete(comparisonFixture());
+      await t.pumpAndSettle();
+      await t.ensureVisible(find.text('Saved evidence'));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Saved evidence'));
+      await t.pumpAndSettle();
+      expect(
+        find.text('“We could talk easily. The tables are small.”'),
+        findsOneWidget,
+      );
+      Navigator.of(t.element(find.text('From your saved recommendations')))
+          .pop();
+      await t.pumpAndSettle();
+      await t.ensureVisible(find.widgetWithText(FilterChip, 'Ask about').first);
+      await t.pumpAndSettle();
+      await t.tap(find.widgetWithText(FilterChip, 'Ask about').first);
+      await t.pumpAndSettle();
+      await submit(t, 'What is missing for this one?');
+      expect(api.contexts.last['selected'], [
+        comparisonFixture().items.first.id,
+      ]);
+      api.pending.last.complete(fixture(turn: 3));
+      await t.pumpAndSettle();
+    },
+  );
+  for (final width in [320.0, 375.0, 414.0, 768.0]) {
+    testWidgets(
+      'comparison at $width and 200% text has vertical readable cells',
+      (t) async {
+        t.view.physicalSize = Size(width, 800);
+        t.view.devicePixelRatio = 1;
+        addTearDown(t.view.resetPhysicalSize);
+        addTearDown(t.view.resetDevicePixelRatio);
+        final api = FakeAsk();
+        await t.pumpWidget(
+          MaterialApp(
+            theme: RekkyTheme.build(Brightness.dark),
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context)
+                  .copyWith(textScaler: const TextScaler.linear(2)),
+              child: child!,
+            ),
+            home: Scaffold(
+              body: AskExperience(api: api, onOpen: (_) async {}),
+            ),
+          ),
+        );
+        await submit(t, 'compare dinner options');
+        api.pending.single.complete(comparisonFixture());
+        await t.pumpAndSettle();
+        await t.ensureVisible(find.text('Not saved').last);
+        await t.pumpAndSettle();
+        expect(t.takeException(), isNull);
+        for (var i = 0; i < 2; i++) {
+          await t.ensureVisible(
+            find.widgetWithText(FilterChip, 'Ask about').at(i),
+          );
+          await t.pumpAndSettle();
+          await t.tap(find.widgetWithText(FilterChip, 'Ask about').at(i));
+          await t.pumpAndSettle();
+        }
+        await t.enterText(find.byType(TextField), 'Price matters most');
+        await t.pump();
+        expect(find.text('Compare 2'), findsOneWidget);
+        expect(t.takeException(), isNull);
+      },
+    );
+  }
   test('shared Ask contract preserves evidence and caveats', () {
     final a = fixture();
     expect(a.results.single.caveat, 'The tables are small.');
@@ -106,12 +246,14 @@ void main() {
       expect(find.text('Lantern Kitchen'), findsOneWidget);
       expect(find.text('The tables are small.'), findsOneWidget);
       await t.ensureVisible(find.text('Lantern Kitchen'));
+      await t.pumpAndSettle();
       await t.tap(find.text('Lantern Kitchen'));
       await t.pumpAndSettle();
       expect(api.reads, 1);
       expect(opened, 1);
       expect(api.pages, 1);
       await t.ensureVisible(find.text('Why this fits'));
+      await t.pumpAndSettle();
       await t.tap(find.text('Why this fits'));
       await t.pumpAndSettle();
       expect(
@@ -135,6 +277,7 @@ void main() {
       api.pending[0].complete(fixture());
       await t.pumpAndSettle();
       await t.ensureVisible(find.text('Ask about this'));
+      await t.pumpAndSettle();
       await t.tap(find.text('Ask about this'));
       await t.pump();
       await submit(t, 'Can this one fit six people?');
@@ -143,6 +286,7 @@ void main() {
       api.pending[1].complete(fixture(turn: 2));
       await t.pumpAndSettle();
       await t.ensureVisible(find.text('Previous answer'));
+      await t.pumpAndSettle();
       await t.tap(find.text('Previous answer'));
       await t.pumpAndSettle();
       expect(api.pages, 1);
@@ -180,7 +324,9 @@ void main() {
       api.pending.single.complete(fixture());
       await t.pumpAndSettle();
       await t.ensureVisible(find.text('Why this fits'));
+      await t.pumpAndSettle();
       await t.ensureVisible(find.text('Ask about this'));
+      await t.pumpAndSettle();
       await t.tap(find.text('Ask about this'));
       await t.pump();
       expect(t.takeException(), isNull);

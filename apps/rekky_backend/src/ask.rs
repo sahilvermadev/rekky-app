@@ -87,8 +87,14 @@ fn tools() -> Vec<Value> {
             "present_answer",
             "Present all useful seen items with cited evidence, or a clarification. No made-up actions.",
             object(json!({
-                "intent":{"type":"string","enum":["recall","discovery"]},"title":{"type":"string"},"location":{"type":"string"},
+                "intent":{"type":"string","enum":["recall","discovery","comparison"]},"title":{"type":"string"},"location":{"type":"string"},
                 "clarification":{"type":"string"},"choices":strings(),"new_topic":{"type":"boolean","description":"True only for a clearly unrelated new request; false for refinements and clarification replies."},
+                "comparison":{"anyOf":[{"type":"null"},object(json!({
+                    "item_ids":strings(),
+                    "dimensions":{"type":"array","items":object(json!({"label":{"type":"string"},"cells":{"type":"array","items":object(json!({"item_id":{"type":"string"},"text":{"type":"string"},"evidence_ids":strings()}))}}))},
+                    "conclusion":{"type":"string"},
+                    "citations":{"type":"array","items":object(json!({"item_id":{"type":"string"},"evidence_ids":strings()}))}
+                }))]},
                 "results":{"type":"array","items":object(json!({"item_id":{"type":"string"},"section":{"type":"string","enum":["supported","worth_checking"],"description":"Suitability for the user request, NOT whether an exclusion statement has evidence. Include only viable options; omit irrelevant or contradicted candidates."},"reason":{"type":"string"},"caveat":{"type":"string"},"evidence_ids":strings()}))}
             })),
         ),
@@ -201,6 +207,48 @@ pub struct Answer {
     pub clarification: String,
     pub choices: Vec<String>,
     pub results: Vec<ProposedResult>,
+    #[serde(default)]
+    pub comparison: Option<Comparison>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Comparison {
+    pub item_ids: Vec<Uuid>,
+    pub dimensions: Vec<Dimension>,
+    pub conclusion: String,
+    pub citations: Vec<Citation>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Dimension {
+    pub label: String,
+    pub cells: Vec<ComparisonCell>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ComparisonCell {
+    pub item_id: Uuid,
+    pub text: String,
+    pub evidence_ids: Vec<String>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Citation {
+    pub item_id: Uuid,
+    pub evidence_ids: Vec<String>,
+}
+impl Answer {
+    fn item_ids(&self) -> Vec<Uuid> {
+        self.results
+            .iter()
+            .map(|r| r.item_id)
+            .chain(
+                self.comparison
+                    .iter()
+                    .flat_map(|c| c.item_ids.iter().copied()),
+            )
+            .collect()
+    }
 }
 #[derive(Serialize, Deserialize)]
 struct Snapshot {
@@ -254,7 +302,7 @@ async fn turn_context(
                 "Start a new question to continue exploring.",
             ));
         }
-        let allowed: HashSet<_> = snapshot.answer.results.iter().map(|r| r.item_id).collect();
+        let allowed: HashSet<_> = snapshot.answer.item_ids().into_iter().collect();
         if input
             .selected_item_ids
             .iter()
@@ -278,7 +326,7 @@ async fn turn_context(
             ));
         }
         let mut ids = input.selected_item_ids.clone();
-        ids.extend(snapshot.answer.results.iter().map(|r| r.item_id));
+        ids.extend(snapshot.answer.item_ids());
         let mut used = HashSet::new();
         let mut changed = false;
         for id in ids {
@@ -447,6 +495,7 @@ fn fallback(question: &str, candidates: &HashMap<Uuid, Candidate>) -> Answer {
     values.sort_by_key(|c| c.item_id);
     Answer {
         intent: "recall".into(),
+        comparison: None,
         new_topic: false,
         title: "Saved matches".into(),
         location: String::new(),
@@ -478,7 +527,7 @@ pub fn validate_answer(
     mut a: Answer,
     seen: &HashMap<Uuid, Candidate>,
 ) -> Result<Answer, AgentError> {
-    if !["recall", "discovery"].contains(&a.intent.as_str())
+    if !["recall", "discovery", "comparison"].contains(&a.intent.as_str())
         || a.title.chars().count() > 100
         || a.clarification.chars().count() > 240
         || a.choices.len() > 3
@@ -486,6 +535,75 @@ pub fn validate_answer(
         || a.results.len() > 32
         || a.location.chars().count() > 100
     {
+        return Err(AgentError);
+    }
+    if let Some(c) = &mut a.comparison {
+        let participants: HashSet<_> = c.item_ids.iter().copied().collect();
+        if a.intent != "comparison"
+            || !(2..=4).contains(&c.item_ids.len())
+            || participants.len() != c.item_ids.len()
+            || participants.iter().any(|id| !seen.contains_key(id))
+            || !(1..=4).contains(&c.dimensions.len())
+            || c.conclusion.chars().count() > 400
+            || c.citations.len() > 4
+        {
+            return Err(AgentError);
+        }
+        let supported = |item_id: &Uuid, ids: &[String]| {
+            participants.contains(item_id)
+                && (1..=3).contains(&ids.len())
+                && seen.get(item_id).is_some_and(|item| {
+                    ids.iter()
+                        .all(|id| item.evidence.iter().any(|e| &e.id == id))
+                })
+        };
+        let mut labels = HashSet::new();
+        for dimension in &mut c.dimensions {
+            if dimension.label.trim().is_empty()
+                || dimension.label.chars().count() > 60
+                || !labels.insert(dimension.label.trim().to_lowercase())
+                || dimension.cells.len() != participants.len()
+            {
+                return Err(AgentError);
+            }
+            let mut ids = HashSet::new();
+            for cell in &mut dimension.cells {
+                if !participants.contains(&cell.item_id)
+                    || !ids.insert(cell.item_id)
+                    || cell.text.chars().count() > 240
+                {
+                    return Err(AgentError);
+                }
+                if cell.evidence_ids.is_empty() {
+                    // Unknown values cannot carry unsupported generated claims.
+                    cell.text = "Not saved".into();
+                } else if cell.text.trim().is_empty()
+                    || !supported(&cell.item_id, &cell.evidence_ids)
+                {
+                    return Err(AgentError);
+                }
+            }
+            dimension
+                .cells
+                .sort_by_key(|cell| c.item_ids.iter().position(|id| *id == cell.item_id));
+        }
+        if c.citations
+            .iter()
+            .any(|r| !supported(&r.item_id, &r.evidence_ids))
+        {
+            return Err(AgentError);
+        }
+        // A comparative conclusion needs evidence from every participant.
+        if !c.conclusion.is_empty()
+            && participants
+                .iter()
+                .any(|id| !c.citations.iter().any(|r| &r.item_id == id))
+        {
+            return Err(AgentError);
+        }
+        a.results.clear();
+        a.location.clear();
+    } else if a.intent == "comparison" && a.clarification.trim().is_empty() {
         return Err(AgentError);
     }
     let mut ids = HashSet::new();
@@ -676,6 +794,20 @@ async fn execute(
                     .ok()
                     .and_then(|a| validate_answer(a, &seen).ok())
                 {
+                    if let Some(comparison) = &a.comparison {
+                        let selected = &conversation.selected_item_ids;
+                        if comparison
+                            .item_ids
+                            .iter()
+                            .any(|id| conversation.excluded_item_ids.contains(id))
+                            || (!selected.is_empty()
+                                && (selected.len() != comparison.item_ids.len()
+                                    || selected.iter().any(|id| !comparison.item_ids.contains(id))))
+                        {
+                            observations.push(json!({"error":"Compare exactly the explicitly selected IDs, never excluded items. Ask for clarification if fewer than two are identified."}));
+                            continue;
+                        }
+                    }
                     if a.new_topic && conversation.selected_item_ids.is_empty() {
                         conversation.turns = vec![question.to_owned()];
                         conversation.excluded_item_ids.clear();
@@ -828,6 +960,40 @@ async fn page_response(state: &AppState, owner_id: Uuid, id: Uuid, offset: usize
             changed = true;
         }
     }
+    let mut comparison = Value::Null;
+    if let Some(c) = &snapshot.answer.comparison {
+        let mut items = vec![];
+        for item_id in &c.item_ids {
+            let candidate = snapshot.candidates.iter().find(|v| &v.item_id == item_id);
+            let item = crate::app::owner_item(state, owner_id, *item_id).await?;
+            match (candidate, item) {
+                (Some(saved), Some(item))
+                    if item["revision"].as_i64() == Some(saved.revision as i64) =>
+                {
+                    items.push(item)
+                }
+                _ => changed = true,
+            }
+        }
+        // Invalidate the whole comparison, including its conclusion, if any source changes.
+        if !changed {
+            let support = |id: Uuid, ids: &[String]| -> Vec<&Evidence> {
+                snapshot
+                    .candidates
+                    .iter()
+                    .find(|v| v.item_id == id)
+                    .into_iter()
+                    .flat_map(|v| v.evidence.iter())
+                    .filter(|e| ids.contains(&e.id))
+                    .collect()
+            };
+            comparison = json!({"items":items,"dimensions":c.dimensions.iter().map(|d| json!({
+                "label":d.label,"cells":d.cells.iter().map(|cell| json!({"item_id":cell.item_id,
+                    "text":cell.text,"evidence":support(cell.item_id, &cell.evidence_ids)})).collect::<Vec<_>>()
+            })).collect::<Vec<_>>(),"conclusion":c.conclusion,
+                "citations":c.citations.iter().map(|r| json!({"item_id":r.item_id,"evidence":support(r.item_id,&r.evidence_ids)})).collect::<Vec<_>>()});
+        }
+    }
     let next = if valid.len() > offset + PAGE {
         Some(offset + PAGE)
     } else {
@@ -837,7 +1003,7 @@ async fn page_response(state: &AppState, owner_id: Uuid, id: Uuid, offset: usize
         json!({"version":1,"request_id":id,"question":snapshot.conversation.turns.last(),"turn_count":snapshot.conversation.turns.len(),"selected_item_ids":snapshot.conversation.selected_item_ids,"excluded_item_ids":snapshot.conversation.excluded_item_ids,"mode":snapshot.mode,"search_incomplete":snapshot.search_incomplete,"intent":snapshot.answer.intent,
         "title":if changed {"Saved recommendations"}else{&snapshot.answer.title},"clarification":if changed {""}else{&snapshot.answer.clarification},
         "choices":if changed {vec![]}else{snapshot.answer.choices},"location":snapshot.answer.location,"changed":changed,
-        "results":valid.into_iter().skip(offset).take(PAGE).collect::<Vec<_>>(),"next_offset":next}),
+        "comparison":comparison,"results":valid.into_iter().skip(offset).take(PAGE).collect::<Vec<_>>(),"next_offset":next}),
     ))
 }
 #[derive(PartialEq, Debug)]
@@ -970,6 +1136,7 @@ mod tests {
         fake_evidence.evidence_ids = vec!["invented".into()];
         let a = Answer {
             intent: "discovery".into(),
+            comparison: None,
             new_topic: false,
             title: "For dinner".into(),
             location: String::new(),
@@ -979,6 +1146,45 @@ mod tests {
         };
         // Invalid entries must not poison an otherwise valid entry of the same ID.
         assert_eq!(validate_answer(a, &seen).unwrap().results.len(), 1);
+    }
+    #[test]
+    fn comparison_requires_same_participants_and_grounded_cells_and_conclusion() {
+        let first = candidate();
+        let mut second = candidate();
+        second.item_id = Uuid::new_v4();
+        let seen = HashMap::from([
+            (first.item_id, first.clone()),
+            (second.item_id, second.clone()),
+        ]);
+        let value = json!({"intent":"comparison","title":"A useful comparison","location":"", "clarification":"","choices":[],"results":[],
+            "comparison":{"item_ids":[first.item_id,second.item_id],"dimensions":[{"label":"Price","cells":[
+                {"item_id":first.item_id,"text":"Definitely cheap","evidence_ids":[]},
+                {"item_id":second.item_id,"text":"Not saved","evidence_ids":[]}
+            ]}],"conclusion":"","citations":[]}});
+        let check = |v| validate_answer(serde_json::from_value(v).unwrap(), &seen);
+        let valid = check(value.clone()).unwrap();
+        assert_eq!(
+            valid.comparison.unwrap().dimensions[0].cells[0].text,
+            "Not saved"
+        );
+        let mut bad = value.clone();
+        bad["comparison"]["dimensions"][0]["cells"][0]["evidence_ids"] = json!(["invented"]);
+        assert!(check(bad).is_err());
+        let mut bad = value.clone();
+        bad["comparison"]["dimensions"][0]["cells"][1]["item_id"] = json!(first.item_id);
+        assert!(check(bad).is_err());
+        let mut bad = value.clone();
+        bad["comparison"]["item_ids"][1] = json!(Uuid::new_v4());
+        assert!(check(bad).is_err());
+        let mut bad = value.clone();
+        bad["comparison"]["conclusion"] = json!("A is better");
+        assert!(check(bad).is_err());
+        let mut bad = value;
+        bad["comparison"]["dimensions"][0]["cells"]
+            .as_array_mut()
+            .unwrap()
+            .pop();
+        assert!(check(bad).is_err());
     }
     #[test]
     fn projections_exclude_raw_contact_fields_and_source_support() {

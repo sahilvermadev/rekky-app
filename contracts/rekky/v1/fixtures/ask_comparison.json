@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "request_id": "33333333-3333-4333-8333-333333333333",
+  "mode": "agent",
+  "intent": "comparison",
+  "title": "Dinner for eight",
+  "clarification": "",
+  "choices": [],
+  "location": "",
+  "changed": false,
+  "results": [],
+  "next_offset": null,
+  "search_incomplete": false,
+  "question": "Compare these for a quiet dinner for eight",
+  "turn_count": 2,
+  "selected_item_ids": [
+    "11111111-1111-4111-8111-111111111111",
+    "44444444-4444-4444-8444-444444444444"
+  ],
+  "excluded_item_ids": [],
+  "comparison": {
+    "items": [
+      {
+        "id": "11111111-1111-4111-8111-111111111111",
+        "capture_id": "22222222-2222-4222-8222-222222222222",
+        "subject": "Lantern Kitchen",
+        "body": "We could talk easily. The tables are small.",
+        "visibility": "private",
+        "revision": 1,
+        "created_at": "2026-09-27T00:00:00Z",
+        "needs_review": false,
+        "pinned": false,
+        "pin_revision": 1,
+        "recommendation": null
+      },
+      {
+        "id": "44444444-4444-4444-8444-444444444444",
+        "capture_id": "22222222-2222-4222-8222-222222222222",
+        "subject": "Maple Table",
+        "body": "Our group of eight fitted comfortably. Quiet enough to talk.",
+        "visibility": "private",
+        "revision": 1,
+        "created_at": "2026-09-27T00:00:00Z",
+        "needs_review": false,
+        "pinned": false,
+        "pin_revision": 1,
+        "recommendation": null
+      }
+    ],
+    "dimensions": [
+      {
+        "label": "Room for eight",
+        "cells": [
+          {
+            "item_id": "11111111-1111-4111-8111-111111111111",
+            "text": "Small tables; capacity for eight is not saved.",
+            "evidence": [
+              {
+                "id": "summary",
+                "kind": "summary",
+                "text": "We could talk easily. The tables are small."
+              }
+            ]
+          },
+          {
+            "item_id": "44444444-4444-4444-8444-444444444444",
+            "text": "A group of eight fitted comfortably.",
+            "evidence": [
+              {
+                "id": "summary",
+                "kind": "summary",
+                "text": "Our group of eight fitted comfortably. Quiet enough to talk."
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "label": "Price",
+        "cells": [
+          {
+            "item_id": "11111111-1111-4111-8111-111111111111",
+            "text": "Not saved",
+            "evidence": []
+          },
+          {
+            "item_id": "44444444-4444-4444-8444-444444444444",
+            "text": "Not saved",
+            "evidence": []
+          }
+        ]
+      }
+    ],
+    "conclusion": "Maple Table has the stronger saved evidence for eight people. Prices are not saved for either option.",
+    "citations": [
+      {
+        "item_id": "11111111-1111-4111-8111-111111111111",
+        "evidence": [
+          {
+            "id": "summary",
+            "kind": "summary",
+            "text": "We could talk easily. The tables are small."
+          }
+        ]
+      },
+      {
+        "item_id": "44444444-4444-4444-8444-444444444444",
+        "evidence": [
+          {
+            "id": "summary",
+            "kind": "summary",
+            "text": "Our group of eight fitted comfortably. Quiet enough to talk."
+          }
+        ]
+      }
+    ]
+  }
+}

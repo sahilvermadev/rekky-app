@@ -32,6 +32,62 @@ class AskResult {
   );
 }
 
+class AskComparisonCell {
+  const AskComparisonCell({
+    required this.itemId,
+    required this.text,
+    required this.evidence,
+  });
+  final String itemId, text;
+  final List<AskEvidence> evidence;
+  factory AskComparisonCell.fromJson(Map<String, dynamic> value) =>
+      AskComparisonCell(
+        itemId: value['item_id'] as String,
+        text: value['text'] as String? ?? '',
+        evidence: (value['evidence'] as List)
+            .map((e) => AskEvidence.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+}
+
+class AskComparisonDimension {
+  const AskComparisonDimension(this.label, this.cells);
+  final String label;
+  final List<AskComparisonCell> cells;
+  factory AskComparisonDimension.fromJson(Map<String, dynamic> value) =>
+      AskComparisonDimension(
+        value['label'] as String,
+        (value['cells'] as List)
+            .map((e) => AskComparisonCell.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+}
+
+class AskComparison {
+  const AskComparison({
+    required this.items,
+    required this.dimensions,
+    required this.conclusion,
+    required this.citations,
+  });
+  final List<RekkyItem> items;
+  final List<AskComparisonDimension> dimensions;
+  final String conclusion;
+  final List<AskComparisonCell> citations;
+  factory AskComparison.fromJson(Map<String, dynamic> value) => AskComparison(
+    items: (value['items'] as List)
+        .map((e) => RekkyItem.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    dimensions: (value['dimensions'] as List)
+        .map((e) => AskComparisonDimension.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    conclusion: value['conclusion'] as String,
+    citations: (value['citations'] as List)
+        .map((e) => AskComparisonCell.fromJson(e as Map<String, dynamic>))
+        .toList(),
+  );
+}
+
 class AskAnswer {
   const AskAnswer({
     required this.requestId,
@@ -43,6 +99,7 @@ class AskAnswer {
     required this.location,
     required this.results,
     this.nextOffset,
+    this.comparison,
     this.changed = false,
     this.searchIncomplete = false,
     this.question = '',
@@ -54,6 +111,9 @@ class AskAnswer {
   final List<String> choices;
   final List<AskResult> results;
   final int? nextOffset;
+  final AskComparison? comparison;
+  List<RekkyItem> get items =>
+      comparison?.items ?? results.map((r) => r.item).toList();
   final bool changed, searchIncomplete;
   final String question;
   final int turnCount;
@@ -70,6 +130,9 @@ class AskAnswer {
         .map((v) => AskResult.fromJson(v as Map<String, dynamic>))
         .toList(),
     nextOffset: value['next_offset'] as int?,
+    comparison: value['comparison'] == null
+        ? null
+        : AskComparison.fromJson(value['comparison'] as Map<String, dynamic>),
     changed: value['changed'] as bool? ?? false,
     searchIncomplete: value['search_incomplete'] as bool? ?? false,
     question: value['question'] as String? ?? '',
@@ -81,6 +144,7 @@ class AskAnswer {
       ? page
       : AskAnswer(
           requestId: requestId,
+          comparison: comparison,
           question: question,
           turnCount: turnCount,
           selectedItemIds: selectedItemIds,

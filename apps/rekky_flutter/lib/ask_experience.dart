@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'ask_answer.dart';
+import 'ask_comparison_view.dart';
 import 'ask_voice_sheet.dart';
 import 'ask_recorder.dart';
 import 'rekky_api.dart';
@@ -212,28 +213,49 @@ class _AskExperienceState extends State<AskExperience> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (selected.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Wrap(
+        if (selected.isNotEmpty) ...[
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
               children: [
                 for (final id in selected)
-                  InputChip(
-                    label: Text(
-                      current?.results
-                              .where((r) => r.item.id == id)
-                              .firstOrNull
-                              ?.item
-                              .subject ??
-                          'Selected recommendation',
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: InputChip(
+                      label: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 160),
+                        child: Text(
+                          current?.items
+                                  .where((item) => item.id == id)
+                                  .firstOrNull
+                                  ?.subject ??
+                              'Selected recommendation',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      onDeleted: working
+                          ? null
+                          : () => setState(() => selected.remove(id)),
                     ),
-                    onDeleted: working
-                        ? null
-                        : () => setState(() => selected.remove(id)),
                   ),
               ],
             ),
           ),
+          if (selected.length >= 2)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: working || restoring || speaking
+                    ? null
+                    : () {
+                        if (input.text.trim().isEmpty) input.text = 'Compare these options for what I asked about. Show the important differences and what is not saved.';
+                        submit();
+                      },
+                icon: const Icon(Icons.compare_arrows_rounded, size: 20),
+                label: Text('Compare ${selected.length}'),
+              ),
+            ),
+        ],
         TextField(
           controller: input,
           focusNode: inputFocus,
@@ -306,11 +328,11 @@ class _AskExperienceState extends State<AskExperience> {
     }
   }
 
-  Future<void> open(AskResult result, {bool action = false}) async {
+  Future<void> open(RekkyItem source, {bool action = false}) async {
     if (openingId.isNotEmpty) return;
-    setState(() => openingId = result.item.id);
+    setState(() => openingId = source.id);
     try {
-      final item = await widget.api.item(result.item.id);
+      final item = await widget.api.item(source.id);
       if (!mounted) return;
       if (action) {
         final number = internationalPhone(
@@ -596,7 +618,10 @@ class _AskExperienceState extends State<AskExperience> {
                         ),
                       ),
                   ],
-                  if (current.results.isEmpty && current.clarification.isEmpty)
+                  if (current.results.isEmpty &&
+                      current.comparison == null &&
+                      !current.changed &&
+                      current.clarification.isEmpty)
                     const Padding(
                       padding: EdgeInsets.only(top: 20),
                       child: Text(
@@ -608,6 +633,19 @@ class _AskExperienceState extends State<AskExperience> {
             ),
           ),
         ),
+        if (current?.comparison != null)
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+            sliver: SliverToBoxAdapter(
+              child: AskComparisonView(
+                comparison: current!.comparison!,
+                onOpen: (item) => open(item),
+                onAction: (item) => open(item, action: true),
+                onSelect: working ? null : toggleSelection,
+                selected: selected,
+              ),
+            ),
+          ),
         for (final result in supported)
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
@@ -649,6 +687,23 @@ class _AskExperienceState extends State<AskExperience> {
     );
   }
 
+  void toggleSelection(RekkyItem item) {
+    if (working) return;
+    if (!selected.contains(item.id) && selected.length >= 4) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Compare up to four recommendations at a time.'),
+        ),
+      );
+      return;
+    }
+    RekkyHaptics.selection();
+    setState(() {
+      editing = false;
+      if (!selected.remove(item.id)) selected.add(item.id);
+    });
+  }
+
   Widget resultCard(BuildContext context, AskResult result) {
     final item = result.item;
     final theme = Theme.of(context);
@@ -670,7 +725,7 @@ class _AskExperienceState extends State<AskExperience> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           InkWell(
-            onTap: openingId.isEmpty ? () => open(result) : null,
+            onTap: openingId.isEmpty ? () => open(result.item) : null,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
               child: Row(
@@ -749,6 +804,11 @@ class _AskExperienceState extends State<AskExperience> {
                         },
                   child: const Text('Ask about this'),
                 ),
+                FilterChip(
+                  label: const Text('Compare'),
+                  selected: selected.contains(item.id),
+                  onSelected: working ? null : (_) => toggleSelection(item),
+                ),
                 IconButton(
                   tooltip: 'Exclude this option for this conversation',
                   onPressed: working
@@ -764,7 +824,7 @@ class _AskExperienceState extends State<AskExperience> {
                 if (phone != null || maps != null)
                   TextButton.icon(
                     onPressed: openingId.isEmpty
-                        ? () => open(result, action: true)
+                        ? () => open(result.item, action: true)
                         : null,
                     icon: Icon(
                       phone != null ? Icons.call_outlined : Icons.map_outlined,

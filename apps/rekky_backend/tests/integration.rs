@@ -4572,3 +4572,271 @@ async fn live_ask_synthetic_dictation_probe() {
     let text = response["text"].as_str().unwrap().to_lowercase();
     assert!(text.contains("italian") && (text.contains("eight") || text.contains('8')));
 }
+
+struct ComparisonAsk;
+#[async_trait]
+impl rekky_backend::ask::AskModel for ComparisonAsk {
+    fn available(&self) -> bool {
+        true
+    }
+    async fn decide(
+        &self,
+        context: Value,
+        final_turn: bool,
+    ) -> Result<rekky_backend::ask::Decision, rekky_backend::ask::AgentError> {
+        if !context["question"].as_str().unwrap().starts_with("Compare") {
+            return ContextAsk {
+                seen: std::sync::Mutex::new(vec![]),
+            }
+            .decide(context, final_turn)
+            .await;
+        }
+        let items = context["previous_results"].as_array().unwrap();
+        let selected = context["conversation"]["selected_item_ids"]
+            .as_array()
+            .unwrap();
+        let participants: Vec<_> = items
+            .iter()
+            .filter(|item| selected.is_empty() || selected.contains(&item["item_id"]))
+            .collect();
+        let citations: Vec<_> = participants
+            .iter()
+            .map(|i| json!({"item_id":i["item_id"],"evidence_ids":[i["evidence"][0]["id"]]}))
+            .collect();
+        Ok(rekky_backend::ask::Decision {
+            input_tokens: 10,
+            output_tokens: 10,
+            calls: vec![rekky_backend::ask::ToolCall {
+                name: "present_answer".into(),
+                arguments: json!({"intent":"comparison","title":"Compare saved details","location":"","clarification":"","choices":[],"results":[],
+              "comparison":{"item_ids":participants.iter().map(|i|i["item_id"].clone()).collect::<Vec<_>>(),
+                "dimensions":[{"label":"Experience","cells":participants.iter().map(|i|json!({"item_id":i["item_id"],"text":i["evidence"][0]["text"],"evidence_ids":[i["evidence"][0]["id"]]})).collect::<Vec<_>>()},
+                    {"label":"Price","cells":participants.iter().map(|i|json!({"item_id":i["item_id"],"text":"A made-up price without evidence","evidence_ids":[]})).collect::<Vec<_>>()}],
+                "conclusion":"The notes describe quiet places; price is not saved.","citations":citations}}),
+            }],
+        })
+    }
+}
+#[tokio::test]
+async fn ask_comparison_replay_followup_and_source_change_invalidation() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    t.state.ask_model = Arc::new(ComparisonAsk);
+    t.app = router(t.state.clone());
+    let (_, token) = ask_account(&mut t).await;
+    let mut ids = vec![];
+    for name in ["Lantern One", "Lantern Two"] {
+        let (code, v) = t
+            .call(
+                Method::POST,
+                "/v1/items",
+                Some(&token),
+                Some(json!({"subject":name,"body":"Quiet enough to talk.","visibility":"private"})),
+                &[("idempotency-key", &Uuid::new_v4().to_string())],
+            )
+            .await;
+        assert_eq!(code, StatusCode::CREATED, "{v}");
+        ids.push(v["item"]["id"].clone());
+    }
+    let parent = Uuid::new_v4();
+    let (code, a) = t
+        .call(
+            Method::POST,
+            "/v1/ask/agent",
+            Some(&token),
+            Some(json!({"request_id":parent,"question":"Lantern dinner"})),
+            &[],
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{a}");
+    let run = Uuid::new_v4();
+    let input = json!({"request_id":run,"previous_request_id":parent,"question":"Compare these two","selected_item_ids":ids});
+    let (code, a) = t
+        .call(
+            Method::POST,
+            "/v1/ask/agent",
+            Some(&token),
+            Some(input.clone()),
+            &[],
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{a}");
+    assert_eq!(a["comparison"]["items"].as_array().unwrap().len(), 2, "{a}");
+    assert_eq!(a["results"], json!([]));
+    assert_eq!(
+        a["comparison"]["dimensions"][1]["cells"][0]["text"],
+        "Not saved"
+    );
+    assert_eq!(
+        a["comparison"]["dimensions"][0]["cells"][0]["evidence"][0]["text"],
+        "Quiet enough to talk."
+    );
+    let (_, replay) = t
+        .call(
+            Method::POST,
+            "/v1/ask/agent",
+            Some(&token),
+            Some(input),
+            &[],
+        )
+        .await;
+    assert_eq!(a, replay);
+    // Comparison-only participants remain valid referents on subsequent turns.
+    let (code,next)=t.call(Method::POST,"/v1/ask/agent",Some(&token),Some(json!({"request_id":Uuid::new_v4(),"previous_request_id":run,"question":"Tell me about this one","selected_item_ids":[ids[0]]})),&[]).await;
+    assert_eq!(code, StatusCode::OK, "{next}");
+    assert_eq!(next["selected_item_ids"], json!([ids[0]]));
+    sqlx::query("UPDATE knowledge_items SET body='Now loud.',revision=revision+1 WHERE id=$1")
+        .bind(Uuid::parse_str(ids[0].as_str().unwrap()).unwrap())
+        .execute(&t.pool)
+        .await
+        .unwrap();
+    let (_, fresh) = t
+        .call(
+            Method::GET,
+            &format!("/v1/ask/answers/{run}"),
+            Some(&token),
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(fresh["changed"], true, "{fresh}");
+    assert!(fresh["comparison"].is_null());
+    // The next comparison uses current evidence instead of the old snapshot.
+    let updated = Uuid::new_v4();
+    let (code,fresh)=t.call(Method::POST,"/v1/ask/agent",Some(&token),Some(json!({"request_id":updated,"previous_request_id":run,"question":"Compare again","selected_item_ids":ids})),&[]).await;
+    assert_eq!(code, StatusCode::OK, "{fresh}");
+    assert!(
+        fresh["comparison"]["dimensions"][0]["cells"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["text"] == "Now loud.")
+    );
+    sqlx::query("UPDATE knowledge_items SET deleted_at=now() WHERE id=$1")
+        .bind(Uuid::parse_str(ids[1].as_str().unwrap()).unwrap())
+        .execute(&t.pool)
+        .await
+        .unwrap();
+    let (_, fresh) = t
+        .call(
+            Method::GET,
+            &format!("/v1/ask/answers/{updated}"),
+            Some(&token),
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(fresh["changed"], true, "{fresh}");
+    assert!(fresh["comparison"].is_null());
+    t.cleanup().await;
+}
+
+#[tokio::test]
+#[ignore = "Explicit synthetic live-model comparison development probe"]
+async fn live_ask_comparison_probe() {
+    let mut t = TestApp::new().await.expect("isolated test DB required");
+    let model = Arc::new(RecordingAsk {
+        model: rekky_backend::ask::OpenAiAsk::from_env(),
+        trace: std::sync::Mutex::new(vec![]),
+    });
+    t.state.ask_model = model.clone();
+    t.app = router(t.state.clone());
+    let (_, token) = ask_account(&mut t).await;
+    for (name, body) in [
+        (
+            "Lantern Two",
+            "Italian dinner. Very quiet, but it can accommodate only two guests, never eight. Price not recorded. Personal estimated rating 10/10.",
+        ),
+        (
+            "Maple Table",
+            "Italian restaurant. Quiet enough to talk; our group of eight fitted comfortably last week. Personal estimated rating 7/10. Price not recorded.",
+        ),
+        (
+            "Mohan Taxi",
+            "Mohan was punctual on our Landour trip. His vehicle has four passenger seats. We paid 1200 rupees on that trip, not a current quote.",
+        ),
+        (
+            "Pine Taxi",
+            "Pine drove our group of six on a past trip. Driver was punctual. No fare recorded.",
+        ),
+        (
+            "Thread Atelier",
+            "They repaired the torn silk lining of my jacket neatly. I have never tried them for leather.",
+        ),
+        (
+            "Patch Workshop",
+            "They restored my leather bag neatly. I have no experience of their silk repairs.",
+        ),
+    ] {
+        t.call(
+            Method::POST,
+            "/v1/items",
+            Some(&token),
+            Some(json!({"subject":name,"body":body,"visibility":"private"})),
+            &[("idempotency-key", &Uuid::new_v4().to_string())],
+        )
+        .await;
+    }
+    for (name, body) in [
+        (
+            "Cedar Taxi",
+            "Vehicle fits six passengers. It was clean on our trip.",
+        ),
+        (
+            "Birch Taxi",
+            "Helpful driver. Passenger capacity not recorded.",
+        ),
+    ] {
+        t.call(
+            Method::POST,
+            "/v1/items",
+            Some(&token),
+            Some(json!({"subject":name,"body":body,"visibility":"private"})),
+            &[("idempotency-key", &Uuid::new_v4().to_string())],
+        )
+        .await;
+    }
+    let mut report = vec![];
+    for (index,question) in [
+        "Compare Lantern Two and Maple Table for a quiet Italian dinner for eight. Include price. Which fits our group?",
+        "Compare Mohan Taxi and Pine Taxi for six passengers. What about price?",
+        "Thread Atelier aur Patch Workshop compare karo: meri leather bag repair ke liye. Silk ka experience leather skill nahi hai.",
+        "Compare Mohan Taxi, Pine Taxi, Cedar Taxi and Birch Taxi for six passengers, price, punctuality and cleanliness.",
+        "Compare these two. Which should I choose?",
+    ].iter().enumerate() {
+        let start=std::time::Instant::now();
+        let (code,a)=t.call(Method::POST,"/v1/ask/agent",Some(&token),Some(json!({"request_id":Uuid::new_v4(),"question":question})),&[]).await;
+        let c=&a["comparison"];
+        let text=c["dimensions"].as_array().into_iter().flatten()
+            .flat_map(|d|d["cells"].as_array().into_iter().flatten())
+            .filter_map(|cell|cell["text"].as_str()).collect::<Vec<_>>().join(" ").to_lowercase();
+        let unknown = ["not saved","not recorded","no fare recorded","unknown"].iter().any(|phrase|text.contains(phrase));
+        let passed=code==StatusCode::OK && a["mode"]=="agent" && if index == 4 {
+            c.is_null() && a["clarification"].as_str().is_some_and(|s|!s.is_empty())
+        } else {
+            a["intent"]=="comparison"
+            && c["items"].as_array().is_some_and(|v|v.len()==if index==3 {4}else{2})
+            && c["dimensions"].as_array().is_some_and(|v|!v.is_empty())
+            && match index {
+                0=>unknown && c["conclusion"].as_str().is_some_and(|s| s.contains("Maple")),
+                1=>unknown && (text.contains("four") || text.contains("4 passenger")) && text.contains("past"),
+                2=>text.contains("leather") && text.contains("silk"),
+                3=>unknown && c["dimensions"].as_array().is_some_and(|ds| ds.iter().all(|d|d["cells"].as_array().is_some_and(|v|v.len()==4))),
+                _=>false
+            }
+        };
+        report.push(json!({"question":question,"passed":passed,"elapsed_ms":start.elapsed().as_millis(),"answer":a,"trace":std::mem::take(&mut *model.trace.lock().unwrap())}));
+        println!("Comparison case {index}: passed={passed}");
+    }
+    std::fs::write(
+        std::env::var("ASK_PROBE_OUTPUT").unwrap(),
+        serde_json::to_string_pretty(&report).unwrap(),
+    )
+    .unwrap();
+    t.cleanup().await;
+    assert!(
+        report.iter().all(|r| r["passed"] == true),
+        "Inspect synthetic comparison report"
+    );
+}

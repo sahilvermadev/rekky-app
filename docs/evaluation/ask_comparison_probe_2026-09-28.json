@@ -1,0 +1,242 @@
+[
+  {
+    "question": "Compare Lantern Two and Maple Table for a quiet Italian dinner for eight. Include price. Which fits our group?",
+    "passed": true,
+    "elapsed_ms": 5980,
+    "intent": "comparison",
+    "mode": "agent",
+    "title": "Maple Table fits the group; prices aren’t saved",
+    "clarification": "",
+    "participants": [
+      "Lantern Two",
+      "Maple Table"
+    ],
+    "dimensions": [
+      {
+        "label": "Quiet dinner for eight",
+        "cells": [
+          {
+            "participant": "Lantern Two",
+            "text": "Very quiet, but can accommodate only two; not eight."
+          },
+          {
+            "participant": "Maple Table",
+            "text": "Quiet enough to talk; group of eight fitted comfortably last week."
+          }
+        ]
+      },
+      {
+        "label": "Price",
+        "cells": [
+          {
+            "participant": "Lantern Two",
+            "text": "Not recorded."
+          },
+          {
+            "participant": "Maple Table",
+            "text": "Not recorded."
+          }
+        ]
+      }
+    ],
+    "conclusion": "Maple Table fits the group-size and quiet-dinner needs: eight fitted comfortably and it was quiet enough to talk. Lantern Two does not fit eight guests. Price is not recorded for either, so it can’t distinguish them."
+  },
+  {
+    "question": "Compare Mohan Taxi and Pine Taxi for six passengers. What about price?",
+    "passed": true,
+    "elapsed_ms": 4954,
+    "intent": "comparison",
+    "mode": "agent",
+    "title": "Pine fits six on a past trip; Mohan’s vehicle has four passenger seats",
+    "clarification": "",
+    "participants": [
+      "Pine Taxi",
+      "Mohan Taxi"
+    ],
+    "dimensions": [
+      {
+        "label": "Six passengers",
+        "cells": [
+          {
+            "participant": "Pine Taxi",
+            "text": "Drove a group of six on a past trip."
+          },
+          {
+            "participant": "Mohan Taxi",
+            "text": "Vehicle has four passenger seats, so it does not fit six passengers."
+          }
+        ]
+      },
+      {
+        "label": "Price",
+        "cells": [
+          {
+            "participant": "Pine Taxi",
+            "text": "No fare recorded."
+          },
+          {
+            "participant": "Mohan Taxi",
+            "text": "1200 rupees paid on a past Landour trip; this is not a current quote."
+          }
+        ]
+      }
+    ],
+    "conclusion": ""
+  },
+  {
+    "question": "Thread Atelier aur Patch Workshop compare karo: meri leather bag repair ke liye. Silk ka experience leather skill nahi hai.",
+    "passed": true,
+    "elapsed_ms": 4924,
+    "intent": "comparison",
+    "mode": "agent",
+    "title": "Leather bag repair: Patch Workshop has the direct experience",
+    "clarification": "",
+    "participants": [
+      "Patch Workshop",
+      "Thread Atelier"
+    ],
+    "dimensions": [
+      {
+        "label": "Saved repair experience",
+        "cells": [
+          {
+            "participant": "Patch Workshop",
+            "text": "They restored my leather bag neatly."
+          },
+          {
+            "participant": "Thread Atelier",
+            "text": "They repaired the torn silk lining of my jacket neatly."
+          }
+        ]
+      },
+      {
+        "label": "Leather-specific evidence",
+        "cells": [
+          {
+            "participant": "Patch Workshop",
+            "text": "No saved note saying their silk repairs were tried."
+          },
+          {
+            "participant": "Thread Atelier",
+            "text": "Leather repair has never been tried."
+          }
+        ]
+      }
+    ],
+    "conclusion": "Patch Workshop has direct saved experience restoring a leather bag; Thread Atelier’s saved experience is silk lining repair, and leather repair has not been tried. On the saved notes, Patch Workshop is the stronger fit for this job."
+  },
+  {
+    "question": "Compare Mohan Taxi, Pine Taxi, Cedar Taxi and Birch Taxi for six passengers, price, punctuality and cleanliness.",
+    "passed": true,
+    "elapsed_ms": 7749,
+    "intent": "comparison",
+    "mode": "agent",
+    "title": "Taxi notes compared",
+    "clarification": "",
+    "participants": [
+      "Mohan Taxi",
+      "Pine Taxi",
+      "Cedar Taxi",
+      "Birch Taxi"
+    ],
+    "dimensions": [
+      {
+        "label": "Six passengers",
+        "cells": [
+          {
+            "participant": "Mohan Taxi",
+            "text": "Four passenger seats; not enough for six."
+          },
+          {
+            "participant": "Pine Taxi",
+            "text": "Drove a group of six on a past trip."
+          },
+          {
+            "participant": "Cedar Taxi",
+            "text": "Fits six passengers."
+          },
+          {
+            "participant": "Birch Taxi",
+            "text": "Not saved."
+          }
+        ]
+      },
+      {
+        "label": "Price",
+        "cells": [
+          {
+            "participant": "Mohan Taxi",
+            "text": "Paid 1,200 rupees on that trip; not a current quote."
+          },
+          {
+            "participant": "Pine Taxi",
+            "text": "No fare recorded."
+          },
+          {
+            "participant": "Cedar Taxi",
+            "text": "Not saved"
+          },
+          {
+            "participant": "Birch Taxi",
+            "text": "Not saved"
+          }
+        ]
+      },
+      {
+        "label": "Punctuality",
+        "cells": [
+          {
+            "participant": "Mohan Taxi",
+            "text": "Punctual on a past Landour trip."
+          },
+          {
+            "participant": "Pine Taxi",
+            "text": "Driver was punctual on a past trip."
+          },
+          {
+            "participant": "Cedar Taxi",
+            "text": "Not saved"
+          },
+          {
+            "participant": "Birch Taxi",
+            "text": "Not saved"
+          }
+        ]
+      },
+      {
+        "label": "Cleanliness",
+        "cells": [
+          {
+            "participant": "Mohan Taxi",
+            "text": "Not saved"
+          },
+          {
+            "participant": "Pine Taxi",
+            "text": "Not saved"
+          },
+          {
+            "participant": "Cedar Taxi",
+            "text": "Clean on a past trip."
+          },
+          {
+            "participant": "Birch Taxi",
+            "text": "Not saved"
+          }
+        ]
+      }
+    ],
+    "conclusion": ""
+  },
+  {
+    "question": "Compare these two. Which should I choose?",
+    "passed": true,
+    "elapsed_ms": 2029,
+    "intent": "comparison",
+    "mode": "agent",
+    "title": "Which two options?",
+    "clarification": "Which two options would you like me to compare?",
+    "participants": [],
+    "dimensions": [],
+    "conclusion": ""
+  }
+]
