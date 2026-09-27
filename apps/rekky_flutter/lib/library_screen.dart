@@ -20,6 +20,7 @@ class LibraryScreen extends StatefulWidget {
     required this.onRemember,
     required this.onPin,
     this.processingMessage,
+    this.headerAction,
     this.openUrl = _launchLibraryLink,
   });
   final List<RekkyItem> items;
@@ -28,6 +29,7 @@ class LibraryScreen extends StatefulWidget {
   final VoidCallback onRemember;
   final Future<RekkyItem> Function(RekkyItem, bool) onPin;
   final String? processingMessage;
+  final Widget? headerAction;
   final Future<bool> Function(Uri) openUrl;
 
   @override
@@ -244,16 +246,33 @@ class _LibraryScreenState extends State<LibraryScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Your Library',
-                    style: LibraryStyle.heading(context, 36),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Wrap(
+                          spacing: 12,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(
+                              'Your Library',
+                              style: LibraryStyle.heading(context, 30),
+                            ),
+                            Text(
+                              '${widget.items.length} saved',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: colors.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (widget.headerAction != null) widget.headerAction!,
+                    ],
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '${widget.items.length} saved',
-                    style: TextStyle(color: colors.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 16),
                   TextField(
                     controller: search,
                     onChanged: (_) => setState(() {}),
@@ -273,7 +292,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       fillColor: colors.surfaceContainerLow,
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 16,
-                        vertical: 14,
+                        vertical: 12,
                       ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(
@@ -448,7 +467,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ),
           for (final group in groups.entries) ...[
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 24, 12, 4),
+              padding: const EdgeInsets.fromLTRB(20, 16, 12, 4),
               sliver: SliverToBoxAdapter(
                 child: Row(
                   children: [
@@ -461,7 +480,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                                     ? group.key
                                     : 'Saved in ${group.key}')
                               : group.key,
-                          style: LibraryStyle.heading(context, 25),
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w700),
                         ),
                       ),
                     ),
@@ -781,23 +801,23 @@ class _LibraryRowState extends State<_LibraryRow> {
         onLongPress: widget.pinBusy ? null : widget.onPin,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 14),
+          padding: const EdgeInsets.symmetric(vertical: 12),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (!large) ...[
                 Container(
                   width: 44,
-                  height: 48,
+                  height: 44,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: LibraryStyle.tint(context, shelf),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(
-                    LibraryStyle.icon(shelf),
+                    LibraryStyle.itemIcon(item),
                     size: 22,
-                    color: colors.onSurfaceVariant,
+                    color: LibraryStyle.accent(context, shelf),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -819,14 +839,15 @@ class _LibraryRowState extends State<_LibraryRow> {
                       maxLines: large ? null : 2,
                       overflow: large ? null : TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontSize: 13,
                         color: colors.onSurfaceVariant,
                         height: 1.4,
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 4),
                     Wrap(
-                      spacing: 10,
-                      runSpacing: 4,
+                      spacing: 8,
+                      runSpacing: 0,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         if (rating != null)
@@ -843,16 +864,22 @@ class _LibraryRowState extends State<_LibraryRow> {
                                   children: [
                                     Icon(
                                       Icons.star,
-                                      size: 13,
-                                      color: colors.primary,
+                                      size: 15,
+                                      color: LibraryStyle.accent(
+                                        context,
+                                        LibraryShelf.ideas,
+                                      ),
                                     ),
                                     const SizedBox(width: 4),
                                     Text(
                                       '${rating.label}/10',
                                       style: Theme.of(context)
                                           .textTheme
-                                          .labelSmall
-                                          ?.copyWith(color: colors.primary),
+                                          .labelMedium
+                                          ?.copyWith(
+                                            color: colors.onSurface,
+                                            fontWeight: FontWeight.w600,
+                                          ),
                                     ),
                                   ],
                                 ),
@@ -876,6 +903,8 @@ class _LibraryRowState extends State<_LibraryRow> {
                             color: colors.primary,
                             semanticLabel: 'Pinned',
                           ),
+                        if (RecommendationReviewButton.needed(item))
+                          RecommendationReviewButton(item: item),
                         if (rec?.experience == 'interest')
                           Text(
                             'Not tried yet',
@@ -893,8 +922,6 @@ class _LibraryRowState extends State<_LibraryRow> {
               ),
               Column(
                 children: [
-                  if (RecommendationReviewButton.needed(item))
-                    RecommendationReviewButton(item: item),
                   if (action != null)
                     IconButton(
                       tooltip: phone != null
@@ -911,7 +938,9 @@ class _LibraryRowState extends State<_LibraryRow> {
                           : Icon(
                               phone != null
                                   ? Icons.call_outlined
-                                  : Icons.north_east,
+                                  : rec?.destinationMode == 'custom'
+                                  ? Icons.open_in_new
+                                  : Icons.map_outlined,
                               size: 20,
                             ),
                     ),

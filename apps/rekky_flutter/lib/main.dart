@@ -9,6 +9,8 @@ import 'contact_matching.dart';
 import 'contact_sheet.dart';
 import 'recommendation_editor.dart';
 import 'library_screen.dart';
+import 'rekky_theme.dart';
+import 'rekky_navigation.dart';
 import 'recommendation_detail.dart';
 import 'rekky_api.dart';
 import 'voice_capture_sheet.dart';
@@ -30,21 +32,9 @@ class RekkyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'Rekky',
-    theme: ThemeData(
-      useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xFF74452F),
-        surface: const Color(0xFFFFFBF5),
-      ),
-      scaffoldBackgroundColor: const Color(0xFFFFFBF5),
-    ),
-    darkTheme: ThemeData(
-      useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xFF74452F),
-        brightness: Brightness.dark,
-      ),
-    ),
+    debugShowCheckedModeBanner: false,
+    theme: RekkyTheme.build(Brightness.light),
+    darkTheme: RekkyTheme.build(Brightness.dark),
     home: const RekkyHome(),
   );
 }
@@ -844,44 +834,9 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
       );
     }
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Rekky'),
-        actions: [
-          PopupMenuButton<String>(
-            tooltip: 'Account and recovery',
-            onSelected: (value) {
-              if (value == 'contacts') unawaited(_contactSettings());
-              if (value == 'recordings') unawaited(_openVoiceDrafts());
-              if (value == 'processing') unawaited(_processingSettings());
-              if (value == 'credits') {
-                showAboutDialog(
-                  context: context,
-                  applicationName: 'Rekky',
-                  children: const [
-                    Text(
-                      'Geographic names and area hierarchy: GeoNames (geonames.org), CC BY 4.0 (creativecommons.org/licenses/by/4.0). Names are normalized and selected datasets are combined for local matching. Coverage and matches may be incomplete.',
-                    ),
-                  ],
-                );
-              }
-              if (value == 'signout') unawaited(_signOut());
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'contacts', child: Text('Contact matching')),
-              PopupMenuItem(
-                value: 'processing',
-                child: Text('Voice processing'),
-              ),
-              PopupMenuItem(
-                value: 'recordings',
-                child: Text('Pending recordings'),
-              ),
-              PopupMenuItem(value: 'credits', child: Text('About Rekky')),
-              PopupMenuItem(value: 'signout', child: Text('Sign out')),
-            ],
-          ),
-        ],
-      ),
+      appBar: destination == 1
+          ? null
+          : AppBar(title: const Text('Rekky'), actions: [_accountMenu()]),
       body: SafeArea(
         child: Column(
           children: [
@@ -904,71 +859,41 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
           ],
         ),
       ),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-          child: Row(
-            children: [
-              Expanded(
-                child: Semantics(
-                  selected: destination == 0,
-                  child: TextButton(
-                    style: TextButton.styleFrom(
-                      backgroundColor: destination == 0
-                          ? Theme.of(context).colorScheme.secondaryContainer
-                          : null,
-                    ),
-                    onPressed: () => setState(() => destination = 0),
-                    child: const Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [Icon(Icons.search), Text('Ask')],
-                    ),
-                  ),
-                ),
-              ),
-              Expanded(
-                flex: 2,
-                child: FilledButton(
-                  onPressed: _remember,
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 10),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.mic),
-                        Text('Remember', textAlign: TextAlign.center),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Semantics(
-                  selected: destination == 1,
-                  child: TextButton(
-                    style: TextButton.styleFrom(
-                      backgroundColor: destination == 1
-                          ? Theme.of(context).colorScheme.secondaryContainer
-                          : null,
-                    ),
-                    onPressed: () => setState(() => destination = 1),
-                    child: const Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.bookmarks_outlined),
-                        Text('Library'),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+      bottomNavigationBar: RekkyNavigation(
+        destination: destination,
+        onSelect: (value) => setState(() => destination = value),
+        onRemember: _remember,
       ),
     );
   }
+
+  Widget _accountMenu() => PopupMenuButton<String>(
+    tooltip: 'Account and recovery',
+    onSelected: (value) {
+      if (value == 'contacts') unawaited(_contactSettings());
+      if (value == 'recordings') unawaited(_openVoiceDrafts());
+      if (value == 'processing') unawaited(_processingSettings());
+      if (value == 'credits') {
+        showAboutDialog(
+          context: context,
+          applicationName: 'Rekky',
+          children: const [
+            Text(
+              'Geographic names and area hierarchy: GeoNames (geonames.org), CC BY 4.0 (creativecommons.org/licenses/by/4.0). Names are normalized and selected datasets are combined for local matching. Coverage and matches may be incomplete.',
+            ),
+          ],
+        );
+      }
+      if (value == 'signout') unawaited(_signOut());
+    },
+    itemBuilder: (_) => const [
+      PopupMenuItem(value: 'contacts', child: Text('Contact matching')),
+      PopupMenuItem(value: 'processing', child: Text('Voice processing')),
+      PopupMenuItem(value: 'recordings', child: Text('Pending recordings')),
+      PopupMenuItem(value: 'credits', child: Text('About Rekky')),
+      PopupMenuItem(value: 'signout', child: Text('Sign out')),
+    ],
+  );
 
   Widget _askPage() => Padding(
     padding: const EdgeInsets.all(20),
@@ -1035,6 +960,7 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
 
   Widget _libraryPage() => LibraryScreen(
     key: ValueKey('library-$accountId'),
+    headerAction: _accountMenu(),
     items: library,
     processingMessage: processingMessage,
     onRefresh: _reload,

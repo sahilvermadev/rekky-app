@@ -8,6 +8,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rekky_flutter/library_collection.dart';
+import 'package:rekky_flutter/rekky_theme.dart';
 import 'package:rekky_flutter/library_screen.dart';
 import 'package:rekky_flutter/rekky_api.dart';
 
@@ -88,14 +89,7 @@ Widget app(
   Future<bool> Function(Uri)? openUrl,
   VoidCallback? onRemember,
 }) => MaterialApp(
-  theme: ThemeData(
-    useMaterial3: true,
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: const Color(0xFF74452F),
-      surface: dark ? const Color(0xff171410) : const Color(0xFFFFFBF5),
-      brightness: dark ? Brightness.dark : Brightness.light,
-    ),
-  ),
+  theme: RekkyTheme.build(dark ? Brightness.dark : Brightness.light),
   builder: (context, child) => MediaQuery(
     data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(scale)),
     child: child!,
@@ -104,7 +98,7 @@ Widget app(
     body: RepaintBoundary(
       key: boundary,
       child: ColoredBox(
-        color: dark ? const Color(0xff171410) : const Color(0xFFFFFBF5),
+        color: dark ? RekkyTheme.charcoal : RekkyTheme.paper,
         child: LibraryScreen(
           items: items,
           onOpen: onOpen ?? (_) {},
