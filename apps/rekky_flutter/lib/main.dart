@@ -914,6 +914,7 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
 
   Widget _libraryPage() => LibraryScreen(
     key: ValueKey('library-$accountId'),
+    isActive: destination == 1,
     headerAction: _accountMenu(),
     items: library,
     processingMessage: processingMessage,

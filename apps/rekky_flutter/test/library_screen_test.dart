@@ -23,6 +23,7 @@ RekkyItem entry(
   bool pinned = false,
   bool resolved = true,
   String type = 'place.restaurant',
+  String? typeLabel,
   bool caution = false,
   Map<String, dynamic>? geography,
 }) => RekkyItem(
@@ -68,13 +69,17 @@ RekkyItem entry(
       types: [
         CategoryConcept(
           id: type,
-          label: kind == 'place' ? 'Italian restaurant' : 'Taxi service',
+          label:
+              typeLabel ??
+              (kind == 'place' ? 'Italian restaurant' : 'Taxi service'),
           dimension: 'type',
         ),
       ],
       facets: [],
       descriptors: [],
-      displayLabel: kind == 'place' ? 'Italian restaurant' : 'Taxi service',
+      displayLabel:
+          typeLabel ??
+          (kind == 'place' ? 'Italian restaurant' : 'Taxi service'),
     ),
   ),
 );
@@ -84,6 +89,7 @@ Widget app(
   List<RekkyItem> items, {
   double scale = 1,
   bool dark = false,
+  bool isActive = true,
   ValueChanged<RekkyItem>? onOpen,
   Future<RekkyItem> Function(RekkyItem, bool)? onPin,
   Future<bool> Function(Uri)? openUrl,
@@ -100,6 +106,7 @@ Widget app(
       child: ColoredBox(
         color: dark ? RekkyTheme.charcoal : RekkyTheme.paper,
         child: LibraryScreen(
+          isActive: isActive,
           items: items,
           onOpen: onOpen ?? (_) {},
           onRefresh: () async {},
@@ -274,6 +281,9 @@ void main() {
       final items = [
         entry('1', 'Lantern', pinned: true),
         entry('2', 'Fern', area: 'Pune', date: '2026-08-03T12:00:00Z'),
+        entry('3', 'Ravi', kind: 'person_service'),
+        entry('4', 'Tara', kind: 'person_service'),
+        entry('5', 'Old note', kind: 'idea_tip', date: '2026-07-01T12:00:00Z'),
       ];
       await tester.pumpWidget(app(items));
       expect(find.text('The handmade pasta was excellent.'), findsNothing);
@@ -302,10 +312,12 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Close filters'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Pinned'));
+      await tester.tap(find.text('Pinned · 1'));
       await tester.pump();
       expect(find.text('Fern'), findsNothing);
-      await tester.tap(find.text('Recent'));
+      await tester.tap(find.text('Your Library').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('See all'));
       await tester.pump();
       expect(find.text('Saved in September 2026'), findsOneWidget);
       expect(find.text('Saved in August 2026'), findsOneWidget);
@@ -321,7 +333,7 @@ void main() {
           entry('2', 'Unpinned Pune', area: 'Pune'),
         ]),
       );
-      await tester.tap(find.text('Pinned'));
+      await tester.tap(find.text('Pinned · 1'));
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Filters'));
       await tester.pumpAndSettle();
@@ -389,13 +401,11 @@ void main() {
     },
   );
 
-  testWidgets('large collection exposes all items through See all', (
-    tester,
-  ) async {
+  testWidgets('large collection opens directly from its tile', (tester) async {
     await tester.pumpWidget(
       app(List.generate(18, (i) => entry('$i', 'Place $i'))),
     );
-    await tester.tap(find.text('See all (18)'));
+    await tester.tap(find.text('Places'));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
       find.text('Place 0'),
@@ -404,6 +414,90 @@ void main() {
     );
     expect(find.text('Place 0'), findsOneWidget);
   });
+
+  testWidgets('collection entry scopes browsing, type shortcuts and filters', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      app([
+        ...List.generate(12, (i) => entry('place$i', 'Place $i')),
+        entry('taxi', 'Ravi Taxi', kind: 'person_service', type: 'taxi'),
+        entry(
+          'doctor',
+          'Mira Clinic',
+          kind: 'person_service',
+          type: 'doctor',
+          typeLabel: 'Doctor',
+          area: 'Pune',
+        ),
+      ]),
+    );
+    expect(find.text('Collections'), findsOneWidget);
+    expect(find.text('People & services'), findsOneWidget);
+    await tester.tap(find.text('People & services'));
+    await tester.pumpAndSettle();
+    expect(find.text('Ravi Taxi'), findsOneWidget);
+    expect(find.text('Mira Clinic'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), 'No such person');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Clear filters'));
+    await tester.pumpAndSettle();
+    expect(find.text('Ravi Taxi'), findsOneWidget);
+    expect(find.text('Place 11'), findsNothing);
+    expect(
+      find.widgetWithText(TextField, 'Search People & services'),
+      findsOneWidget,
+    );
+    expect(find.text('Place 11'), findsNothing);
+    expect(find.widgetWithText(ChoiceChip, 'Doctor'), findsOneWidget);
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Doctor'));
+    await tester.pumpAndSettle();
+    expect(find.text('Ravi Taxi'), findsNothing);
+    expect(find.text('Mira Clinic'), findsOneWidget);
+    await tester.tap(find.byTooltip('Filters'));
+    await tester.pumpAndSettle();
+    expect(find.text('Collections'), findsNothing);
+    await tester.tap(find.text('Clear all'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Close filters'));
+    await tester.pumpAndSettle();
+    expect(find.text('Ravi Taxi'), findsOneWidget);
+    await tester.tap(find.text('Your Library'));
+    await tester.pumpAndSettle();
+    expect(find.text('Collections'), findsOneWidget);
+  });
+
+  testWidgets(
+    'system Back restores the overview position; inactive Library does not intercept',
+    (tester) async {
+      final items = [
+        ...List.generate(12, (i) => entry('p$i', 'Place $i')),
+        entry('person', 'Ravi Taxi', kind: 'person_service'),
+        entry('idea', 'A good idea', kind: 'idea_tip'),
+      ];
+      await tester.pumpWidget(app(items));
+      final controller = tester
+          .widget<CustomScrollView>(find.byType(CustomScrollView))
+          .controller!;
+      controller.jumpTo(100);
+      await tester.pumpAndSettle();
+      final offset = controller.offset;
+      await tester.tap(find.text('People & services'));
+      await tester.pumpAndSettle();
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('Collections'), findsOneWidget);
+      expect(controller.offset, offset);
+      await tester.tap(find.text('People & services'));
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(app(items, isActive: false));
+      final context = tester.element(find.byType(LibraryScreen));
+      expect(
+        ModalRoute.of(context)!.popDisposition,
+        RoutePopDisposition.bubble,
+      );
+    },
+  );
 
   for (final width in [320.0, 375.0, 414.0, 768.0]) {
     for (final scale in [1.0, 2.0]) {
@@ -451,6 +545,16 @@ void main() {
         await tester.tap(find.byTooltip('Filters'));
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
+        await tester.tap(find.byTooltip('Close filters'));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('People & services'));
+        await tester.tap(find.text('People & services'));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(
+          find.widgetWithText(TextField, 'Search People & services'),
+          findsOneWidget,
+        );
       });
     }
   }

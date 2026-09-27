@@ -24,10 +24,12 @@ class LibraryFilterSheet extends StatefulWidget {
     required this.items,
     required this.initial,
     required this.onChanged,
+    this.fixedShelf,
   });
   final List<RekkyItem> items;
   final LibraryFilters initial;
   final ValueChanged<LibraryFilters> onChanged;
+  final LibraryShelf? fixedShelf;
   @override
   State<LibraryFilterSheet> createState() => _LibraryFilterSheetState();
 }
@@ -37,8 +39,16 @@ class _LibraryFilterSheetState extends State<LibraryFilterSheet> {
   String query = '';
   bool regions = false;
   void update(LibraryFilters value) {
-    setState(() => selection = value);
-    widget.onChanged(value);
+    final next = LibraryFilters(
+      shelf: widget.fixedShelf ?? value.shelf,
+      typeId: value.typeId,
+      areaId: value.areaId,
+      areaLabel: value.areaLabel,
+      neighbourhoodId: value.neighbourhoodId,
+      neighbourhoodLabel: value.neighbourhoodLabel,
+    );
+    setState(() => selection = next);
+    widget.onChanged(next);
   }
 
   @override
@@ -139,39 +149,18 @@ class _LibraryFilterSheetState extends State<LibraryFilterSheet> {
                 keyboardDismissBehavior:
                     ScrollViewKeyboardDismissBehavior.onDrag,
                 children: [
-                  heading('Collections'),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    children: [
-                      ChoiceChip(
-                        label: const Text('All collections'),
-                        selected: selection.shelf == null,
-                        selectedColor: LibraryStyle.libraryTint(context),
-                        onSelected: (_) => update(
-                          LibraryFilters(
-                            areaId: selection.areaId,
-                            areaLabel: selection.areaLabel,
-                            neighbourhoodId: selection.neighbourhoodId,
-                            neighbourhoodLabel: selection.neighbourhoodLabel,
-                          ),
-                        ),
-                      ),
-                      for (final shelf in LibraryShelf.values.where(
-                        (s) => widget.items.any((i) => LibraryShelf.of(i) == s),
-                      ))
+                  if (widget.fixedShelf == null) ...[
+                    heading('Collections'),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
                         ChoiceChip(
-                          avatar: Icon(
-                            LibraryStyle.icon(shelf),
-                            size: 18,
-                            color: LibraryStyle.accent(context, shelf),
-                          ),
-                          label: Text(shelf.label),
-                          selected: selection.shelf == shelf,
+                          label: const Text('All collections'),
+                          selected: selection.shelf == null,
                           selectedColor: LibraryStyle.libraryTint(context),
                           onSelected: (_) => update(
                             LibraryFilters(
-                              shelf: shelf,
                               areaId: selection.areaId,
                               areaLabel: selection.areaLabel,
                               neighbourhoodId: selection.neighbourhoodId,
@@ -179,8 +168,33 @@ class _LibraryFilterSheetState extends State<LibraryFilterSheet> {
                             ),
                           ),
                         ),
-                    ],
-                  ),
+                        for (final shelf in LibraryShelf.values.where(
+                          (s) =>
+                              widget.items.any((i) => LibraryShelf.of(i) == s),
+                        ))
+                          ChoiceChip(
+                            avatar: Icon(
+                              LibraryStyle.icon(shelf),
+                              size: 18,
+                              color: LibraryStyle.accent(context, shelf),
+                            ),
+                            label: Text(shelf.label),
+                            selected: selection.shelf == shelf,
+                            selectedColor: LibraryStyle.libraryTint(context),
+                            onSelected: (_) => update(
+                              LibraryFilters(
+                                shelf: shelf,
+                                areaId: selection.areaId,
+                                areaLabel: selection.areaLabel,
+                                neighbourhoodId: selection.neighbourhoodId,
+                                neighbourhoodLabel:
+                                    selection.neighbourhoodLabel,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
                   if (types.length > 1) ...[
                     heading('Type'),
                     Wrap(

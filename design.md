@@ -4,11 +4,11 @@ A contemporary personal collection, with expressive display typography, compact 
 
 ## Composition
 
-Library combines its title, count and menu in one header. The count shares the title baseline when they fit; they stack naturally at large text sizes. Search and a separate Filters action share the next row. All / Recent / Pinned use ink, weight and a short underline. Active category, type, city and neighbourhood filters appear as removable tokens.
+Library combines its title, count and menu in one header. The count shares the title baseline when they fit; they stack naturally at large text sizes. Search and a separate Filters action share the next row. An established Library opens on a compact two-column index of populated collections, with a short cross-collection Recently added preview beneath. Each collection tile shows its stable colour, name and count. Pinned and the full month-grouped recent list are direct secondary views. A single sparse shelf still exposes its items immediately. Entering a collection scopes its search, type shortcuts and location filters; Back restores the overview scroll position. Active type, city and neighbourhood filters appear as removable tokens.
 
 Filters share one sheet. Collections, optional specific types, destination search, broader Regions and optional neighbourhood choices apply immediately. Closing dismisses the sheet without a save/apply step. Clear all resets filtering while preserving the current Library view and query. Geographic identity and coverage semantics remain unchanged.
 
-Collections have a short rounded colour marker, a small sans-serif heading and scoped count. Individual entries use neutral cards with a faint outline, 16-point corners, 12-point inset and 8-point separation. Names dominate; category/locality and rating/audience follow. Omit duplicate broad shelf text where a group already communicates it. Maps, Call and review actions retain separate accessible targets. No summaries in Library cards. Natural height takes priority over a fixed density target.
+The collection index uses compact neutral tiles with a solid collection emblem and clear entry affordance. Individual entries use neutral cards with a faint outline, 16-point corners, 12-point inset and 8-point separation. Names dominate; category/locality and rating/audience follow. Maps, Call and review actions retain separate accessible targets. No summaries in Library cards. Natural height takes priority over a fixed density target.
 
 ## Typography
 
