@@ -241,3 +241,35 @@ fn taxi_aliases_share_a_category_and_unknown_type_has_no_invented_id() {
             .is_null()
     );
 }
+
+#[test]
+fn invalid_canonical_assignment_keeps_independent_unfamiliar_type() {
+    let p:ProposedClassification=serde_json::from_value(json!({"types":[{"concept_id":"thing.product","source_phrase":"cafe","evidence":[1]}],"facets":[],"descriptors":[],"type_description":{"text":"caterer","evidence":[1]}})).unwrap();
+    let (c, _) = validate(&p, "person_service", &source_units("Nila is a caterer."));
+    assert_eq!(c["descriptive_type"], "caterer");
+    assert_eq!(c["types"], json!([]));
+}
+#[test]
+fn source_schema_pairs_ids_with_spoken_aliases_and_allows_unknown_types() {
+    use rekky_backend::extraction::schema_for_source;
+    let source = "Nila is a caterer. We also tried an Italian restaurant.";
+    let schema = schema_for_source(rekky_backend::taxonomy::vocabulary(), source);
+    let c = &schema["properties"]["items"]["items"]["properties"]["classification"]["properties"];
+    for field in ["types", "facets"] {
+        for choice in c[field]["items"]["anyOf"].as_array().unwrap() {
+            let props = &choice["properties"];
+            let id = props["concept_id"]["enum"][0].as_str().unwrap();
+            let concept = rekky_backend::taxonomy::concept(id).unwrap();
+            for alias in props["source_phrase"]["enum"].as_array().unwrap() {
+                let alias = alias.as_str().unwrap();
+                assert!(concept.aliases.iter().any(|a| a == alias));
+                assert!(rekky_backend::taxonomy::contains_phrase(source, alias));
+            }
+        }
+    }
+    let schema = schema_for_source(rekky_backend::taxonomy::vocabulary(), "Nila is a caterer.");
+    let c = &schema["properties"]["items"]["items"]["properties"]["classification"]["properties"];
+    assert_eq!(c["types"]["maxItems"], 0);
+    assert_eq!(c["facets"]["maxItems"], 0);
+    assert!(c["type_description"].is_object());
+}

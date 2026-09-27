@@ -2938,3 +2938,70 @@ async fn sharing_migration_preserves_existing_work_and_changes_only_new_defaults
     assert_eq!(actual, ["private", "friends"]);
     tx.rollback().await.unwrap();
 }
+
+struct UnfamiliarTypeExtractor;
+#[async_trait]
+impl TranscriptExtractor for UnfamiliarTypeExtractor {
+    fn available(&self) -> bool {
+        true
+    }
+    async fn extract(&self, transcript: &str) -> Result<Proposal, ExtractionError> {
+        let mut p = TestExtractor.extract(transcript).await?;
+        p.items[0].classification = json!({"types":[{"concept_id":"thing.product","source_phrase":"cafe","evidence":[1]}],"facets":[],"descriptors":[],"type_description":{"text":"caterer","evidence":[1]}});
+        Ok(p)
+    }
+}
+#[tokio::test]
+async fn unfamiliar_type_survives_rejected_assignment_and_reaches_learning_queue() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    t.state.extractor = Arc::new(UnfamiliarTypeExtractor);
+    t.app = router(t.state.clone());
+    let (owner, token) = t.sign_in("google", "valid-a").await;
+    t.call(
+        Method::POST,
+        "/v1/me/visibility-disclosure",
+        Some(&token),
+        Some(json!({"accept":true})),
+        &[],
+    )
+    .await;
+    t.call(
+        Method::POST,
+        "/v1/me/transcript-extraction-permission",
+        Some(&token),
+        Some(json!({"enabled":true,"disclosure_version":1})),
+        &[],
+    )
+    .await;
+    let capture = Uuid::new_v4();
+    sqlx::query("INSERT INTO captures(id,owner_id,kind,status,desired_visibility) VALUES($1,$2,'voice','transcript_ready','friends')").bind(capture).bind(owner).execute(&t.pool).await.unwrap();
+    sqlx::query("INSERT INTO source_texts(id,capture_id,owner_id,kind,content) VALUES($1,$2,$3,'transcript','Nila is a caterer. She prepared a tasty lunch.')").bind(Uuid::new_v4()).bind(capture).bind(owner).execute(&t.pool).await.unwrap();
+    let (status, result) = t
+        .call(
+            Method::POST,
+            &format!("/v1/voice-captures/{capture}/extract"),
+            Some(&token),
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    assert_eq!(
+        result["items"][0]["recommendation"]["classification"]["display_label"],
+        "caterer"
+    );
+    assert_eq!(result["items"][0]["visibility"], "friends");
+    let key: String =
+        sqlx::query_scalar("SELECT job_key FROM category_discoveries WHERE owner_id=$1")
+            .bind(owner)
+            .fetch_one(&t.pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        key,
+        rekky_backend::category_learning::job_key("person_service", "caterer")
+    );
+    t.cleanup().await;
+}

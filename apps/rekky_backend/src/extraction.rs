@@ -175,12 +175,38 @@ fn choice(values: &[&str]) -> Value {
 pub fn schema() -> Value {
     schema_with_catalog(crate::taxonomy::vocabulary())
 }
+/// Only aliases actually spoken are offered; the validator still checks each
+/// assignment against the cited units and the current subject's entity kind.
+pub fn schema_for_source(catalog: &crate::taxonomy::Vocabulary, source: &str) -> Value {
+    let mut eligible = catalog.clone();
+    for c in &mut eligible.concepts {
+        c.aliases
+            .retain(|alias| crate::taxonomy::contains_phrase(source, alias));
+    }
+    eligible.concepts.retain(|c| !c.aliases.is_empty());
+    schema_with_catalog(&eligible)
+}
 pub fn schema_with_catalog(catalog: &crate::taxonomy::Vocabulary) -> Value {
     let claim = object(json!({"text":text_schema(),"evidence":evidence_schema()}));
-    let assignment = |is_type| {
-        object(
-            json!({"concept_id":{"type":"string","enum":catalog.concepts.iter().filter(|c| (c.dimension == "type") == is_type).map(|c|&c.id).collect::<Vec<_>>()},"source_phrase":{"type":"string","enum":catalog.concepts.iter().filter(|c| (c.dimension == "type") == is_type).flat_map(|c|c.aliases.iter()).collect::<Vec<_>>()},"evidence":evidence_schema()}),
-        )
+    let assignments = |is_type| {
+        let choices: Vec<_> = catalog
+            .concepts
+            .iter()
+            .filter(|c| (c.dimension == "type") == is_type && !c.aliases.is_empty())
+            .map(|c| {
+                object(json!({
+                    "concept_id":{"type":"string","enum":[c.id]},
+                    "source_phrase":{"type":"string","enum":c.aliases},
+                    "evidence":evidence_schema()
+                }))
+            })
+            .collect();
+        if choices.is_empty() {
+            // Strict JSON Schema disallows empty enums/anyOf; force an empty array.
+            json!({"type":"array","maxItems":0,"items":object(json!({"concept_id":text_schema(),"source_phrase":text_schema(),"evidence":evidence_schema()}))})
+        } else {
+            json!({"type":"array","maxItems":if is_type {3} else {4},"items":{"anyOf":choices}})
+        }
     };
     object(json!({
         "items":array(object(json!({
@@ -196,7 +222,7 @@ pub fn schema_with_catalog(catalog: &crate::taxonomy::Vocabulary) -> Value {
             "account":array(object(json!({"kind":choice(&["praise","suggestion","suitability","caution","price","context"]),"text":text_schema(),"evidence":{"type":"array","items":{"type":"integer"},"minItems":1,"maxItems":3}}))),
             "locations":array(object(json!({"role":choice(&["venue","practice","service_area","past_experience","context"]),"text":text_schema(),"evidence":evidence_schema()}))),
             "use_cases":array(claim.clone()),
-            "classification":object(json!({"types":array(assignment(true)),"facets":array(assignment(false)),"descriptors":array(claim.clone()),"type_description":claim}))
+            "classification":object(json!({"types":assignments(true),"facets":assignments(false),"descriptors":array(claim.clone()),"type_description":claim}))
         }))),
         "ignored_unit_ids":evidence_schema(),"unresolved_unit_ids":evidence_schema(),
         "readable_source":array(object(json!({"unit_id":{"type":"integer"},"corrections":array(object(json!({"before":text_schema(),"after":text_schema()}))),"paragraph_start":{"type":"boolean"}})))
@@ -224,10 +250,10 @@ impl TranscriptExtractor for OpenAiExtractor {
             .json(&json!({
                 "model":EXTRACTION_MODEL,"store":false,"max_output_tokens":5500,
                 "input":[
-                    {"role":"system","content":format!("{}\nShared category vocabulary (use canonical IDs, not invented labels):\n{}",include_str!("../prompts/understanding_v2.txt"),serde_json::to_string(catalog).expect("vocabulary"))},
+                    {"role":"system","content":format!("{}\nKnown category IDs and aliases. Use these only when supported; unfamiliar explicit types belong in type_description with types=[], never in a guessed ID:\n{}",include_str!("../prompts/understanding_v2.txt"),serde_json::to_string(catalog).expect("vocabulary"))},
                     {"role":"user","content":json!({"transcript_units":source_units(transcript)}).to_string()}
                 ],
-                "text":{"format":{"type":"json_schema","name":"rekky_understanding_v2","strict":true,"schema":schema_with_catalog(catalog)}}
+                "text":{"format":{"type":"json_schema","name":"rekky_understanding_v2","strict":true,"schema":schema_for_source(catalog, transcript)}}
             })).send().await.map_err(|_| ExtractionError::Failed)?;
         if !response.status().is_success() {
             return Err(ExtractionError::Failed);

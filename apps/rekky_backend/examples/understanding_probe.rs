@@ -4,7 +4,9 @@ use serde_json::{Value, json};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
-    let seed = if std::env::args().any(|arg| arg == "--editorial") {
+    let seed = if std::env::args().any(|arg| arg == "--category-capture") {
+        include_str!("../../../docs/evaluation/category_capture_seed_v1.json")
+    } else if std::env::args().any(|arg| arg == "--editorial") {
         include_str!("../../../docs/evaluation/editorial_seed_v1.json")
     } else if std::env::args().any(|arg| arg == "--ratings") {
         include_str!("../../../docs/evaluation/ratings_seed_v1.json")

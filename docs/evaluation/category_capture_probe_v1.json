@@ -1,0 +1,384 @@
+[
+  {
+    "elapsed_ms": 3729,
+    "id": "unfamiliar_service",
+    "output": {
+      "items": [
+        {
+          "proposed_classification": {
+            "descriptors": [],
+            "facets": [],
+            "type_description": {
+              "evidence": [
+                1
+              ],
+              "text": "caterer"
+            },
+            "types": []
+          },
+          "proposed_rating": {
+            "evidence": [],
+            "mode": "inferred",
+            "source_phrase": "I recommend a caterer called Nila.",
+            "spoken_value": null,
+            "stance": "good"
+          },
+          "recommendation": {
+            "classification": {
+              "descriptive_type": "caterer",
+              "descriptors": [],
+              "display_label": "caterer",
+              "facets": [],
+              "origin": "extracted",
+              "search_ids": [],
+              "search_terms": "caterer",
+              "types": [],
+              "vocabulary_version": 2
+            },
+            "entity_kind": "person_service",
+            "experience": "firsthand",
+            "locations": [],
+            "observations": [
+              {
+                "kind": "praise",
+                "text": "The food was tasty and the price was reasonable."
+              }
+            ],
+            "rating": null,
+            "shelf": "People & services",
+            "summary": "Nila catered lunch for our team last month, and I recommend her service.",
+            "use_cases": [
+              "prepared lunch for our team"
+            ],
+            "version": 2
+          },
+          "subject": "Nila"
+        }
+      ],
+      "partial": false,
+      "proposed_accounts": [
+        [
+          {
+            "evidence": [
+              1,
+              2,
+              3
+            ],
+            "kind": "context",
+            "text": "Nila catered lunch for our team last month, and I recommend her service."
+          },
+          {
+            "evidence": [
+              3
+            ],
+            "kind": "praise",
+            "text": "The food was tasty and the price was reasonable."
+          }
+        ]
+      ],
+      "proposed_readable_source": [
+        {
+          "corrections": [],
+          "paragraph_start": true,
+          "unit_id": 1
+        },
+        {
+          "corrections": [],
+          "paragraph_start": false,
+          "unit_id": 2
+        },
+        {
+          "corrections": [],
+          "paragraph_start": false,
+          "unit_id": 3
+        }
+      ],
+      "readable_source": null,
+      "status": "valid"
+    }
+  },
+  {
+    "elapsed_ms": 3577,
+    "id": "unfamiliar_craft",
+    "output": {
+      "items": [
+        {
+          "proposed_classification": {
+            "descriptors": [],
+            "facets": [],
+            "type_description": {
+              "evidence": [
+                1
+              ],
+              "text": "bookbinder"
+            },
+            "types": []
+          },
+          "proposed_rating": {
+            "evidence": [],
+            "mode": "inferred",
+            "source_phrase": "He repaired my old notebook neatly",
+            "spoken_value": null,
+            "stance": "very_good"
+          },
+          "recommendation": {
+            "classification": {
+              "descriptive_type": "bookbinder",
+              "descriptors": [],
+              "display_label": "bookbinder",
+              "facets": [],
+              "origin": "extracted",
+              "search_ids": [],
+              "search_terms": "bookbinder",
+              "types": [],
+              "vocabulary_version": 2
+            },
+            "entity_kind": "person_service",
+            "experience": "firsthand",
+            "locations": [],
+            "observations": [
+              {
+                "kind": "praise",
+                "text": "He repaired it neatly, and the cover feels sturdy."
+              }
+            ],
+            "rating": null,
+            "shelf": "People & services",
+            "summary": "I used Dev, a bookbinder, to repair my old notebook.",
+            "use_cases": [],
+            "version": 2
+          },
+          "subject": "Dev"
+        }
+      ],
+      "partial": false,
+      "proposed_accounts": [
+        [
+          {
+            "evidence": [
+              1,
+              2,
+              3
+            ],
+            "kind": "context",
+            "text": "I used Dev, a bookbinder, to repair my old notebook."
+          },
+          {
+            "evidence": [
+              2,
+              3
+            ],
+            "kind": "praise",
+            "text": "He repaired it neatly, and the cover feels sturdy."
+          }
+        ]
+      ],
+      "proposed_readable_source": [
+        {
+          "corrections": [],
+          "paragraph_start": true,
+          "unit_id": 1
+        },
+        {
+          "corrections": [],
+          "paragraph_start": false,
+          "unit_id": 2
+        },
+        {
+          "corrections": [],
+          "paragraph_start": false,
+          "unit_id": 3
+        }
+      ],
+      "readable_source": null,
+      "status": "valid"
+    }
+  },
+  {
+    "elapsed_ms": 4262,
+    "id": "known_and_unfamiliar",
+    "output": {
+      "items": [
+        {
+          "proposed_classification": {
+            "descriptors": [],
+            "facets": [
+              {
+                "concept_id": "cuisine.italian",
+                "evidence": [
+                  1
+                ],
+                "source_phrase": "Italian"
+              }
+            ],
+            "type_description": {
+              "evidence": [
+                1
+              ],
+              "text": "restaurant"
+            },
+            "types": [
+              {
+                "concept_id": "place.restaurant",
+                "evidence": [
+                  1
+                ],
+                "source_phrase": "restaurant"
+              }
+            ]
+          },
+          "proposed_rating": {
+            "evidence": [
+              2
+            ],
+            "mode": "inferred",
+            "source_phrase": "The pasta was good.",
+            "spoken_value": null,
+            "stance": "good"
+          },
+          "recommendation": {
+            "classification": {
+              "descriptors": [],
+              "display_label": "Italian restaurant",
+              "facets": [
+                {
+                  "dimension": "cuisine",
+                  "dimension_label": "Cuisine",
+                  "id": "cuisine.italian",
+                  "label": "Italian"
+                }
+              ],
+              "origin": "extracted",
+              "search_ids": [
+                "cuisine.italian",
+                "place.restaurant"
+              ],
+              "search_terms": "Italian Italian cuisine Italian food Restaurant restaurant restaurants \u0907\u091f\u093e\u0932\u093f\u092f\u0928 \u0907\u091f\u093e\u0932\u093f\u092f\u0928 \u0916\u093e\u0928\u093e \u0907\u091f\u093e\u0932\u093f\u092f\u0928 \u092d\u094b\u091c\u0928 \u0907\u0924\u093e\u0932\u0935\u0940 \u0907\u0924\u093e\u0932\u0935\u0940 \u0916\u093e\u0928\u093e \u0907\u0924\u093e\u0932\u0935\u0940 \u092d\u094b\u091c\u0928 \u0930\u0947\u0938\u094d\u091f\u094b\u0930\u0947\u0902\u091f \u0930\u0947\u0938\u094d\u0924\u0930\u093e\u0902",
+              "types": [
+                {
+                  "dimension": "type",
+                  "dimension_label": "Type",
+                  "id": "place.restaurant",
+                  "label": "Restaurant"
+                }
+              ],
+              "vocabulary_version": 2
+            },
+            "entity_kind": "place",
+            "experience": "firsthand",
+            "locations": [
+              {
+                "role": "venue",
+                "text": "Pune"
+              }
+            ],
+            "observations": [],
+            "rating": {
+              "origin": "inferred",
+              "rubric_version": 1,
+              "scale": 10,
+              "value": 7.0
+            },
+            "shelf": "Places",
+            "summary": "I recommend Oak Cafe, an Italian restaurant in Pune. The pasta was good.",
+            "use_cases": [],
+            "version": 2
+          },
+          "subject": "Oak Cafe"
+        },
+        {
+          "proposed_classification": {
+            "descriptors": [],
+            "facets": [],
+            "type_description": {
+              "evidence": [
+                3
+              ],
+              "text": "violin repairer"
+            },
+            "types": []
+          },
+          "proposed_rating": {
+            "evidence": [
+              4
+            ],
+            "mode": "none",
+            "source_phrase": "",
+            "spoken_value": null,
+            "stance": "none"
+          },
+          "recommendation": {
+            "classification": {
+              "descriptive_type": "violin repairer",
+              "descriptors": [],
+              "display_label": "violin repairer",
+              "facets": [],
+              "origin": "extracted",
+              "search_ids": [],
+              "search_terms": "violin repairer",
+              "types": [],
+              "vocabulary_version": 2
+            },
+            "entity_kind": "person_service",
+            "experience": "firsthand",
+            "locations": [],
+            "observations": [],
+            "rating": null,
+            "shelf": "People & services",
+            "summary": "Mira is a violin repairer who fixed my violin bridge carefully.",
+            "use_cases": [],
+            "version": 2
+          },
+          "subject": "Mira"
+        }
+      ],
+      "partial": false,
+      "proposed_accounts": [
+        [
+          {
+            "evidence": [
+              1,
+              2
+            ],
+            "kind": "context",
+            "text": "I recommend Oak Cafe, an Italian restaurant in Pune. The pasta was good."
+          }
+        ],
+        [
+          {
+            "evidence": [
+              3,
+              4
+            ],
+            "kind": "context",
+            "text": "Mira is a violin repairer who fixed my violin bridge carefully."
+          }
+        ]
+      ],
+      "proposed_readable_source": [
+        {
+          "corrections": [],
+          "paragraph_start": true,
+          "unit_id": 1
+        },
+        {
+          "corrections": [],
+          "paragraph_start": false,
+          "unit_id": 2
+        },
+        {
+          "corrections": [],
+          "paragraph_start": true,
+          "unit_id": 3
+        },
+        {
+          "corrections": [],
+          "paragraph_start": false,
+          "unit_id": 4
+        }
+      ],
+      "readable_source": "I recommend Oak Cafe, an Italian restaurant in Pune. The pasta was good.\n\nSeparately, Mira is a violin repairer. She fixed my violin bridge carefully.",
+      "status": "valid"
+    }
+  }
+]

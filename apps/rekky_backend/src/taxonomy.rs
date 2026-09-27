@@ -70,7 +70,7 @@ pub fn words(text: &str) -> Vec<String> {
         .map(|m| m.as_str().to_lowercase())
         .collect()
 }
-fn contains_phrase(text: &str, phrase: &str) -> bool {
+pub fn contains_phrase(text: &str, phrase: &str) -> bool {
     let a = words(text);
     let b = words(phrase);
     !b.is_empty() && a.windows(b.len()).any(|w| w == b)

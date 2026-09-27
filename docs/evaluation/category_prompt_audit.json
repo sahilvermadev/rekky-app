@@ -1,0 +1,1160 @@
+{
+  "baseline_commit": "5ab18a5",
+  "cases": [
+    [
+      "caterer",
+      "Asha is a caterer. She catered a birthday lunch for me. The guests enjoyed the food. She can cook several cuisines. Her prices seemed reasonable. She is based in Pune."
+    ],
+    [
+      "bookbinder",
+      "I used Dev, a bookbinder. He repaired my old notebook neatly. The cover feels sturdy."
+    ]
+  ],
+  "runs": [
+    {
+      "arm": "baseline",
+      "case": "caterer",
+      "elapsed_ms": 3803,
+      "http": 200,
+      "output": {
+        "partial": false,
+        "proposals": [
+          {
+            "classification": {
+              "descriptors": [],
+              "facets": [],
+              "type_description": {
+                "evidence": [],
+                "text": ""
+              },
+              "types": [
+                {
+                  "concept_id": "service.carpenter",
+                  "evidence": [],
+                  "source_phrase": "cafe"
+                }
+              ]
+            },
+            "kind": "person_service",
+            "subject": "Asha"
+          }
+        ],
+        "saved_classifications": [
+          {
+            "descriptors": [],
+            "display_label": null,
+            "facets": [],
+            "origin": "extracted",
+            "search_ids": [],
+            "search_terms": "",
+            "types": [],
+            "vocabulary_version": 2
+          }
+        ]
+      },
+      "repeat": 0,
+      "returned_model": "gpt-4.1-mini-2025-04-14",
+      "usage": {
+        "input_tokens": 7450,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 329,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 7779
+      }
+    },
+    {
+      "arm": "free_source_phrase",
+      "case": "caterer",
+      "elapsed_ms": 3594,
+      "http": 200,
+      "output": {
+        "partial": false,
+        "proposals": [
+          {
+            "classification": {
+              "descriptors": [
+                {
+                  "evidence": [
+                    4
+                  ],
+                  "text": "caterer"
+                },
+                {
+                  "evidence": [
+                    1
+                  ],
+                  "text": "cook"
+                }
+              ],
+              "facets": [],
+              "type_description": {
+                "evidence": [
+                  1
+                ],
+                "text": "caterer"
+              },
+              "types": [
+                {
+                  "concept_id": "service.carpenter",
+                  "evidence": [],
+                  "source_phrase": ""
+                }
+              ]
+            },
+            "kind": "person_service",
+            "subject": "Asha"
+          }
+        ],
+        "saved_classifications": [
+          {
+            "descriptive_type": "caterer",
+            "descriptors": [],
+            "display_label": "caterer",
+            "facets": [],
+            "origin": "extracted",
+            "search_ids": [],
+            "search_terms": "caterer",
+            "types": [],
+            "vocabulary_version": 2
+          }
+        ]
+      },
+      "repeat": 0,
+      "returned_model": "gpt-4.1-mini-2025-04-14",
+      "usage": {
+        "input_tokens": 5520,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 351,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 5871
+      }
+    },
+    {
+      "arm": "prompt_only",
+      "case": "caterer",
+      "elapsed_ms": 3369,
+      "http": 200,
+      "output": {
+        "partial": true,
+        "proposals": [
+          {
+            "classification": {
+              "descriptors": [],
+              "facets": [],
+              "type_description": {
+                "evidence": [
+                  1
+                ],
+                "text": "caterer"
+              },
+              "types": []
+            },
+            "kind": "person_service",
+            "subject": "Asha"
+          }
+        ],
+        "saved_classifications": [
+          {
+            "descriptive_type": "caterer",
+            "descriptors": [],
+            "display_label": "caterer",
+            "facets": [],
+            "origin": "extracted",
+            "search_ids": [],
+            "search_terms": "caterer",
+            "types": [],
+            "vocabulary_version": 2
+          }
+        ]
+      },
+      "repeat": 0,
+      "returned_model": "gpt-4.1-mini-2025-04-14",
+      "usage": {
+        "input_tokens": 7582,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 314,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 7896
+      }
+    },
+    {
+      "arm": "schema_only",
+      "case": "caterer",
+      "elapsed_ms": 3320,
+      "http": 200,
+      "output": {
+        "partial": false,
+        "proposals": [
+          {
+            "classification": {
+              "descriptors": [],
+              "facets": [],
+              "type_description": {
+                "evidence": [
+                  1
+                ],
+                "text": "caterer"
+              },
+              "types": []
+            },
+            "kind": "person_service",
+            "subject": "Asha"
+          }
+        ],
+        "saved_classifications": [
+          {
+            "descriptive_type": "caterer",
+            "descriptors": [],
+            "display_label": "caterer",
+            "facets": [],
+            "origin": "extracted",
+            "search_ids": [],
+            "search_terms": "caterer",
+            "types": [],
+            "vocabulary_version": 2
+          }
+        ]
+      },
+      "repeat": 0,
+      "returned_model": "gpt-4.1-mini-2025-04-14",
+      "usage": {
+        "input_tokens": 5339,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 300,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 5639
+      }
+    },
+    {
+      "arm": "combined",
+      "case": "caterer",
+      "elapsed_ms": 3496,
+      "http": 200,
+      "output": {
+        "partial": false,
+        "proposals": [
+          {
+            "classification": {
+              "descriptors": [],
+              "facets": [],
+              "type_description": {
+                "evidence": [
+                  1
+                ],
+                "text": "caterer"
+              },
+              "types": []
+            },
+            "kind": "person_service",
+            "subject": "Asha"
+          }
+        ],
+        "saved_classifications": [
+          {
+            "descriptive_type": "caterer",
+            "descriptors": [],
+            "display_label": "caterer",
+            "facets": [],
+            "origin": "extracted",
+            "search_ids": [],
+            "search_terms": "caterer",
+            "types": [],
+            "vocabulary_version": 2
+          }
+        ]
+      },
+      "repeat": 0,
+      "returned_model": "gpt-4.1-mini-2025-04-14",
+      "usage": {
+        "input_tokens": 5471,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 367,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 5838
+      }
+    },
+    {
+      "arm": "baseline",
+      "case": "bookbinder",
+      "elapsed_ms": 2656,
+      "http": 200,
+      "output": {
+        "partial": false,
+        "proposals": [
+          {
+            "classification": {
+              "descriptors": [
+                {
+                  "evidence": [
+                    1
+                  ],
+                  "text": "bookbinder"
+                }
+              ],
+              "facets": [],
+              "type_description": {
+                "evidence": [
+                  1
+                ],
+                "text": "bookbinder"
+              },
+              "types": []
+            },
+            "kind": "person_service",
+            "subject": "Dev"
+          }
+        ],
+        "saved_classifications": [
+          {
+            "descriptive_type": "bookbinder",
+            "descriptors": [
+              "bookbinder"
+            ],
+            "display_label": "bookbinder",
+            "facets": [],
+            "origin": "extracted",
+            "search_ids": [],
+            "search_terms": "bookbinder bookbinder",
+            "types": [],
+            "vocabulary_version": 2
+          }
+        ]
+      },
+      "repeat": 0,
+      "returned_model": "gpt-4.1-mini-2025-04-14",
+      "usage": {
+        "input_tokens": 7387,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 198,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 7585
+      }
+    },
+    {
+      "arm": "free_source_phrase",
+      "case": "bookbinder",
+      "elapsed_ms": 3461,
+      "http": 200,
+      "output": {
+        "partial": false,
+        "proposals": [
+          {
+            "classification": {
+              "descriptors": [
+                {
+                  "evidence": [
+                    1
+                  ],
+                  "text": "bookbinder"
+                }
+              ],
+              "facets": [],
+              "type_description": {
+                "evidence": [
+                  1
+                ],
+                "text": "bookbinder"
+              },
+              "types": []
+            },
+            "kind": "person_service",
+            "subject": "Dev"
+          }
+        ],
+        "saved_classifications": [
+          {
+            "descriptive_type": "bookbinder",
+            "descriptors": [
+              "bookbinder"
+            ],
+            "display_label": "bookbinder",
+            "facets": [],
+            "origin": "extracted",
+            "search_ids": [],
+            "search_terms": "bookbinder bookbinder",
+            "types": [],
+            "vocabulary_version": 2
+          }
+        ]
+      },
+      "repeat": 0,
+      "returned_model": "gpt-4.1-mini-2025-04-14",
+      "usage": {
+        "input_tokens": 5457,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 241,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 5698
+      }
+    },
+    {
+      "arm": "prompt_only",
+      "case": "bookbinder",
+      "elapsed_ms": 2752,
+      "http": 200,
+      "output": {
+        "partial": false,
+        "proposals": [
+          {
+            "classification": {
+              "descriptors": [],
+              "facets": [],
+              "type_description": {
+                "evidence": [
+                  1,
+                  2,
+                  3
+                ],
+                "text": "bookbinder"
+              },
+              "types": []
+            },
+            "kind": "person_service",
+            "subject": "Dev"
+          }
+        ],
+        "saved_classifications": [
+          {
+            "descriptive_type": "bookbinder",
+            "descriptors": [],
+            "display_label": "bookbinder",
+            "facets": [],
+            "origin": "extracted",
+            "search_ids": [],
+            "search_terms": "bookbinder",
+            "types": [],
+            "vocabulary_version": 2
+          }
+        ]
+      },
+      "repeat": 0,
+      "returned_model": "gpt-4.1-mini-2025-04-14",
+      "usage": {
+        "input_tokens": 7519,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 2944
+        },
+        "output_tokens": 203,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 7722
+      }
+    },
+    {
+      "arm": "schema_only",
+      "case": "bookbinder",
+      "elapsed_ms": 2274,
+      "http": 200,
+      "output": {
+        "partial": false,
+        "proposals": [
+          {
+            "classification": {
+              "descriptors": [
+                {
+                  "evidence": [
+                    1
+                  ],
+                  "text": "bookbinder"
+                }
+              ],
+              "facets": [],
+              "type_description": {
+                "evidence": [
+                  1
+                ],
+                "text": "bookbinder"
+              },
+              "types": []
+            },
+            "kind": "person_service",
+            "subject": "Dev"
+          }
+        ],
+        "saved_classifications": [
+          {
+            "descriptive_type": "bookbinder",
+            "descriptors": [
+              "bookbinder"
+            ],
+            "display_label": "bookbinder",
+            "facets": [],
+            "origin": "extracted",
+            "search_ids": [],
+            "search_terms": "bookbinder bookbinder",
+            "types": [],
+            "vocabulary_version": 2
+          }
+        ]
+      },
+      "repeat": 0,
+      "returned_model": "gpt-4.1-mini-2025-04-14",
+      "usage": {
+        "input_tokens": 5276,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 197,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 5473
+      }
+    },
+    {
+      "arm": "combined",
+      "case": "bookbinder",
+      "elapsed_ms": 2717,
+      "http": 200,
+      "output": {
+        "partial": false,
+        "proposals": [
+          {
+            "classification": {
+              "descriptors": [],
+              "facets": [],
+              "type_description": {
+                "evidence": [
+                  1
+                ],
+                "text": "bookbinder"
+              },
+              "types": []
+            },
+            "kind": "person_service",
+            "subject": "Dev"
+          }
+        ],
+        "saved_classifications": [
+          {
+            "descriptive_type": "bookbinder",
+            "descriptors": [],
+            "display_label": "bookbinder",
+            "facets": [],
+            "origin": "extracted",
+            "search_ids": [],
+            "search_terms": "bookbinder",
+            "types": [],
+            "vocabulary_version": 2
+          }
+        ]
+      },
+      "repeat": 0,
+      "returned_model": "gpt-4.1-mini-2025-04-14",
+      "usage": {
+        "input_tokens": 5408,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 221,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 5629
+      }
+    },
+    {
+      "arm": "baseline",
+      "case": "caterer",
+      "elapsed_ms": 3345,
+      "http": 200,
+      "output": {
+        "partial": false,
+        "proposals": [
+          {
+            "classification": {
+              "descriptors": [],
+              "facets": [],
+              "type_description": {
+                "evidence": [],
+                "text": ""
+              },
+              "types": [
+                {
+                  "concept_id": "service.carpenter",
+                  "evidence": [],
+                  "source_phrase": "carpenter"
+                }
+              ]
+            },
+            "kind": "person_service",
+            "subject": "Asha"
+          }
+        ],
+        "saved_classifications": [
+          {
+            "descriptors": [],
+            "display_label": null,
+            "facets": [],
+            "origin": "extracted",
+            "search_ids": [],
+            "search_terms": "",
+            "types": [],
+            "vocabulary_version": 2
+          }
+        ]
+      },
+      "repeat": 1,
+      "returned_model": "gpt-4.1-mini-2025-04-14",
+      "usage": {
+        "input_tokens": 7450,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 7296
+        },
+        "output_tokens": 315,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 7765
+      }
+    },
+    {
+      "arm": "free_source_phrase",
+      "case": "caterer",
+      "elapsed_ms": 3729,
+      "http": 200,
+      "output": {
+        "partial": false,
+        "proposals": [
+          {
+            "classification": {
+              "descriptors": [],
+              "facets": [],
+              "type_description": {
+                "evidence": [
+                  1
+                ],
+                "text": "caterer"
+              },
+              "types": [
+                {
+                  "concept_id": "service.carpenter",
+                  "evidence": [],
+                  "source_phrase": ""
+                }
+              ]
+            },
+            "kind": "person_service",
+            "subject": "Asha"
+          }
+        ],
+        "saved_classifications": [
+          {
+            "descriptive_type": "caterer",
+            "descriptors": [],
+            "display_label": "caterer",
+            "facets": [],
+            "origin": "extracted",
+            "search_ids": [],
+            "search_terms": "caterer",
+            "types": [],
+            "vocabulary_version": 2
+          }
+        ]
+      },
+      "repeat": 1,
+      "returned_model": "gpt-4.1-mini-2025-04-14",
+      "usage": {
+        "input_tokens": 5520,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 324,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 5844
+      }
+    },
+    {
+      "arm": "prompt_only",
+      "case": "caterer",
+      "elapsed_ms": 3911,
+      "http": 200,
+      "output": {
+        "partial": false,
+        "proposals": [
+          {
+            "classification": {
+              "descriptors": [],
+              "facets": [],
+              "type_description": {
+                "evidence": [
+                  1
+                ],
+                "text": "caterer"
+              },
+              "types": []
+            },
+            "kind": "person_service",
+            "subject": "Asha"
+          }
+        ],
+        "saved_classifications": [
+          {
+            "descriptive_type": "caterer",
+            "descriptors": [],
+            "display_label": "caterer",
+            "facets": [],
+            "origin": "extracted",
+            "search_ids": [],
+            "search_terms": "caterer",
+            "types": [],
+            "vocabulary_version": 2
+          }
+        ]
+      },
+      "repeat": 1,
+      "returned_model": "gpt-4.1-mini-2025-04-14",
+      "usage": {
+        "input_tokens": 7582,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 1920
+        },
+        "output_tokens": 296,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 7878
+      }
+    },
+    {
+      "arm": "schema_only",
+      "case": "caterer",
+      "elapsed_ms": 5405,
+      "http": 200,
+      "output": {
+        "partial": false,
+        "proposals": [
+          {
+            "classification": {
+              "descriptors": [],
+              "facets": [],
+              "type_description": {
+                "evidence": [
+                  1
+                ],
+                "text": "caterer"
+              },
+              "types": []
+            },
+            "kind": "person_service",
+            "subject": "Asha"
+          }
+        ],
+        "saved_classifications": [
+          {
+            "descriptive_type": "caterer",
+            "descriptors": [],
+            "display_label": "caterer",
+            "facets": [],
+            "origin": "extracted",
+            "search_ids": [],
+            "search_terms": "caterer",
+            "types": [],
+            "vocabulary_version": 2
+          }
+        ]
+      },
+      "repeat": 1,
+      "returned_model": "gpt-4.1-mini-2025-04-14",
+      "usage": {
+        "input_tokens": 5339,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 315,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 5654
+      }
+    },
+    {
+      "arm": "combined",
+      "case": "caterer",
+      "elapsed_ms": 3009,
+      "http": 200,
+      "output": {
+        "partial": false,
+        "proposals": [
+          {
+            "classification": {
+              "descriptors": [],
+              "facets": [],
+              "type_description": {
+                "evidence": [
+                  1
+                ],
+                "text": "caterer"
+              },
+              "types": []
+            },
+            "kind": "person_service",
+            "subject": "Asha"
+          }
+        ],
+        "saved_classifications": [
+          {
+            "descriptive_type": "caterer",
+            "descriptors": [],
+            "display_label": "caterer",
+            "facets": [],
+            "origin": "extracted",
+            "search_ids": [],
+            "search_terms": "caterer",
+            "types": [],
+            "vocabulary_version": 2
+          }
+        ]
+      },
+      "repeat": 1,
+      "returned_model": "gpt-4.1-mini-2025-04-14",
+      "usage": {
+        "input_tokens": 5471,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 4992
+        },
+        "output_tokens": 330,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 5801
+      }
+    },
+    {
+      "arm": "baseline",
+      "case": "bookbinder",
+      "elapsed_ms": 2856,
+      "http": 200,
+      "output": {
+        "partial": false,
+        "proposals": [
+          {
+            "classification": {
+              "descriptors": [
+                {
+                  "evidence": [
+                    1,
+                    2,
+                    3
+                  ],
+                  "text": "notebook repair"
+                }
+              ],
+              "facets": [],
+              "type_description": {
+                "evidence": [
+                  1
+                ],
+                "text": "bookbinder"
+              },
+              "types": []
+            },
+            "kind": "person_service",
+            "subject": "Dev"
+          }
+        ],
+        "saved_classifications": [
+          {
+            "descriptive_type": "bookbinder",
+            "descriptors": [],
+            "display_label": "bookbinder",
+            "facets": [],
+            "origin": "extracted",
+            "search_ids": [],
+            "search_terms": "bookbinder",
+            "types": [],
+            "vocabulary_version": 2
+          }
+        ]
+      },
+      "repeat": 1,
+      "returned_model": "gpt-4.1-mini-2025-04-14",
+      "usage": {
+        "input_tokens": 7387,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 233,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 7620
+      }
+    },
+    {
+      "arm": "free_source_phrase",
+      "case": "bookbinder",
+      "elapsed_ms": 3611,
+      "http": 200,
+      "output": {
+        "partial": null,
+        "proposals": [
+          {
+            "classification": {
+              "descriptors": [
+                {
+                  "evidence": [
+                    1
+                  ],
+                  "text": "bookbinder"
+                }
+              ],
+              "facets": [],
+              "type_description": {
+                "evidence": [
+                  1
+                ],
+                "text": "bookbinder"
+              },
+              "types": []
+            },
+            "kind": "person_service",
+            "subject": "Dev"
+          },
+          {
+            "classification": {
+              "descriptors": [],
+              "facets": [],
+              "type_description": {
+                "evidence": [],
+                "text": ""
+              },
+              "types": []
+            },
+            "kind": "thing",
+            "subject": "old notebook"
+          }
+        ],
+        "saved_classifications": null
+      },
+      "repeat": 1,
+      "returned_model": "gpt-4.1-mini-2025-04-14",
+      "usage": {
+        "input_tokens": 5457,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 302,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 5759
+      }
+    },
+    {
+      "arm": "prompt_only",
+      "case": "bookbinder",
+      "elapsed_ms": 2860,
+      "http": 200,
+      "output": {
+        "partial": false,
+        "proposals": [
+          {
+            "classification": {
+              "descriptors": [],
+              "facets": [],
+              "type_description": {
+                "evidence": [
+                  1,
+                  2,
+                  3
+                ],
+                "text": "bookbinder"
+              },
+              "types": []
+            },
+            "kind": "person_service",
+            "subject": "Dev"
+          }
+        ],
+        "saved_classifications": [
+          {
+            "descriptive_type": "bookbinder",
+            "descriptors": [],
+            "display_label": "bookbinder",
+            "facets": [],
+            "origin": "extracted",
+            "search_ids": [],
+            "search_terms": "bookbinder",
+            "types": [],
+            "vocabulary_version": 2
+          }
+        ]
+      },
+      "repeat": 1,
+      "returned_model": "gpt-4.1-mini-2025-04-14",
+      "usage": {
+        "input_tokens": 7519,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 203,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 7722
+      }
+    },
+    {
+      "arm": "schema_only",
+      "case": "bookbinder",
+      "elapsed_ms": 2694,
+      "http": 200,
+      "output": {
+        "partial": false,
+        "proposals": [
+          {
+            "classification": {
+              "descriptors": [],
+              "facets": [],
+              "type_description": {
+                "evidence": [
+                  1
+                ],
+                "text": "bookbinder"
+              },
+              "types": []
+            },
+            "kind": "person_service",
+            "subject": "Dev"
+          }
+        ],
+        "saved_classifications": [
+          {
+            "descriptive_type": "bookbinder",
+            "descriptors": [],
+            "display_label": "bookbinder",
+            "facets": [],
+            "origin": "extracted",
+            "search_ids": [],
+            "search_terms": "bookbinder",
+            "types": [],
+            "vocabulary_version": 2
+          }
+        ]
+      },
+      "repeat": 1,
+      "returned_model": "gpt-4.1-mini-2025-04-14",
+      "usage": {
+        "input_tokens": 5276,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 4992
+        },
+        "output_tokens": 193,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 5469
+      }
+    },
+    {
+      "arm": "combined",
+      "case": "bookbinder",
+      "elapsed_ms": 3093,
+      "http": 200,
+      "output": {
+        "partial": false,
+        "proposals": [
+          {
+            "classification": {
+              "descriptors": [],
+              "facets": [],
+              "type_description": {
+                "evidence": [
+                  1
+                ],
+                "text": "bookbinder"
+              },
+              "types": []
+            },
+            "kind": "person_service",
+            "subject": "Dev"
+          }
+        ],
+        "saved_classifications": [
+          {
+            "descriptive_type": "bookbinder",
+            "descriptors": [],
+            "display_label": "bookbinder",
+            "facets": [],
+            "origin": "extracted",
+            "search_ids": [],
+            "search_terms": "bookbinder",
+            "types": [],
+            "vocabulary_version": 2
+          }
+        ]
+      },
+      "repeat": 1,
+      "returned_model": "gpt-4.1-mini-2025-04-14",
+      "usage": {
+        "input_tokens": 5408,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 188,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 5596
+      }
+    }
+  ],
+  "limitations": [
+    "Twenty synthetic requests: two service descriptions, two repeats per arm. This isolates configuration changes but is not a general quality or multilingual evaluation.",
+    "Prompt-only changes the classification wording plus the appended catalog instruction together; the experiment does not isolate individual sentences.",
+    "Schema-only changes both ID/alias pairing and transcript-dependent alias filtering; the experiment does not isolate those two constraints.",
+    "Same requested and returned model across arms. No real transcript was resubmitted."
+  ]
+}

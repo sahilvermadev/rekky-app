@@ -1,0 +1,14 @@
+[
+  {
+    "id": "unfamiliar_service",
+    "transcript": "I recommend a caterer called Nila. She prepared lunch for our team last month. The food was tasty and the price was reasonable."
+  },
+  {
+    "id": "unfamiliar_craft",
+    "transcript": "I used Dev, a bookbinder. He repaired my old notebook neatly. The cover feels sturdy."
+  },
+  {
+    "id": "known_and_unfamiliar",
+    "transcript": "I recommend Oak Cafe, an Italian restaurant in Pune. The pasta was good. Separately, Mira is a violin repairer. She fixed my violin bridge carefully."
+  }
+]
