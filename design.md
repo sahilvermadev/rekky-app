@@ -18,15 +18,15 @@ Display 30/1.12, recommendation title 17/1.25 at weight 600, shelf heading 14–
 
 ## Colour and shape
 
-Light canvas #F6F7F9, white card; dark canvas #15181D, card #20242B. Neutral surfaces stay independent of seeded accent tint. Blue Places, plum People & services, jade Things, apricot Activities, gold Ideas, slate Notes. Explicit light/dark accent pairs and subtle washes are in LibraryStyle. Ratings use a gold star and neutral number. Colour always accompanies an icon or label.
+Light canvas #F7F7F5, white card; dark canvas #0C0C0C, card #1B1B1B. Surfaces, text, outlines and ordinary controls are achromatic. Coral Places, orchid People & services, mint Things, citron Activities, gold Ideas, neutral Notes. Specific saved categories may use consistent accents within collections: restaurants in Places/coral, bars/orchid, cafés/gold, fitness/mint and stays/orchid. Unclassified entries retain their collection accent. Explicit light/dark accent pairs and subtle washes are in LibraryStyle. Ratings use a gold star and neutral number. Colour always accompanies an icon or label.
 
 Inputs use 12-point corners, cards 16, category emblems 10–14. Use one Material outline icon family. Existing category metadata selects the emblem; unknown types have a shelf fallback. Do not guess classification from the entity name. Dark elevation uses surface lightness without coloured glow. Error, disabled and focus styles remain functional semantic states.
 
 ## Shared surfaces
 
-Detail: collection emblem beside the expressive title; category/location/rating and Maps/Call precede the reading account. Original text remains the collapsed neutral quotation view. Ask: matching display, input and result cards, with a scrollable layout for keyboard and large text. Recording: expressive prompt, honest static microphone/elapsed-time state in the activity accent, clear finish action, automatic processing unchanged. Never display fabricated waveform activity.
+Detail: collection emblem beside the expressive title; category/location/rating and Maps/Call precede the reading account. Original text remains the collapsed neutral quotation view. Ask: matching display, input and result cards, with a scrollable layout for keyboard and large text. Recording: expressive prompt, honest static microphone/elapsed-time state in the coral capture colour, clear finish action, automatic processing unchanged. Never display fabricated waveform activity.
 
-Bottom navigation aligns Ask and Library and uses one compact filled microphone (56 × 36 visual area) inside the larger Remember target. Remember remains one tap. Safe areas and end-of-list padding keep content reachable. Native pressed/focus/disabled states; no decorative motion.
+Bottom navigation is an inset rounded neutral dock with two quiet destinations flanking a raised coral microphone action labelled Recommend. Its entire button, including the label, starts recording in one tap. The button rises above the dock without painting interactive content outside its actual layout bounds. At large text sizes the action spans the dock above the two destinations; labels scale naturally. Selection uses neutral ink, weight and a small indicator. Safe areas and end-of-list padding keep content reachable. Native pressed/focus states; no decorative motion. Coral belongs to the capture action and selected category emblems, not every control.
 
 ## Acceptance
 

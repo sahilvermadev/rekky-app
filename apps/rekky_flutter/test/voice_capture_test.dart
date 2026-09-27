@@ -56,7 +56,7 @@ void main() {
               builder: (context) => Scaffold(
                 body: Center(
                   child: FilledButton(
-                    child: const Text('Remember'),
+                    child: const Text('Recommend'),
                     onPressed: () async {
                       saved = await Navigator.push<bool>(
                         context,
@@ -78,7 +78,7 @@ void main() {
             ),
           ),
         );
-        await tester.tap(find.text('Remember'));
+        await tester.tap(find.text('Recommend'));
         await tester.pumpAndSettle();
         expect(store.starts, 1);
         expect(find.byType(TextField), findsNothing);
@@ -90,7 +90,7 @@ void main() {
         expect(store.finishes, 1);
         expect(queued, 1);
         expect(saved, true);
-        expect(find.text('Remember'), findsOneWidget);
+        expect(find.text('Recommend'), findsOneWidget);
         expect(tester.takeException(), isNull);
       },
     );

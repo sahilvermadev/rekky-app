@@ -120,3 +120,8 @@ No backend migration, source reprocessing or category mutation is required for t
 Contrast floors: 4.5:1 for ordinary text and 3:1 for meaningful icons/focus indicators. No button overlap, clipped labels, hidden last card or accidental two-action tap. Avoid decorative animation; use brief native state transitions and reduced-motion behavior. Accessibility and content density are constraints of the design, not reasons to settle for generic styling.
 
 Completion means the real native surfaces match the intended composition with the user's variable content. Passing layout tests alone is not a visual-quality judgement.
+
+
+## Subsequent palette and navigation revision — 2026-09-27
+
+The user's review supersedes the blue/slate palette and compact Remember treatment above. Use the neutral black/charcoal surfaces, varied category accents and raised coral **Recommend** dock documented in `design.md` and the canonical plan. The layout, typography, accessibility and interaction requirements still apply. Remember remains an internal callback/API term only.

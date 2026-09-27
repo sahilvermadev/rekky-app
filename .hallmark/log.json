@@ -1,6 +1,15 @@
 [
   {
     "date": "2026-09-27",
+    "scope": "native-app-palette-and-navigation",
+    "macrostructure": "Raised capture dock with neutral collection cards",
+    "theme": "custom",
+    "enrichment": "none",
+    "brief": "Near-black neutral surfaces, varied category accents and prominent coral Recommend action",
+    "theme_axes": "achromatic surfaces / Fraunces and Manrope / coral capture with orchid-mint-citron-gold accents"
+  },
+  {
+    "date": "2026-09-27",
     "scope": "native-app",
     "macrostructure": "Personal field guide",
     "theme": "custom",

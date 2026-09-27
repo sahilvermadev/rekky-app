@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'rekky_theme.dart';
+
+// Hallmark · playful capture dock · neutral chrome, coral contribution action.
+// Pre-emit critique: P5 H5 E4 S5 R5 V5.
 class RekkyNavigation extends StatelessWidget {
   const RekkyNavigation({
     super.key,
@@ -21,9 +25,12 @@ class RekkyNavigation extends StatelessWidget {
           onPressed: () => onSelect(index),
           style: TextButton.styleFrom(
             foregroundColor: destination == index
-                ? colors.primary
+                ? colors.onSurface
                 : colors.onSurfaceVariant,
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
+            ),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -40,70 +47,141 @@ class RekkyNavigation extends StatelessWidget {
                       : FontWeight.w500,
                 ),
               ),
+              const SizedBox(height: 5),
+              Container(
+                width: 14,
+                height: 3,
+                decoration: BoxDecoration(
+                  color: destination == index
+                      ? colors.onSurface
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
             ],
           ),
         ),
       ),
     );
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colors.surface,
-        border: Border(top: BorderSide(color: colors.outlineVariant)),
+    Widget recommend({required bool wide}) => Semantics(
+      hint: 'Start recording a recommendation',
+      child: FilledButton(
+        onPressed: onRemember,
+        style: FilledButton.styleFrom(
+          backgroundColor: RekkyTheme.capture,
+          foregroundColor: RekkyTheme.onCapture,
+          padding: EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: wide ? 16 : 12,
+          ),
+          minimumSize: const Size(48, 72),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+        ),
+        child: const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.mic_none_rounded, size: 26),
+            SizedBox(height: 4),
+            Text(
+              'Recommend',
+              maxLines: 1,
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
       ),
+    );
+    return ColoredBox(
+      color: colors.surface,
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          child: Row(
-            children: [
-              tab(0, 'Ask', Icons.search),
-              Expanded(
-                flex: 2,
-                child: TextButton(
-                  onPressed: onRemember,
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 4,
-                      vertical: 4,
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final label = TextPainter(
+                text: TextSpan(
+                  text: 'Recommend',
+                  style: Theme.of(context).textTheme.labelLarge
+                      ?.copyWith(fontSize: 13, fontWeight: FontWeight.w700),
+                ),
+                textDirection: Directionality.of(context),
+                textScaler: MediaQuery.textScalerOf(context),
+              )..layout();
+              final wide =
+                  MediaQuery.textScalerOf(context).scale(13) > 18 ||
+                  label.width > (constraints.maxWidth - 16) / 2 - 36;
+              label.dispose();
+              final decoration = BoxDecoration(
+                color: colors.surfaceContainerLow,
+                border: Border.all(
+                  color: colors.outlineVariant.withValues(alpha: .65),
+                ),
+                borderRadius: BorderRadius.circular(30),
+              );
+              if (wide) {
+                return DecoratedBox(
+                  decoration: decoration,
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        recommend(wide: true),
+                        Row(
+                          children: [
+                            tab(0, 'Ask', Icons.search_rounded),
+                            tab(
+                              1,
+                              'Library',
+                              destination == 1
+                                  ? Icons.bookmarks_rounded
+                                  : Icons.bookmarks_outlined,
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 56,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: colors.primary,
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Icon(
-                          Icons.mic_none_rounded,
-                          size: 22,
-                          color: colors.onPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Remember',
-                        maxLines: 1,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
+                );
+              }
+              return Stack(
+                children: [
+                  Positioned(
+                    top: 12,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: DecoratedBox(decoration: decoration),
                   ),
-                ),
-              ),
-              tab(
-                1,
-                'Library',
-                destination == 1
-                    ? Icons.bookmarks_rounded
-                    : Icons.bookmarks_outlined,
-              ),
-            ],
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        tab(0, 'Ask', Icons.search_rounded),
+                        Expanded(
+                          flex: 2,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(6, 0, 6, 8),
+                            child: recommend(wide: false),
+                          ),
+                        ),
+                        tab(
+                          1,
+                          'Library',
+                          destination == 1
+                              ? Icons.bookmarks_rounded
+                              : Icons.bookmarks_outlined,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ),

@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 
 import 'rekky_api.dart';
 import 'library_style.dart';
-import 'library_collection.dart';
+import 'rekky_theme.dart';
 import 'voice_drafts.dart';
 
 class VoiceCaptureSheet extends StatefulWidget {
@@ -164,19 +164,13 @@ class _VoiceCaptureSheetState extends State<VoiceCaptureSheet>
                             height: 104,
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
-                              color: LibraryStyle.tint(
-                                context,
-                                LibraryShelf.activities,
-                              ),
+                              color: RekkyTheme.capture,
                               borderRadius: BorderRadius.circular(32),
                             ),
                             child: Icon(
                               Icons.mic_none_rounded,
                               size: 44,
-                              color: LibraryStyle.accent(
-                                context,
-                                LibraryShelf.activities,
-                              ),
+                              color: RekkyTheme.onCapture,
                               semanticLabel: 'Recording',
                             ),
                           ),

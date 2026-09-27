@@ -3,55 +3,74 @@ import 'package:flutter/material.dart';
 // Hallmark · curated native collection · neutral canvas, purposeful colour.
 // Pre-emit critique: P5 H5 E4 S5 R5 V4. Shared tokens for both brightness modes.
 abstract final class RekkyTheme {
-  static const paper = Color(0xfff6f7f9);
-  static const ink = Color(0xff222832);
-  static const charcoal = Color(0xff15181d);
-  static const blue = Color(0xff355bbb);
-  static const plum = Color(0xff854b91);
-  static const jade = Color(0xff24765f);
-  static const apricot = Color(0xffa55125);
+  static const paper = Color(0xfff7f7f5);
+  static const ink = Color(0xff202020);
+  static const charcoal = Color(0xff0c0c0c);
+  static const coral = Color(0xffac452e);
+  static const plum = Color(0xff854886);
+  static const jade = Color(0xff227057);
+  static const citron = Color(0xff686719);
   static const gold = Color(0xff89650c);
+  static const capture = Color(0xffff896c);
+  static const onCapture = Color(0xff21120e);
+  static const coralLight = Color(0xffffa58c);
+  static const plumLight = Color(0xffdda6db);
+  static const jadeLight = Color(0xff9bd4b8);
+  static const citronLight = Color(0xffdcdf85);
+  static const goldLight = Color(0xffe7cc7e);
 
   static ThemeData build(Brightness brightness) {
     final dark = brightness == Brightness.dark;
-    final colors = ColorScheme.fromSeed(seedColor: blue, brightness: brightness)
+    // Neutral material roles keep menus, fields and selection free of colour casts.
+    final colors = ColorScheme.fromSeed(seedColor: ink, brightness: brightness)
         .copyWith(
           surface: dark ? charcoal : paper,
-          onSurface: dark ? const Color(0xffedf0f5) : ink,
+          onSurface: dark ? const Color(0xfff2f2f0) : ink,
           onSurfaceVariant: dark
-              ? const Color(0xffb6becb)
-              : const Color(0xff596271),
+              ? const Color(0xffb9b9b5)
+              : const Color(0xff62625e),
           surfaceContainerLowest: dark
-              ? const Color(0xff12151a)
+              ? const Color(0xff080808)
               : const Color(0xffffffff),
           surfaceContainerLow: dark
-              ? const Color(0xff20242b)
+              ? const Color(0xff1b1b1b)
               : const Color(0xffffffff),
           surfaceContainer: dark
-              ? const Color(0xff272d37)
-              : const Color(0xffe8ebf1),
+              ? const Color(0xff232323)
+              : const Color(0xffededea),
           surfaceContainerHigh: dark
-              ? const Color(0xff303846)
-              : const Color(0xffe2e6ed),
+              ? const Color(0xff2b2b2b)
+              : const Color(0xffe6e6e2),
           surfaceContainerHighest: dark
-              ? const Color(0xff394250)
-              : const Color(0xffdce1ea),
-          primary: dark ? const Color(0xffadc3ff) : blue,
-          onPrimary: dark ? const Color(0xff172d61) : const Color(0xffffffff),
+              ? const Color(0xff343434)
+              : const Color(0xffdededa),
+          primary: dark ? const Color(0xfff2f2f0) : ink,
+          onPrimary: dark ? ink : const Color(0xffffffff),
           primaryContainer: dark
-              ? const Color(0xff293b65)
-              : const Color(0xffe1e9ff),
-          onPrimaryContainer: dark
-              ? const Color(0xffdce6ff)
-              : const Color(0xff253f7c),
+              ? const Color(0xff353535)
+              : const Color(0xffe6e6e2),
+          onPrimaryContainer: dark ? const Color(0xfff2f2f0) : ink,
+          secondary: dark ? const Color(0xffc8c8c4) : const Color(0xff565652),
+          onSecondary: dark ? ink : const Color(0xffffffff),
           secondaryContainer: dark
-              ? const Color(0xff303846)
-              : const Color(0xffe5e9f0),
-          onSecondaryContainer: dark ? const Color(0xffedf0f5) : ink,
-          outline: dark ? const Color(0xff818c9e) : const Color(0xff727e90),
+              ? const Color(0xff2b2b2b)
+              : const Color(0xffe6e6e2),
+          onSecondaryContainer: dark ? const Color(0xfff2f2f0) : ink,
+          tertiary: dark ? const Color(0xffc8c8c4) : const Color(0xff565652),
+          onTertiary: dark ? ink : const Color(0xffffffff),
+          tertiaryContainer: dark
+              ? const Color(0xff2b2b2b)
+              : const Color(0xffe6e6e2),
+          onTertiaryContainer: dark ? const Color(0xfff2f2f0) : ink,
+          inverseSurface: dark
+              ? const Color(0xffededeb)
+              : const Color(0xff252525),
+          onInverseSurface: dark ? ink : const Color(0xfff2f2f0),
+          inversePrimary: dark ? ink : const Color(0xfff2f2f0),
+          outline: dark ? const Color(0xff898985) : const Color(0xff787874),
           outlineVariant: dark
-              ? const Color(0xff39414e)
-              : const Color(0xffdce1e8),
+              ? const Color(0xff363636)
+              : const Color(0xffdeded9),
           surfaceTint: Colors.transparent,
         );
     return ThemeData(

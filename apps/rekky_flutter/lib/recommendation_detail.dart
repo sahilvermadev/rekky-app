@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 
 import 'rekky_api.dart';
 import 'library_style.dart';
-import 'library_collection.dart';
 import 'original_note_view.dart';
 import 'recommendation_view.dart';
 import 'recommendation_review.dart';
@@ -350,19 +349,13 @@ class _RecommendationDetailSheetState extends State<RecommendationDetailSheet> {
                           height: 48,
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
-                            color: LibraryStyle.tint(
-                              context,
-                              LibraryShelf.of(item),
-                            ),
+                            color: LibraryStyle.itemTint(context, item),
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: Icon(
                             LibraryStyle.itemIcon(item),
                             size: 24,
-                            color: LibraryStyle.accent(
-                              context,
-                              LibraryShelf.of(item),
-                            ),
+                            color: LibraryStyle.itemAccent(context, item),
                           ),
                         ),
                       ),

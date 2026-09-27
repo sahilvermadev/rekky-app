@@ -474,7 +474,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       FilledButton.icon(
                         onPressed: widget.onRemember,
                         icon: const Icon(Icons.mic),
-                        label: const Text('Remember'),
+                        label: const Text('Recommend'),
                       )
                     else if (filtered)
                       TextButton(
@@ -653,13 +653,13 @@ class _LibraryRowState extends State<_LibraryRow> {
                     height: 40,
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: LibraryStyle.tint(context, shelf),
+                      color: LibraryStyle.itemTint(context, item),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Icon(
                       LibraryStyle.itemIcon(item),
                       size: 22,
-                      color: LibraryStyle.accent(context, shelf),
+                      color: LibraryStyle.itemAccent(context, item),
                     ),
                   ),
                   const SizedBox(width: 12),

@@ -34,16 +34,28 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
-        await tester.tap(find.text('Remember'));
+        await tester.tap(find.text('Recommend'));
         expect(records, 1);
         await tester.tap(find.text('Ask'));
         expect(selected, 0);
         await tester.tap(find.text('Library'));
         expect(selected, 1);
-        expect(
-          tester.getRect(find.text('Remember')).width,
-          lessThan(width / 2),
+        final action = tester.getRect(
+          find.widgetWithText(FilledButton, 'Recommend'),
         );
+        final ask = tester.getRect(find.widgetWithText(TextButton, 'Ask'));
+        final library = tester.getRect(
+          find.widgetWithText(TextButton, 'Library'),
+        );
+        expect(action.width, greaterThanOrEqualTo(48));
+        expect(action.height, greaterThanOrEqualTo(48));
+        expect(action.overlaps(ask), isFalse);
+        expect(action.overlaps(library), isFalse);
+        expect(action.left, greaterThanOrEqualTo(0));
+        expect(action.right, lessThanOrEqualTo(width));
+        await tester.tap(find.byIcon(Icons.mic_none_rounded));
+        expect(records, 2);
+        expect(selected, 1);
       });
     }
   }

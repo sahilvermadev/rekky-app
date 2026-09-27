@@ -819,7 +819,7 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
                 ),
                 const SizedBox(height: 12),
                 const Text(
-                  'When you use Remember, Rekky automatically sends the selected audio and its private transcript text to OpenAI to create your recommendation. Audio is deleted after a usable transcript is saved. The transcript stays private. You can turn future processing off in settings.',
+                  'When you use Recommend, Rekky automatically sends the selected audio and its private transcript text to OpenAI to create your recommendation. Audio is deleted after a usable transcript is saved. The transcript stays private. You can turn future processing off in settings.',
                 ),
                 const Spacer(),
                 if (issue != null)

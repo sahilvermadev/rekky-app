@@ -21,12 +21,12 @@ abstract final class LibraryStyle {
   static Color accent(BuildContext context, LibraryShelf shelf) {
     final dark = Theme.of(context).brightness == Brightness.dark;
     return switch (shelf) {
-      LibraryShelf.places => dark ? const Color(0xffadc3ff) : RekkyTheme.blue,
-      LibraryShelf.people => dark ? const Color(0xffdbb1e5) : RekkyTheme.plum,
-      LibraryShelf.things => dark ? const Color(0xff8bd7b9) : RekkyTheme.jade,
+      LibraryShelf.places => dark ? RekkyTheme.coralLight : RekkyTheme.coral,
+      LibraryShelf.people => dark ? RekkyTheme.plumLight : RekkyTheme.plum,
+      LibraryShelf.things => dark ? RekkyTheme.jadeLight : RekkyTheme.jade,
       LibraryShelf.activities =>
-        dark ? const Color(0xffffbc92) : RekkyTheme.apricot,
-      LibraryShelf.ideas => dark ? const Color(0xffe7cc7e) : RekkyTheme.gold,
+        dark ? RekkyTheme.citronLight : RekkyTheme.citron,
+      LibraryShelf.ideas => dark ? RekkyTheme.goldLight : RekkyTheme.gold,
       LibraryShelf.notes => Theme.of(context).colorScheme.onSurfaceVariant,
     };
   }
@@ -34,6 +34,23 @@ abstract final class LibraryStyle {
   static Color tint(BuildContext context, LibraryShelf shelf) =>
       Color.alphaBlend(
         accent(context, shelf).withValues(alpha: .12),
+        Theme.of(context).colorScheme.surface,
+      );
+
+  static Color itemAccent(BuildContext context, RekkyItem item) {
+    final glyph = itemIcon(item);
+    final palette = switch (glyph) {
+      Icons.local_bar_outlined || Icons.bed_outlined => LibraryShelf.people,
+      Icons.local_cafe_outlined => LibraryShelf.ideas,
+      Icons.fitness_center => LibraryShelf.things,
+      _ => LibraryShelf.of(item),
+    };
+    return accent(context, palette);
+  }
+
+  static Color itemTint(BuildContext context, RekkyItem item) =>
+      Color.alphaBlend(
+        itemAccent(context, item).withValues(alpha: .12),
         Theme.of(context).colorScheme.surface,
       );
 

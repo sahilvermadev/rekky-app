@@ -264,7 +264,7 @@ void main() {
     await tester.pumpWidget(app([], onRemember: () => recorded = true));
     expect(find.text('Good things start here.'), findsOneWidget);
     expect(find.text('Places'), findsNothing);
-    await tester.tap(find.text('Remember'));
+    await tester.tap(find.text('Recommend'));
     expect(recorded, isTrue);
   });
 
