@@ -20,7 +20,7 @@ class RekkyNavigation extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final labelStyle = theme.textTheme.labelLarge!.copyWith(
-      fontSize: 13,
+      fontSize: 15,
       fontWeight: FontWeight.w600,
       letterSpacing: 0,
     );
@@ -37,7 +37,7 @@ class RekkyNavigation extends StatelessWidget {
                 ? FontWeight.w700
                 : FontWeight.w500,
           ),
-          minimumSize: const Size(48, 48),
+          minimumSize: const Size(48, 60),
           padding: const EdgeInsets.symmetric(horizontal: 8),
           shape: const StadiumBorder(),
         ),
@@ -52,7 +52,7 @@ class RekkyNavigation extends StatelessWidget {
           backgroundColor: RekkyTheme.capture,
           foregroundColor: RekkyTheme.onCapture,
           textStyle: labelStyle.copyWith(fontWeight: FontWeight.w700),
-          minimumSize: const Size(48, 48),
+          minimumSize: const Size(48, 60),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           shape: const StadiumBorder(),
         ),
@@ -64,11 +64,11 @@ class RekkyNavigation extends StatelessWidget {
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+          padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
           child: Center(
             heightFactor: 1,
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 380),
+              constraints: const BoxConstraints(maxWidth: 560),
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   double measure(String text) {

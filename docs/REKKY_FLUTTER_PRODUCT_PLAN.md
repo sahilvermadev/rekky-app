@@ -962,3 +962,11 @@ Replace the raised Recommend dock with the user's horizontal capsule sketch: tex
 
 
 Validation: eight navigation tests pass using the bundled Manrope font at 320/375/414/768 widths and 100%/200% text. They cover one-tap capture, destination dispatch, separate touch targets, and a flat centreline/compact height at ordinary text size. Flutter analysis and formatting are clean. Android debug build installed; the flat capsule was visually inspected on the physical phone in dark mode. No real recording was created for visual QA. Physical-device large-text and iOS checks remain open.
+
+
+### Capsule touch area refinement — 2026-09-27
+
+The user wants the drawn capsule to use the bottom area more effectively. Increase all three button hit surfaces to at least 60 points and labels to 15 points. Use 12-point side insets, only 4 points above/below plus the system safe area, and a 560-point cap for larger screens. This supersedes the narrow 380-point cap/48-point height above. Retain the flat three-part capsule, half-width Recommend emphasis and natural large-text reflow. The extra height belongs to the interactive buttons, not decorative padding.
+
+
+Validation: all eight navigation tests passed at 320/375/414/768 widths and 100%/200% text, including taps inside the added upper/lower button area, no overlapping targets and near-full-width layout at standard phone widths. Flutter analysis and formatting are clean. Android debug APK built and installed; the expanded capsule and gesture clearance were inspected on the physical phone in dark mode. The backend and USB forwarding remain active. No real recording was created; iOS and physical-device large-text checks remain open.

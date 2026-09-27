@@ -130,3 +130,6 @@ The user's review supersedes the blue/slate palette and compact Remember treatme
 ## User sketch refinement — 2026-09-27
 
 The user's drawn capsule supersedes the raised dock: text-only Ask / Recommend / Library on one horizontal centreline, with an approximately half-width coral centre pill and equal neutral ends. No navigation icons or elevation. Follow `design.md` for dimensions and large-text reflow.
+
+
+The subsequent touch-area refinement increases the capsule to 60-point buttons and 15-point labels, with 12-point side margins, 4-point vertical padding plus safe area, and a 560-point maximum width. These dimensions supersede earlier compact capsule dimensions.

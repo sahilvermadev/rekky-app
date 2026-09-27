@@ -57,18 +57,31 @@ void main() {
           find.widgetWithText(TextButton, 'Library'),
         );
         expect(action.width, greaterThanOrEqualTo(48));
-        expect(action.height, greaterThanOrEqualTo(48));
+        expect(action.height, greaterThanOrEqualTo(60));
+        expect(ask.height, greaterThanOrEqualTo(60));
+        expect(library.height, greaterThanOrEqualTo(60));
         expect(action.overlaps(ask), isFalse);
         expect(action.overlaps(library), isFalse);
         expect(action.left, greaterThanOrEqualTo(0));
         expect(action.right, lessThanOrEqualTo(width));
+        // The additional height must be tappable, not decorative padding.
+        await tester.tapAt(Offset(action.center.dx, action.top + 5));
+        expect(records, 2);
+        await tester.tapAt(Offset(ask.center.dx, ask.bottom - 5));
+        expect(selected, 0);
+        await tester.tapAt(Offset(library.center.dx, library.top + 5));
+        expect(selected, 1);
         expect(find.byType(Icon), findsNothing);
         if (scale == 1) {
           expect(action.center.dy, closeTo(ask.center.dy, 1));
           expect(action.center.dy, closeTo(library.center.dy, 1));
           expect(action.left, greaterThanOrEqualTo(ask.right));
           expect(action.right, lessThanOrEqualTo(library.left));
-          expect(action.height, lessThanOrEqualTo(52));
+          expect(action.height, lessThanOrEqualTo(64));
+          if (width <= 414) {
+            expect(ask.left, closeTo(12, 1));
+            expect(library.right, closeTo(width - 12, 1));
+          }
         }
       });
     }
