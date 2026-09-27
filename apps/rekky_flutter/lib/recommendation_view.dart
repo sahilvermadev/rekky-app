@@ -104,59 +104,40 @@ class RecommendationView extends StatelessWidget {
       color: theme.colorScheme.onSurfaceVariant,
       height: 1.4,
     );
-    final groups = <String, List<String>>{};
-    void add(String heading, String text) {
-      final values = groups.putIfAbsent(heading, () => []);
-      if (text.trim().isNotEmpty && !values.contains(text)) values.add(text);
-    }
-
+    // Retrieval metadata is not a second account of the experience. Keep every
+    // distinct observation; only verbatim sentences/duplicates are suppressed.
+    final paragraphs = <RecommendationDetail>[];
+    final seen = <String>{};
+    String normalize(String text) =>
+        text.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+    final summarySentences = recommendation.summary
+        .split(RegExp(r'(?<=[.!?])\s+'))
+        .map(normalize)
+        .toSet();
     for (final observation in recommendation.observations) {
-      if (observation.kind == 'caution') continue;
-      final heading = switch (observation.kind) {
-        'suggestion' => 'Recommended',
-        'suitability' => 'Good for',
-        'price' => 'Price mentioned · current price unverified',
-        'praise' => 'What stood out',
-        _ => 'More context',
-      };
-      if (observation.text.trim() != recommendation.summary.trim()) {
-        add(heading, observation.text);
+      final text = normalize(observation.text);
+      if (text.isNotEmpty &&
+          seen.add(text) &&
+          text != normalize(recommendation.summary) &&
+          !summarySentences.contains(text)) {
+        paragraphs.add(observation);
       }
     }
-    for (final location in recommendation.locations) {
-      if (location.text == recommendation.primaryLocation &&
-          (location.kind == 'venue' || location.kind == 'practice')) {
-        continue;
-      }
-      add(switch (location.kind) {
-        'venue' => 'Other location mentioned',
-        'practice' => 'Also practices in',
-        'service_area' => 'Stated service area',
-        'past_experience' => 'Location of the experience',
-        _ => 'Location in context',
-      }, location.text);
-    }
-    for (final type
-        in recommendation.classification?.types.skip(1) ??
-            <CategoryConcept>[]) {
-      add('Also', type.label);
-    }
-    for (final facet
-        in recommendation.classification?.facets ?? <CategoryConcept>[]) {
-      // The compound title already says Italian restaurant, for example.
-      if (!recommendation.categoryLabel.toLowerCase().contains(
-        facet.label.toLowerCase(),
-      )) {
-        add(facet.dimensionLabel, facet.label);
-      }
-    }
-    for (final descriptor
-        in recommendation.classification?.descriptors ?? <String>[]) {
-      add('More about it', descriptor);
-    }
-    for (final useCase in recommendation.useCases) {
-      add('Related needs', useCase);
-    }
+    final metadata = <String>{
+      for (final type
+          in recommendation.classification?.types.skip(1) ??
+              <CategoryConcept>[])
+        type.label,
+      for (final facet
+          in recommendation.classification?.facets ?? <CategoryConcept>[])
+        if (!recommendation.categoryLabel.toLowerCase().contains(
+          facet.label.toLowerCase(),
+        ))
+          facet.label,
+    };
+    final otherLocations = recommendation.locations.where(
+      (l) => l.text != recommendation.primaryLocation,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -178,7 +159,7 @@ class RecommendationView extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  place?.address ?? recommendation.primaryLocation!,
+                  place?.address ?? recommendation.primaryLocationLabel!,
                   style: secondary,
                 ),
               ),
@@ -215,13 +196,51 @@ class RecommendationView extends StatelessWidget {
             letterSpacing: 0,
           ),
         ),
-        if (recommendation.cautions.isNotEmpty)
-          _ReadingSection(
-            title: 'Worth knowing',
-            lines: recommendation.cautions.map((c) => c.text).toSet().toList(),
+        for (final paragraph in paragraphs)
+          Padding(
+            padding: const EdgeInsets.only(top: 14),
+            child: Container(
+              padding: paragraph.kind == 'caution'
+                  ? const EdgeInsets.only(left: 12)
+                  : null,
+              decoration: paragraph.kind == 'caution'
+                  ? BoxDecoration(
+                      border: Border(
+                        left: BorderSide(
+                          color: theme.colorScheme.outlineVariant,
+                          width: 2,
+                        ),
+                      ),
+                    )
+                  : null,
+              child: Text(
+                paragraph.text,
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  height: 1.5,
+                  letterSpacing: 0,
+                ),
+              ),
+            ),
           ),
-        for (final group in groups.entries)
-          _ReadingSection(title: group.key, lines: group.value),
+        for (final location in otherLocations)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Text(
+              '${switch (location.kind) {
+                'service_area' => 'Serves',
+                'practice' => 'Practices in',
+                'past_experience' => 'Experience in',
+                'venue' when recommendation.entityKind == 'place' => 'Also in',
+                _ => 'Mentioned',
+              }}: ${location.text}',
+              style: secondary,
+            ),
+          ),
+        if (metadata.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Text(metadata.join(' · '), style: secondary),
+          ),
       ],
     );
   }
@@ -275,46 +294,4 @@ class _RatingView extends StatelessWidget {
       ),
     );
   }
-}
-
-class _ReadingSection extends StatelessWidget {
-  const _ReadingSection({required this.title, required this.lines});
-  final String title;
-  final List<String> lines;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(top: 20),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: Theme.of(context).textTheme.titleSmall
-              ?.copyWith(fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 8),
-        for (final line in lines)
-          Padding(
-            padding: EdgeInsets.only(bottom: lines.length > 1 ? 8 : 0),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (lines.length > 1) ...[
-                  const Text('•'),
-                  const SizedBox(width: 10),
-                ],
-                Expanded(
-                  child: Text(
-                    line,
-                    style: Theme.of(context).textTheme.bodyLarge
-                        ?.copyWith(height: 1.5, letterSpacing: 0),
-                  ),
-                ),
-              ],
-            ),
-          ),
-      ],
-    ),
-  );
 }

@@ -145,3 +145,94 @@ fn ratings_are_optional_and_cannot_claim_coverage_or_leak_private_quotes() {
     assert!(!partial);
     assert!(items[0].recommendation["rating"].is_null());
 }
+
+#[test]
+fn subject_and_retrieval_citations_cannot_mask_a_missing_experience() {
+    let (source, mut p) = sample();
+    p["items"][0]["subject_evidence"] = json!([1, 2, 3, 4]);
+    p["items"][0]["summary"]["evidence"] = json!([1, 2]);
+    p["items"][0]["observations"]
+        .as_array_mut()
+        .unwrap()
+        .remove(2);
+    p["items"][0]["use_cases"] = json!([{"text":"when I visited","evidence":[4]}]);
+    assert!(validate(decode(p), &source).unwrap().1);
+}
+
+#[test]
+fn service_coverage_is_distinct_from_an_airport_visit_or_address() {
+    for (source, role, expected, partial) in [
+        (
+            "Mira Cabs provides taxis in Kochi.",
+            "service_area",
+            "service_area",
+            false,
+        ),
+        ("Mira Cabs took me to Kochi.", "venue", "context", true),
+        (
+            "Mira Cabs repaired my vehicle in Kochi.",
+            "service_area",
+            "past_experience",
+            true,
+        ),
+    ] {
+        let p = json!({"items":[{"subject":"Mira Cabs","subject_evidence":[1],"entity_kind":"person_service","experience":"firsthand","summary":{"text":source,"evidence":[1]},"observations":[],"locations":[{"role":role,"text":"Kochi","evidence":[1]}],"use_cases":[]}],"ignored_unit_ids":[],"unresolved_unit_ids":[]});
+        let (items, is_partial) = validate(decode(p), source).unwrap();
+        assert_eq!(is_partial, partial);
+        assert_eq!(items[0].recommendation["locations"][0]["role"], expected);
+    }
+}
+
+#[test]
+fn concise_account_does_not_need_duplicate_observations_for_coverage() {
+    let p = json!({"items":[{"subject":"Mira","subject_evidence":[1],"entity_kind":"person_service","experience":"firsthand","summary":{"text":"Used for two days; a decent experience.","evidence":[2]},"observations":[{"kind":"price","text":"About 900 rupees for a ride, from memory.","evidence":[3]}],"locations":[],"use_cases":[]}],"ignored_unit_ids":[],"unresolved_unit_ids":[]});
+    let (items, partial) = validate(decode(p), "I recommend Mira. I used her for two days and it was decent. I think a ride cost about 900 rupees.").unwrap();
+    assert!(!partial);
+    assert_eq!(
+        items[0].recommendation["observations"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn single_account_projects_to_editable_prose_without_a_second_summary() {
+    let p = json!({"items":[{"subject":"Mira","subject_evidence":[1],"entity_kind":"person_service","experience":"firsthand","account":[{"kind":"context","text":"Used for two days; a decent experience.","evidence":[2]},{"kind":"price","text":"About 900 rupees for a ride, from memory.","evidence":[3]}],"locations":[],"use_cases":[]}],"ignored_unit_ids":[],"unresolved_unit_ids":[]});
+    let (items, partial) = validate(decode(p), "I recommend Mira. I used her for two days and it was decent. I think a ride cost about 900 rupees.").unwrap();
+    assert!(!partial);
+    let r = &items[0].recommendation;
+    assert_eq!(r["summary"], "Used for two days; a decent experience.");
+    assert_eq!(r["observations"].as_array().unwrap().len(), 1);
+    assert!(!r.to_string().contains("evidence"));
+    let schema = rekky_backend::extraction::schema();
+    let properties = &schema["properties"]["items"]["items"]["properties"];
+    assert!(properties.get("summary").is_none());
+    assert!(properties.get("account").is_some());
+}
+
+#[test]
+fn a_negative_opening_keeps_its_caution_signal_and_invented_amounts_fail() {
+    let p = json!({"items":[{"subject":"Trail Mug","subject_evidence":[1],"entity_kind":"thing","experience":"firsthand","account":[{"kind":"caution","text":"The Trail Mug leaks when sideways.","evidence":[1]}],"locations":[],"use_cases":[]}],"ignored_unit_ids":[],"unresolved_unit_ids":[]});
+    let (items, _) = validate(decode(p.clone()), "The Trail Mug leaks when sideways.").unwrap();
+    assert_eq!(
+        items[0].recommendation["observations"][0]["kind"],
+        "caution"
+    );
+    let mut bad = p;
+    bad["items"][0]["account"][0]["text"] = json!("The Trail Mug costs 900 rupees.");
+    assert!(validate(decode(bad), "The Trail Mug leaks when sideways.").is_err());
+}
+
+#[test]
+fn an_activity_can_have_a_venue_without_becoming_a_service_address() {
+    let p = json!({"items":[{"subject":"weaving workshop at Cedar House","subject_evidence":[1],"entity_kind":"activity_event","experience":"firsthand","account":[{"kind":"context","text":"Attended a weaving workshop at Cedar House in May.","evidence":[1]}],"locations":[{"role":"venue","text":"Cedar House","evidence":[1]}],"use_cases":[]}],"ignored_unit_ids":[],"unresolved_unit_ids":[]});
+    let (items, partial) = validate(
+        decode(p),
+        "I attended a weaving workshop at Cedar House in May.",
+    )
+    .unwrap();
+    assert!(!partial);
+    assert_eq!(items[0].recommendation["locations"][0]["role"], "venue");
+}

@@ -202,3 +202,42 @@ fn optional_classification_never_discards_a_valid_memory_or_borrows_sibling_unit
     proposal["items"][0]["classification"] = json!({"bad":"shape"});
     assert!(understand(serde_json::from_value(proposal).unwrap(), source).is_ok());
 }
+
+#[test]
+fn taxi_aliases_share_a_category_and_unknown_type_has_no_invented_id() {
+    for phrase in ["taxi", "cab service", "taxi or cab service", "टैक्सी"] {
+        let units = source_units(&format!("Mira offers a {phrase}."));
+        let p = classification(json!([a("service.taxi", phrase, 1)]), json!([]), json!([]));
+        assert_eq!(
+            validate(&p, "person_service", &units).0["display_label"],
+            "Taxi service"
+        );
+    }
+    let p: ProposedClassification = serde_json::from_value(json!({"types":[],"facets":[],"descriptors":[],"type_description":{"text":"fountain pen restorer","evidence":[1]}})).unwrap();
+    let (c, _) = validate(
+        &p,
+        "person_service",
+        &source_units("Asha is a fountain pen restorer."),
+    );
+    assert_eq!(c["display_label"], "fountain pen restorer");
+    assert_eq!(c["search_ids"], json!([]));
+    assert!(
+        c["search_terms"]
+            .as_str()
+            .unwrap()
+            .contains("fountain pen restorer")
+    );
+    assert!(
+        validate(
+            &p,
+            "person_service",
+            &source_units("Asha is not a fountain pen restorer.")
+        )
+        .0["display_label"]
+            .is_null()
+    );
+    assert!(
+        validate(&p, "person_service", &source_units("Asha fixed a pen.")).0["display_label"]
+            .is_null()
+    );
+}

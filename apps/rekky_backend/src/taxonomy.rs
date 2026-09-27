@@ -38,6 +38,8 @@ pub struct ProposedClassification {
     pub types: Vec<Assignment>,
     pub facets: Vec<Assignment>,
     pub descriptors: Vec<Descriptor>,
+    #[serde(default)]
+    pub type_description: Option<Descriptor>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -146,12 +148,44 @@ pub fn validate(
         })
         .map(|d| d.text.trim().to_owned())
         .collect();
-    let presentation =
+    let mut presentation =
         present(kind, &types, &facets, &descriptors, "extracted").expect("validated concepts");
+    // An unfamiliar explicit type can label the item without inventing a
+    // canonical ID or turning a capability descriptor into its category.
+    let descriptive_type = proposal.type_description.as_ref().filter(|d| {
+        d.text.chars().count() <= 60
+            && supported(&d.text, &d.evidence, units)
+            && !d.evidence.iter().any(|id| {
+                units.iter().any(|u| {
+                    u.id == *id && {
+                        let text = words(&u.text).join(" ");
+                        let phrase = words(&d.text).join(" ");
+                        [
+                            format!("not a {phrase}"),
+                            format!("not an {phrase}"),
+                            format!("not {phrase}"),
+                            format!("no longer a {phrase}"),
+                            format!("{phrase} नहीं"),
+                            format!("{phrase} nahi"),
+                        ]
+                        .iter()
+                        .any(|negative| text.contains(negative))
+                    }
+                })
+            })
+    });
+    if presentation["display_label"].is_null()
+        && let Some(d) = descriptive_type
+    {
+        presentation["display_label"] = json!(d.text.trim());
+        presentation["descriptive_type"] = json!(d.text.trim());
+        let terms = presentation["search_terms"].as_str().unwrap_or("");
+        presentation["search_terms"] = json!(format!("{terms} {}", d.text.trim()).trim());
+    }
     (
         presentation,
         json!({"vocabulary_version":vocabulary().version,
-        "assignments":support,"descriptors":proposal.descriptors.iter()
+        "assignments":support,"type_description":descriptive_type,"descriptors":proposal.descriptors.iter()
             .filter(|d| descriptors.contains(&d.text.trim().to_owned())).collect::<Vec<_>>()}),
     )
 }

@@ -1,0 +1,84 @@
+[
+  {
+    "id": "cab_experience",
+    "transcript": "I used Mira Cabs in Kochi for two days. She provides taxis in Kochi. The driver was polite and waited during stops, but arrived late on the second day. I think I paid about 900 rupees for an evening ride. Fine if you are not on a tight schedule.",
+    "required_meaning": [
+      "two days firsthand",
+      "Kochi service area",
+      "late second day",
+      "tentative historical price, not tariff",
+      "schedule condition"
+    ]
+  },
+  {
+    "id": "unfamiliar_craft",
+    "transcript": "Asha is a fountain pen restorer. She repaired my old pen in Udaipur. It writes smoothly now. I only tried a nib repair, so I cannot say how she handles other damage.",
+    "required_meaning": [
+      "descriptive type without invented ID",
+      "past job not service coverage",
+      "nib repair scope"
+    ]
+  },
+  {
+    "id": "product_tradeoff",
+    "transcript": "I bought the Trail Mug. It keeps tea warm for four hours. The lid leaks if I put it sideways, so I only carry it upright. I would not put it loose in a bag.",
+    "required_meaning": [
+      "four hours",
+      "conditional leak",
+      "upright-only use",
+      "avoid loose bag"
+    ]
+  },
+  {
+    "id": "mixed_subjects",
+    "transcript": "Nisha suggested the film Paper Boats, but I have not watched it. She said the ending was moving. I read the book Quiet Roads myself. The short chapters were lovely, but the ending felt rushed.",
+    "required_meaning": [
+      "separate film and book",
+      "Nisha retained",
+      "untried not firsthand or rated",
+      "book mixed stance"
+    ]
+  },
+  {
+    "id": "hindi_condition",
+    "transcript": "Maine Saffron Cafe Jaipur mein try kiya. Chai achhi thi, lekin service slow thi. Weekend par jaldi ho toh mat jaana. Do doston ke saath baithne ke liye achha tha.",
+    "required_meaning": [
+      "firsthand",
+      "slow on visit, no busy weekends invention",
+      "conditional advice",
+      "two friends not arbitrary groups"
+    ]
+  },
+  {
+    "id": "activity_and_tip",
+    "transcript": "I took the pottery class at River Studio last month. The teacher was patient, and beginners got plenty of help. Bring an apron because clay splashes. There were stairs, and I do not know if there is a lift.",
+    "required_meaning": [
+      "past date",
+      "beginner help",
+      "apron practical action",
+      "stairs and unknown lift"
+    ]
+  },
+  {
+    "id": "holdout_app",
+    "transcript": "I use Pocket Ledger to track household expenses. Entry is quick and the totals are easy to read. Export failed twice last week, so I still keep a separate spreadsheet. I cannot recommend it as the only copy of your records.",
+    "required_meaning": [
+      "firsthand use",
+      "quick entry and readable totals",
+      "two export failures last week",
+      "backup spreadsheet",
+      "not sole record"
+    ]
+  },
+  {
+    "id": "holdout_lesson",
+    "transcript": "I attended a weaving workshop at Cedar House in May. The teacher was patient with my mistakes. We used cotton thread, but I have never tried wool there. I think the session cost about 700 rupees.",
+    "required_meaning": [
+      "May firsthand weaving workshop",
+      "exact source-backed subject",
+      "patient teacher",
+      "cotton experience, no wool experience",
+      "tentative 700 rupees session cost"
+    ]
+  }
+]

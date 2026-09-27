@@ -7,6 +7,7 @@ use std::{collections::HashSet, env, time::Duration};
 pub const EXTRACTION_DISCLOSURE_VERSION: i32 = 1;
 pub const EXTRACTION_MODEL: &str = "gpt-4.1-mini";
 pub const UNDERSTANDING_VERSION: i32 = 2;
+pub const EDITORIAL_VERSION: i32 = 1;
 
 #[derive(Debug)]
 pub enum ExtractionError {
@@ -14,7 +15,7 @@ pub enum ExtractionError {
     Failed,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Claim {
     pub text: String,
@@ -41,8 +42,12 @@ pub struct ProposedItem {
     pub subject_evidence: Vec<usize>,
     pub entity_kind: String,
     pub experience: String,
+    #[serde(default)]
     pub summary: Claim,
+    #[serde(default)]
     pub observations: Vec<Observation>,
+    #[serde(default)]
+    pub account: Vec<Observation>,
     pub locations: Vec<Location>,
     pub use_cases: Vec<Claim>,
     #[serde(default)]
@@ -164,7 +169,7 @@ pub fn schema() -> Value {
     let claim = object(json!({"text":text_schema(),"evidence":evidence_schema()}));
     let assignment = |is_type| {
         object(
-            json!({"concept_id":{"type":"string","enum":crate::taxonomy::vocabulary().concepts.iter().filter(|c| (c.dimension == "type") == is_type).map(|c|&c.id).collect::<Vec<_>>()},"source_phrase":text_schema(),"evidence":evidence_schema()}),
+            json!({"concept_id":{"type":"string","enum":crate::taxonomy::vocabulary().concepts.iter().filter(|c| (c.dimension == "type") == is_type).map(|c|&c.id).collect::<Vec<_>>()},"source_phrase":{"type":"string","enum":crate::taxonomy::vocabulary().concepts.iter().filter(|c| (c.dimension == "type") == is_type).flat_map(|c|c.aliases.iter()).collect::<Vec<_>>()},"evidence":evidence_schema()}),
         )
     };
     object(json!({
@@ -172,17 +177,16 @@ pub fn schema() -> Value {
             "subject":text_schema(),"subject_evidence":evidence_schema(),
             "entity_kind":choice(&["place","person_service","thing","activity_event","idea_tip"]),
             "experience":choice(&["firsthand","secondhand","interest","unspecified"]),
-            "summary":claim,
             "rating":object(json!({
                 "mode":choice(&["none","spoken","inferred"]),
                 "stance":choice(&["none","awful","very_bad","bad","disappointing","mixed","okay","good","very_good","excellent","exceptional"]),
                 "spoken_value":{"type":["number","null"]},
                 "source_phrase":text_schema(),"evidence":evidence_schema()
             })),
-            "observations":array(object(json!({"kind":choice(&["praise","suggestion","suitability","caution","price","context"]),"text":text_schema(),"evidence":evidence_schema()}))),
+            "account":array(object(json!({"kind":choice(&["praise","suggestion","suitability","caution","price","context"]),"text":text_schema(),"evidence":{"type":"array","items":{"type":"integer"},"minItems":1,"maxItems":3}}))),
             "locations":array(object(json!({"role":choice(&["venue","practice","service_area","past_experience","context"]),"text":text_schema(),"evidence":evidence_schema()}))),
             "use_cases":array(claim.clone()),
-            "classification":object(json!({"types":array(assignment(true)),"facets":array(assignment(false)),"descriptors":array(claim)}))
+            "classification":object(json!({"types":array(assignment(true)),"facets":array(assignment(false)),"descriptors":array(claim.clone()),"type_description":claim}))
         }))),
         "ignored_unit_ids":evidence_schema(),"unresolved_unit_ids":evidence_schema(),
         "readable_source":array(object(json!({"unit_id":{"type":"integer"},"corrections":array(object(json!({"before":text_schema(),"after":text_schema()}))),"paragraph_start":{"type":"boolean"}})))
@@ -305,6 +309,36 @@ fn safely_ignored(unit: &SourceUnit, units: &[SourceUnit]) -> bool {
             .any(|other| other.id < unit.id && words(&other.text) == normalized)
 }
 
+// Conservative identity-only units may be covered by metadata. Rich name
+// sentences still need prose/location representation; this is not an entailment check.
+fn identity_only(text: &str, subject: &str) -> bool {
+    let text = words(text);
+    let name = words(subject);
+    let Some(start) = text.windows(name.len().max(1)).position(|w| w == name) else {
+        return false;
+    };
+    let filler = [
+        "i",
+        "want",
+        "to",
+        "recommend",
+        "the",
+        "name",
+        "of",
+        "this",
+        "is",
+        "called",
+        "it",
+        "a",
+        "an",
+        "service",
+    ];
+    text[..start]
+        .iter()
+        .chain(&text[start + name.len()..])
+        .all(|w| filler.contains(&w.as_str()))
+}
+
 /// Checks source references, representation coverage and conservative literal
 /// invariants. These checks do NOT prove semantic entailment of a paraphrase.
 pub fn validate(
@@ -334,18 +368,50 @@ pub fn validate(
     let practice_pattern =
         Regex::new(r"(?i)\b(practic(?:e|es|ing)|clinic|office|based|works from)\b").unwrap();
     let service_pattern =
-        Regex::new(r"(?i)\b(serves?|service area|covers?|coverage|available in|travels? to)\b")
+        Regex::new(r"(?i)\b(serves?|service area|covers?|coverage|available in|travels? to|provides? [\p{L} -]{1,50} in|operates? in)\b")
             .unwrap();
     let past_pattern = Regex::new(r"(?i)\b(fixed|repaired|visited|went|stayed)\b").unwrap();
-    let caution_words=Regex::new(r"(?i)\b(not|never|but|avoid|slow|leaks?|leaking|unknown|uncertain|lekin|nahi|nahin)\b|too small|small (portions|plates|tables)|(portions|plates|tables) (are |were )?(too )?small").unwrap();
+    let caution_words=Regex::new(r"(?i)\b(avoid|slow|leaks?|leaking|unknown|uncertain|rushed|disappointing|broken)\b|too small|small (portions|plates|tables)|(portions|plates|tables) (are |were )?(too )?small").unwrap();
     for mut item in proposal.items {
+        // One authored account, projected into the existing edit/wire shape.
+        // No second model-written summary to paraphrase the same facts again.
+        if !item.account.is_empty() {
+            if item.account.len() > 17 || item.account.iter().any(|p| p.evidence.len() > 3) {
+                return Err(ExtractionError::Failed);
+            }
+            let lead = &item.account[0];
+            if ![
+                "praise",
+                "suggestion",
+                "suitability",
+                "caution",
+                "price",
+                "context",
+            ]
+            .contains(&lead.kind.as_str())
+            {
+                return Err(ExtractionError::Failed);
+            }
+            item.summary = Claim {
+                text: lead.text.clone(),
+                evidence: lead.evidence.clone(),
+            };
+            item.observations = item.account.iter().skip(1).cloned().collect();
+            // Keep a negative opening discoverable as a caution signal. The
+            // reading view suppresses this exact duplicate, never a paraphrase.
+            if lead.kind == "caution" || caution_words.is_match(&lead.text) {
+                item.observations.insert(0, lead.clone());
+            }
+        }
         // Treat role labels and display groups as untrusted model proposals.
         // A past repair does not establish a professional's practice or coverage.
         for location in &mut item.locations {
             let cited = support(&location.evidence, &units)?;
             let explicit_practice = practice_pattern.is_match(&cited);
             let explicit_service = service_pattern.is_match(&cited);
-            if (location.role == "practice" && !explicit_practice)
+            if (location.role == "venue"
+                && !["place", "activity_event"].contains(&item.entity_kind.as_str()))
+                || (location.role == "practice" && !explicit_practice)
                 || (location.role == "service_area" && !explicit_service)
             {
                 location.role = if past_pattern.is_match(&cited) {
@@ -385,7 +451,7 @@ pub fn validate(
             .contains(&item.experience.as_str())
             || item.subject.trim().is_empty()
             || item.subject.chars().count() > 120
-            || item.observations.len() > 16
+            || item.observations.len() > 17
             || item.locations.len() > 8
             || item.use_cases.len() > 8
         {
@@ -394,11 +460,21 @@ pub fn validate(
         if !phrase_in(&item.subject, &support(&item.subject_evidence, &units)?) {
             return Err(ExtractionError::Failed);
         }
-        check_claim(&item.summary.text, &item.summary.evidence, &units, 280)?;
-        let mut ids: HashSet<usize> = item.subject_evidence.iter().copied().collect();
+        check_claim(&item.summary.text, &item.summary.evidence, &units, 420)?;
+        // Naming an item cannot claim coverage for every cited experience unit.
+        let mut ids: HashSet<usize> = item
+            .subject_evidence
+            .iter()
+            .copied()
+            .filter(|id| {
+                units
+                    .get(id.wrapping_sub(1))
+                    .is_some_and(|u| identity_only(&u.text, &item.subject))
+            })
+            .collect();
         // A broad summary citation must not count as coverage of every detail
         // in a long note. Observations and typed fields account for those units.
-        if item.summary.evidence.len() <= 2 {
+        if item.summary.evidence.len() <= 3 {
             ids.extend(&item.summary.evidence);
         }
         let mut body = vec![item.summary.text.trim().to_owned()];
@@ -415,7 +491,14 @@ pub fn validate(
             {
                 return Err(ExtractionError::Failed);
             }
-            check_claim(&observation.text, &observation.evidence, &units, 400)?;
+            let limit = if observation.text == item.summary.text
+                && observation.evidence == item.summary.evidence
+            {
+                420
+            } else {
+                400
+            };
+            check_claim(&observation.text, &observation.evidence, &units, limit)?;
             ids.extend(&observation.evidence);
             body.push(observation.text.trim().to_owned());
         }
@@ -447,11 +530,11 @@ pub fn validate(
         });
         for use_case in &item.use_cases {
             check_claim(&use_case.text, &use_case.evidence, &units, 100)?;
-            ids.extend(&use_case.evidence);
             body.push(use_case.text.trim().to_owned());
         }
         accounted.extend(&ids);
         ids.extend(&item.summary.evidence);
+        ids.extend(&item.subject_evidence);
         let classification_proposal =
             serde_json::from_value(item.classification.clone()).unwrap_or_default();
         // Classification can only cite this item's already represented units;
@@ -464,7 +547,7 @@ pub fn validate(
         let (classification, classification_support) =
             crate::taxonomy::validate(&classification_proposal, &item.entity_kind, &item_units);
         let rating = crate::ratings::validate(&item.rating, &item.experience, &item_units);
-        let evidence = json!({"pipeline_version":UNDERSTANDING_VERSION,"proposal":item,
+        let evidence = json!({"pipeline_version":UNDERSTANDING_VERSION,"editorial_version":EDITORIAL_VERSION,"proposal":item,
             "units":item_units,"classification":classification_support});
         let recommendation = json!({
             "version":UNDERSTANDING_VERSION,"entity_kind":item.entity_kind,"shelf":shelf,

@@ -84,10 +84,11 @@ class RekkyClassification {
     required this.facets,
     required this.descriptors,
     this.displayLabel,
+    this.descriptiveType,
   });
   final List<CategoryConcept> types, facets;
   final List<String> descriptors;
-  final String? displayLabel;
+  final String? displayLabel, descriptiveType;
   factory RekkyClassification.fromJson(Map<String, dynamic> json) =>
       RekkyClassification(
         types: (json['types'] as List)
@@ -98,6 +99,7 @@ class RekkyClassification {
             .toList(),
         descriptors: (json['descriptors'] as List).cast<String>(),
         displayLabel: json['display_label'] as String?,
+        descriptiveType: json['descriptive_type'] as String?,
       );
 }
 
@@ -178,12 +180,17 @@ class RekkyRecommendation {
     'interest' => 'Not tried yet',
     _ => 'Saved experience',
   };
-  String? get primaryLocation => locations
+  RecommendationDetail? get _primaryLocation => locations
       .where(
-        (location) => location.kind == 'venue' || location.kind == 'practice',
+        (location) => entityKind == 'person_service'
+            ? location.kind == 'practice' || location.kind == 'service_area'
+            : location.kind == 'venue',
       )
-      .map((location) => location.text)
       .firstOrNull;
+  String? get primaryLocation => _primaryLocation?.text;
+  String? get primaryLocationLabel => _primaryLocation?.kind == 'service_area'
+      ? 'Serves ${_primaryLocation!.text}'
+      : primaryLocation;
   List<RecommendationDetail> get cautions =>
       observations.where((o) => o.kind == 'caution').toList();
   factory RekkyRecommendation.fromJson(

@@ -1,0 +1,603 @@
+{
+  "date": "2026-09-27",
+  "provider_calls": 20,
+  "real_user_transcripts_sent": 0,
+  "model": "gpt-4.1-mini",
+  "scope": "Synthetic development probes, with two first-run holdouts before the final activity-venue rule adjustment. Not a release quality gate.",
+  "rounds": [
+    {
+      "round": "prompt_only",
+      "cases": [
+        {
+          "id": "cab_experience",
+          "elapsed_ms": 7201,
+          "status": "valid",
+          "partial": false
+        },
+        {
+          "id": "unfamiliar_craft",
+          "elapsed_ms": 4773,
+          "status": "valid",
+          "partial": true
+        },
+        {
+          "id": "product_tradeoff",
+          "elapsed_ms": 5394,
+          "status": "valid",
+          "partial": true
+        },
+        {
+          "id": "mixed_subjects",
+          "elapsed_ms": 5763,
+          "status": "valid",
+          "partial": false
+        },
+        {
+          "id": "hindi_condition",
+          "elapsed_ms": 5045,
+          "status": "valid",
+          "partial": false
+        },
+        {
+          "id": "activity_and_tip",
+          "elapsed_ms": 5976,
+          "status": "valid",
+          "partial": true
+        }
+      ]
+    },
+    {
+      "round": "single_account",
+      "cases": [
+        {
+          "id": "cab_experience",
+          "elapsed_ms": 5418,
+          "status": "valid",
+          "partial": false
+        },
+        {
+          "id": "unfamiliar_craft",
+          "elapsed_ms": 4718,
+          "status": "valid",
+          "partial": true
+        },
+        {
+          "id": "product_tradeoff",
+          "elapsed_ms": 4300,
+          "status": "valid",
+          "partial": true
+        },
+        {
+          "id": "mixed_subjects",
+          "elapsed_ms": 4514,
+          "status": "valid",
+          "partial": false
+        },
+        {
+          "id": "hindi_condition",
+          "elapsed_ms": 4465,
+          "status": "valid",
+          "partial": false
+        },
+        {
+          "id": "activity_and_tip",
+          "elapsed_ms": 4557,
+          "status": "valid",
+          "partial": true
+        }
+      ]
+    },
+    {
+      "round": "bounded_citations",
+      "cases": [
+        {
+          "id": "cab_experience",
+          "elapsed_ms": 4959,
+          "status": "valid",
+          "partial": false,
+          "items": [
+            {
+              "subject": "Mira Cabs",
+              "account": [
+                {
+                  "evidence": [
+                    1,
+                    2,
+                    3
+                  ],
+                  "kind": "context",
+                  "text": "I used Mira Cabs in Kochi for two days; she provides taxis in Kochi. The driver was polite and waited during stops."
+                },
+                {
+                  "evidence": [
+                    3,
+                    5
+                  ],
+                  "kind": "caution",
+                  "text": "However, the taxi arrived late on the second day, so it is fine if you are not on a tight schedule."
+                },
+                {
+                  "evidence": [
+                    4
+                  ],
+                  "kind": "price",
+                  "text": "I think I paid about 900 rupees for an evening ride."
+                }
+              ],
+              "classification": {
+                "descriptors": [],
+                "display_label": "Taxi service",
+                "facets": [],
+                "origin": "extracted",
+                "search_ids": [
+                  "service.taxi"
+                ],
+                "search_terms": "Taxi service cab cab service cabs taxi taxi cab service taxi driver taxi or cab service taxi service taxis कैब टैक्सी",
+                "types": [
+                  {
+                    "dimension": "type",
+                    "dimension_label": "Type",
+                    "id": "service.taxi",
+                    "label": "Taxi service"
+                  }
+                ],
+                "vocabulary_version": 2
+              },
+              "locations": [
+                {
+                  "role": "service_area",
+                  "text": "Kochi"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "unfamiliar_craft",
+          "elapsed_ms": 3764,
+          "status": "valid",
+          "partial": false,
+          "items": [
+            {
+              "subject": "Asha",
+              "account": [
+                {
+                  "evidence": [
+                    1,
+                    2,
+                    3
+                  ],
+                  "kind": "context",
+                  "text": "Asha repaired my old fountain pen nib in Udaipur, and it writes smoothly now, showing her skill in nib repair."
+                },
+                {
+                  "evidence": [
+                    4
+                  ],
+                  "kind": "caution",
+                  "text": "I only tried a nib repair, so I cannot say how she handles other types of damage."
+                }
+              ],
+              "classification": {
+                "descriptive_type": "fountain pen restorer",
+                "descriptors": [
+                  "fountain pen restorer"
+                ],
+                "display_label": "fountain pen restorer",
+                "facets": [],
+                "origin": "extracted",
+                "search_ids": [],
+                "search_terms": "fountain pen restorer fountain pen restorer",
+                "types": [],
+                "vocabulary_version": 2
+              },
+              "locations": [
+                {
+                  "role": "past_experience",
+                  "text": "Udaipur"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "product_tradeoff",
+          "elapsed_ms": 4232,
+          "status": "valid",
+          "partial": false,
+          "items": [
+            {
+              "subject": "Trail Mug",
+              "account": [
+                {
+                  "evidence": [
+                    1,
+                    2,
+                    3
+                  ],
+                  "kind": "context",
+                  "text": "I bought the Trail Mug. It keeps tea warm for four hours."
+                },
+                {
+                  "evidence": [
+                    3,
+                    4
+                  ],
+                  "kind": "caution",
+                  "text": "The lid leaks if I put it sideways, so I only carry it upright. I would not put it loose in a bag."
+                }
+              ],
+              "classification": {
+                "descriptors": [],
+                "display_label": null,
+                "facets": [],
+                "origin": "extracted",
+                "search_ids": [],
+                "search_terms": "",
+                "types": [],
+                "vocabulary_version": 2
+              },
+              "locations": []
+            }
+          ]
+        },
+        {
+          "id": "mixed_subjects",
+          "elapsed_ms": 4456,
+          "status": "valid",
+          "partial": false,
+          "items": [
+            {
+              "subject": "Paper Boats",
+              "account": [
+                {
+                  "evidence": [
+                    1,
+                    2
+                  ],
+                  "kind": "context",
+                  "text": "Nisha suggested the film Paper Boats, but I have not watched it. She said the ending was moving."
+                }
+              ],
+              "classification": {
+                "descriptors": [],
+                "display_label": "Film",
+                "facets": [],
+                "origin": "extracted",
+                "search_ids": [
+                  "thing.film"
+                ],
+                "search_terms": "Film film films movie movies फिल्म",
+                "types": [
+                  {
+                    "dimension": "type",
+                    "dimension_label": "Type",
+                    "id": "thing.film",
+                    "label": "Film"
+                  }
+                ],
+                "vocabulary_version": 2
+              },
+              "locations": []
+            },
+            {
+              "subject": "Quiet Roads",
+              "account": [
+                {
+                  "evidence": [
+                    3,
+                    4
+                  ],
+                  "kind": "context",
+                  "text": "I read the book Quiet Roads myself. The short chapters were lovely, but the ending felt rushed."
+                }
+              ],
+              "classification": {
+                "descriptors": [],
+                "display_label": "Book",
+                "facets": [],
+                "origin": "extracted",
+                "search_ids": [
+                  "thing.book"
+                ],
+                "search_terms": "Book book books किताब पुस्तक",
+                "types": [
+                  {
+                    "dimension": "type",
+                    "dimension_label": "Type",
+                    "id": "thing.book",
+                    "label": "Book"
+                  }
+                ],
+                "vocabulary_version": 2
+              },
+              "locations": []
+            }
+          ]
+        },
+        {
+          "id": "hindi_condition",
+          "elapsed_ms": 4923,
+          "status": "valid",
+          "partial": false,
+          "items": [
+            {
+              "subject": "Saffron Cafe",
+              "account": [
+                {
+                  "evidence": [
+                    1,
+                    2,
+                    4
+                  ],
+                  "kind": "context",
+                  "text": "Maine Saffron Cafe Jaipur mein try kiya. Chai achhi thi aur do doston ke saath baithne ke liye achha tha."
+                },
+                {
+                  "evidence": [
+                    2,
+                    3
+                  ],
+                  "kind": "caution",
+                  "text": "Service slow thi. Weekend par jaldi ho toh mat jaana."
+                }
+              ],
+              "classification": {
+                "descriptors": [],
+                "display_label": "Café",
+                "facets": [],
+                "origin": "extracted",
+                "search_ids": [
+                  "place.cafe"
+                ],
+                "search_terms": "Café cafe cafes café cafés coffee shop coffee shops कैफ़े कैफे",
+                "types": [
+                  {
+                    "dimension": "type",
+                    "dimension_label": "Type",
+                    "id": "place.cafe",
+                    "label": "Café"
+                  }
+                ],
+                "vocabulary_version": 2
+              },
+              "locations": [
+                {
+                  "role": "venue",
+                  "text": "Jaipur"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "activity_and_tip",
+          "elapsed_ms": 3945,
+          "status": "validation_failed",
+          "partial": null,
+          "synthetic_proposal": {
+            "ignored_unit_ids": [],
+            "items": [
+              {
+                "account": [
+                  {
+                    "evidence": [
+                      1,
+                      2,
+                      3
+                    ],
+                    "kind": "context",
+                    "text": "I took the pottery class at River Studio last month and found the teacher patient, which was helpful for beginners like me."
+                  },
+                  {
+                    "evidence": [
+                      3
+                    ],
+                    "kind": "suggestion",
+                    "text": "Bring an apron because clay splashes."
+                  },
+                  {
+                    "evidence": [
+                      4
+                    ],
+                    "kind": "caution",
+                    "text": "The venue has stairs, and it's unclear if there is a lift available, which may affect accessibility."
+                  }
+                ],
+                "classification": {
+                  "descriptors": [],
+                  "facets": [],
+                  "type_description": {
+                    "evidence": [],
+                    "text": ""
+                  },
+                  "types": [
+                    {
+                      "concept_id": "activity.class",
+                      "evidence": [
+                        1,
+                        2
+                      ],
+                      "source_phrase": "class"
+                    }
+                  ]
+                },
+                "entity_kind": "activity_event",
+                "experience": "firsthand",
+                "locations": [
+                  {
+                    "evidence": [
+                      1
+                    ],
+                    "role": "venue",
+                    "text": "River Studio"
+                  }
+                ],
+                "observations": [],
+                "rating": {
+                  "evidence": [],
+                  "mode": "none",
+                  "source_phrase": "",
+                  "spoken_value": null,
+                  "stance": "none"
+                },
+                "subject": "River Studio pottery class",
+                "subject_evidence": [
+                  1,
+                  2,
+                  3,
+                  4
+                ],
+                "summary": {
+                  "evidence": [],
+                  "text": ""
+                },
+                "use_cases": []
+              }
+            ],
+            "readable_source": [
+              {
+                "corrections": [],
+                "paragraph_start": true,
+                "unit_id": 1
+              },
+              {
+                "corrections": [],
+                "paragraph_start": false,
+                "unit_id": 2
+              },
+              {
+                "corrections": [
+                  {
+                    "after": "Bring an apron because clay splashes.",
+                    "before": "Bring an apron because clay splashes."
+                  }
+                ],
+                "paragraph_start": false,
+                "unit_id": 3
+              },
+              {
+                "corrections": [],
+                "paragraph_start": false,
+                "unit_id": 4
+              }
+            ],
+            "unresolved_unit_ids": []
+          }
+        }
+      ]
+    },
+    {
+      "round": "first_run_holdout",
+      "cases": [
+        {
+          "id": "holdout_app",
+          "elapsed_ms": 4800,
+          "status": "valid",
+          "partial": false,
+          "items": [
+            {
+              "subject": "Pocket Ledger",
+              "account": [
+                {
+                  "evidence": [
+                    1,
+                    2,
+                    3
+                  ],
+                  "kind": "context",
+                  "text": "I use Pocket Ledger to track household expenses. Entry is quick and the totals are easy to read."
+                },
+                {
+                  "evidence": [
+                    3,
+                    4
+                  ],
+                  "kind": "caution",
+                  "text": "Export failed twice last week, so I still keep a separate spreadsheet. I cannot recommend it as the only copy of your records."
+                }
+              ],
+              "classification": {
+                "descriptors": [],
+                "display_label": null,
+                "facets": [],
+                "origin": "extracted",
+                "search_ids": [],
+                "search_terms": "",
+                "types": [],
+                "vocabulary_version": 2
+              },
+              "locations": []
+            }
+          ]
+        },
+        {
+          "id": "holdout_lesson",
+          "elapsed_ms": 4264,
+          "status": "valid",
+          "partial": true,
+          "items": [
+            {
+              "subject": "weaving workshop at Cedar House",
+              "account": [
+                {
+                  "evidence": [
+                    1,
+                    2,
+                    3
+                  ],
+                  "kind": "context",
+                  "text": "I attended a weaving workshop at Cedar House in May where the teacher was patient with my mistakes, using cotton thread."
+                },
+                {
+                  "evidence": [
+                    3
+                  ],
+                  "kind": "caution",
+                  "text": "We used cotton thread in the workshop, but I have never tried wool there."
+                },
+                {
+                  "evidence": [
+                    4
+                  ],
+                  "kind": "price",
+                  "text": "I think the session cost about 700 rupees."
+                }
+              ],
+              "classification": {
+                "descriptors": [],
+                "display_label": null,
+                "facets": [],
+                "origin": "extracted",
+                "search_ids": [],
+                "search_terms": "",
+                "types": [],
+                "vocabulary_version": 2
+              },
+              "locations": [
+                {
+                  "role": "context",
+                  "text": "Cedar House"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "review": {
+    "improvements": [
+      "Single-account output eliminates requesting two parallel descriptions of every fact.",
+      "Canonical alias enums restored taxi, film, book and cafe assignments.",
+      "Bounded paragraph citations retained trip duration and tentative price in the taxi seed."
+    ],
+    "remaining_failures": [
+      "Development activity subject was reordered, failing exact subject support; existing source-only partial fallback remains.",
+      "Craft example added inferred skill and cited nib repair too narrowly. Final prompt warns against inferred conclusions; semantic entailment remains unproven.",
+      "Holdout weaving lesson repeated cotton, and was partial because activity venue was incorrectly downgraded. Final validator and prompt allow activity venues; regression-tested without another provider call.",
+      "Broad shelves remain where no explicitly described type is accepted.",
+      "Two held-out examples and repeated development seeds are insufficient to establish generalization."
+    ]
+  }
+}

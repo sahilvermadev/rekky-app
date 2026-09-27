@@ -30,7 +30,13 @@ class _Line {
 
 class _RecommendationEditorState extends State<RecommendationEditor> {
   final form = GlobalKey<FormState>();
-  late String subject, summary, kind, experience, attribution, visibility;
+  late String subject,
+      summary,
+      kind,
+      experience,
+      attribution,
+      visibility,
+      typeDescription;
   late String linkMode, linkUrl, linkLabel, baseline;
   late List<String> types, facets;
   late List<_Line> observations, locations, useCases, descriptors;
@@ -88,6 +94,7 @@ class _RecommendationEditorState extends State<RecommendationEditor> {
     super.initState();
     final r = widget.item.recommendation;
     contactPhone = r?.contactPhone ?? '';
+    typeDescription = r?.classification?.descriptiveType ?? '';
     subject = widget.item.subject;
     summary = r?.summary ?? widget.item.body;
     kind = r?.entityKind ?? 'idea_tip';
@@ -126,6 +133,7 @@ class _RecommendationEditorState extends State<RecommendationEditor> {
         .toList(),
     'use_cases': useCases.map((l) => l.text).toList(),
     'descriptors': descriptors.map((l) => l.text).toList(),
+    'type_description': types.isEmpty ? typeDescription : '',
     'destination': {
       'mode': linkMode,
       'url': linkMode == 'custom' ? linkUrl : '',
@@ -651,6 +659,16 @@ class _RecommendationEditorState extends State<RecommendationEditor> {
                           tilePadding: EdgeInsets.zero,
                           title: const Text('Other descriptions'),
                           children: [
+                            if (types.isEmpty)
+                              TextFormField(
+                                initialValue: typeDescription,
+                                decoration: const InputDecoration(
+                                  labelText: 'Type description',
+                                ),
+                                maxLength: 60,
+                                enabled: !saving,
+                                onChanged: (value) => typeDescription = value,
+                              ),
                             lines(descriptors, 'Description', 4, max: 100),
                           ],
                         ),

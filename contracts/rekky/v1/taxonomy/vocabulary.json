@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "concepts": [
     {
       "id": "place.bar",
@@ -288,6 +288,29 @@
         "cleaners",
         "house cleaner",
         "house cleaners"
+      ],
+      "dimension_label": "Type"
+    },
+    {
+      "id": "service.taxi",
+      "label": "Taxi service",
+      "dimension": "type",
+      "entity_kinds": [
+        "person_service"
+      ],
+      "parent_id": null,
+      "aliases": [
+        "taxi",
+        "taxis",
+        "cab",
+        "cabs",
+        "taxi service",
+        "cab service",
+        "taxi cab service",
+        "taxi or cab service",
+        "taxi driver",
+        "टैक्सी",
+        "कैब"
       ],
       "dimension_label": "Type"
     },

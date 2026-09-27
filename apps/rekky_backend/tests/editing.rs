@@ -63,3 +63,25 @@ fn rejects_unsafe_links_bad_categories_and_overlong_content() {
     v["origin"] = json!("verified");
     assert!(serde_json::from_value::<EditInput>(v).is_err());
 }
+
+#[test]
+fn owner_can_keep_change_or_remove_an_unfamiliar_type_description() {
+    for text in ["Fountain pen restorer", "", "Nib specialist"] {
+        let mut v = fixture();
+        v["types"] = json!([]);
+        v["facets"] = json!([]);
+        v["type_description"] = json!(text);
+        let (rec, _) = serde_json::from_value::<EditInput>(v)
+            .unwrap()
+            .normalized()
+            .unwrap()
+            .build()
+            .unwrap();
+        if text.is_empty() {
+            assert!(rec["classification"]["display_label"].is_null());
+        } else {
+            assert_eq!(rec["classification"]["display_label"], text);
+            assert_eq!(rec["classification"]["types"], json!([]));
+        }
+    }
+}

@@ -4,7 +4,9 @@ use serde_json::{Value, json};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
-    let seed = if std::env::args().any(|arg| arg == "--ratings") {
+    let seed = if std::env::args().any(|arg| arg == "--editorial") {
+        include_str!("../../../docs/evaluation/editorial_seed_v1.json")
+    } else if std::env::args().any(|arg| arg == "--ratings") {
         include_str!("../../../docs/evaluation/ratings_seed_v1.json")
     } else if std::env::args().any(|arg| arg == "--readable") {
         include_str!("../../../docs/evaluation/readable_source_seed_v1.json")
@@ -30,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(proposal) => {
                 match validate(proposal.clone(), case["transcript"].as_str().unwrap()) {
                     Ok((items, partial)) => {
-                        json!({"status":"valid","partial":partial,"proposed_readable_source":proposal.readable_source,"readable_source":rekky_backend::readable_source::from_proposal(&proposal, case["transcript"].as_str().unwrap()),"items":items.iter().map(|i|json!({"subject":i.subject,"recommendation":i.recommendation,"proposed_classification":i.evidence["proposal"]["classification"],"proposed_rating":i.evidence["proposal"]["rating"]})).collect::<Vec<_>>()})
+                        json!({"status":"valid","partial":partial,"proposed_accounts":proposal.items.iter().map(|i| &i.account).collect::<Vec<_>>(),"proposed_readable_source":proposal.readable_source,"readable_source":rekky_backend::readable_source::from_proposal(&proposal, case["transcript"].as_str().unwrap()),"items":items.iter().map(|i|json!({"subject":i.subject,"recommendation":i.recommendation,"proposed_classification":i.evidence["proposal"]["classification"],"proposed_rating":i.evidence["proposal"]["rating"]})).collect::<Vec<_>>()})
                     }
                     Err(_) => json!({"status":"validation_failed","synthetic_proposal":proposal}),
                 }

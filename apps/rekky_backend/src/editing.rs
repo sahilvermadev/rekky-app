@@ -19,6 +19,8 @@ pub struct EditInput {
     pub types: Vec<String>,
     pub facets: Vec<String>,
     pub descriptors: Vec<String>,
+    #[serde(default)]
+    pub type_description: String,
     pub destination: Destination,
     #[serde(default)]
     pub rating: crate::ratings::Edit,
@@ -59,6 +61,7 @@ impl EditInput {
         clean(&mut self.subject, 1, 120)?;
         clean(&mut self.summary, 1, 20000)?;
         clean(&mut self.attribution, 0, 300)?;
+        clean(&mut self.type_description, 0, 60)?;
         if !["private", "friends"].contains(&self.visibility.as_str()) {
             return Err("Choose Only me or Friends");
         }
@@ -147,7 +150,7 @@ impl EditInput {
         }
     }
     pub fn build(&self) -> Result<(Value, String), &'static str> {
-        let classification = crate::taxonomy::present(
+        let mut classification = crate::taxonomy::present(
             &self.entity_kind,
             &self.types,
             &self.facets,
@@ -155,6 +158,13 @@ impl EditInput {
             "user",
         )
         .ok_or("Unknown, duplicate or incompatible category")?;
+        if classification["display_label"].is_null() && !self.type_description.is_empty() {
+            classification["display_label"] = json!(self.type_description);
+            classification["descriptive_type"] = json!(self.type_description);
+            let terms = classification["search_terms"].as_str().unwrap_or("");
+            classification["search_terms"] =
+                json!(format!("{terms} {}", self.type_description).trim());
+        }
         let mut body = vec![self.summary.clone(), self.attribution.clone()];
         body.extend(self.observations.iter().map(|o| o.text.clone()));
         body.extend(self.locations.iter().map(|l| l.text.clone()));

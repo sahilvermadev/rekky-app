@@ -1,0 +1,62 @@
+{
+  "id": "editorial-fixture",
+  "capture_id": "33333333-3333-4333-8333-333333333333",
+  "subject": "Mira Cabs",
+  "body": "Used for two days in Kochi. Polite driver who waited during stops.",
+  "visibility": "private",
+  "revision": 1,
+  "created_at": "2026-09-25T00:00:00.000Z",
+  "needs_review": false,
+  "recommendation": {
+    "version": 2,
+    "entity_kind": "person_service",
+    "shelf": "People & services",
+    "experience": "firsthand",
+    "summary": "Used for two days in Kochi. Polite driver who waited during stops.",
+    "observations": [
+      {
+        "kind": "caution",
+        "text": "Arrived late on the second day; fine if you are not on a tight schedule."
+      },
+      {
+        "kind": "price",
+        "text": "About 900 rupees for an evening ride, from memory."
+      }
+    ],
+    "locations": [
+      {
+        "role": "service_area",
+        "text": "Kochi"
+      }
+    ],
+    "use_cases": [
+      "not on a tight schedule"
+    ],
+    "classification": {
+      "vocabulary_version": 2,
+      "types": [
+        {
+          "id": "service.taxi",
+          "label": "Taxi service",
+          "dimension": "type",
+          "dimension_label": "Type"
+        }
+      ],
+      "facets": [],
+      "descriptors": [
+        "waited during stops"
+      ],
+      "display_label": "Taxi service",
+      "search_ids": [
+        "service.taxi"
+      ],
+      "search_terms": "Taxi service cab taxi"
+    },
+    "rating": {
+      "value": 6,
+      "scale": 10,
+      "origin": "inferred",
+      "rubric_version": 1
+    }
+  }
+}

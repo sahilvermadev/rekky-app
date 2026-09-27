@@ -111,6 +111,46 @@ Future<void> select(WidgetTester tester, String label, String value) async {
 }
 
 void main() {
+  testWidgets(
+    'unfamiliar type survives an unrelated edit and can be corrected',
+    (tester) async {
+      final wire = jsonDecode(
+        File('../../contracts/rekky/v1/fixtures/editorial_recommendation.json')
+            .readAsStringSync(),
+      ) as Map<String, dynamic>;
+      wire['recommendation']['classification'] = {
+        'types': [],
+        'facets': [],
+        'descriptors': [],
+        'display_label': 'Pen restorer',
+        'descriptive_type': 'Pen restorer',
+      };
+      final item = RekkyItem.fromJson(wire);
+      Map<String, dynamic>? sent;
+      await openEditor(
+        tester,
+        item: item,
+        save: (value) async {
+          sent = value;
+          return item;
+        },
+      );
+      await enter(tester, 'Recommendation', 'My revised account.');
+      await tester.ensureVisible(find.text('Other descriptions'));
+      await tester.tap(find.text('Other descriptions'));
+      await tester.pumpAndSettle();
+      expect(
+        (tester.widget<TextFormField>(field('Type description'))).initialValue,
+        'Pen restorer',
+      );
+      await enter(tester, 'Type description', 'Fountain pen restorer');
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(sent?['type_description'], 'Fountain pen restorer');
+      expect(sent?['summary'], 'My revised account.');
+    },
+  );
+
   test(
     'manual destination and attribution consume the shared edit contract',
     () {

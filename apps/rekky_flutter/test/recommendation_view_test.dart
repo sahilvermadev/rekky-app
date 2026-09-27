@@ -18,6 +18,61 @@ RekkyItem fixture([String name = 'structured_recommendation']) {
 
 void main() {
   testWidgets(
+    'service account keeps practical detail without retrieval headings',
+    (tester) async {
+      final item = RekkyItem.fromJson(
+        jsonDecode(
+          File(
+            '../../contracts/rekky/v1/fixtures/editorial_recommendation.json',
+          ).readAsStringSync(),
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: RecommendationView(item: item, expanded: true),
+            ),
+          ),
+        ),
+      );
+      expect(find.text('Taxi service'), findsOneWidget);
+      expect(find.text('Serves Kochi'), findsOneWidget);
+      expect(find.text(item.recommendation!.summary), findsOneWidget);
+      for (final o in item.recommendation!.observations) {
+        expect(find.text(o.text), findsOneWidget);
+      }
+      for (final heading in [
+        'Related needs',
+        'What stood out',
+        'Good for',
+        'More context',
+        'More about it',
+        'Worth knowing',
+      ]) {
+        expect(find.text(heading), findsNothing);
+      }
+      expect(find.text('not on a tight schedule'), findsNothing);
+      expect(find.text('waited during stops'), findsNothing);
+      expect(find.text('Search Maps'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  test('a service journey location cannot become its primary address', () {
+    const r = RekkyRecommendation(
+      summary: 'Used for a ride.',
+      shelf: 'People & services',
+      experience: 'firsthand',
+      observations: [],
+      locations: [RecommendationDetail('venue', 'Airport')],
+      useCases: [],
+      entityKind: 'person_service',
+    );
+    expect(r.primaryLocation, isNull);
+  });
+
+  testWidgets(
     'canonical type and cuisine replace broad shelf on compact cards',
     (tester) async {
       final item = fixture('categorized_recommendation');
@@ -213,7 +268,7 @@ void main() {
       );
       expect(find.text('More from your note'), findsNothing);
       expect(find.byType(ExpansionTile), findsNothing);
-      expect(find.text('What stood out'), findsOneWidget);
+      expect(find.text('What stood out'), findsNothing);
       expect(find.text('Comfortable seats.'), findsOneWidget);
       expect(find.text('Friendly staff.'), findsOneWidget);
     },
