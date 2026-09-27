@@ -11,6 +11,7 @@ import 'ask_recorder.dart';
 import 'rekky_api.dart';
 import 'rekky_haptics.dart';
 import 'library_style.dart';
+import 'rekky_theme.dart';
 import 'recommendation_maps_action.dart';
 import 'contact_matching.dart';
 
@@ -32,7 +33,7 @@ class _AskExperienceState extends State<AskExperience> {
   final excluded = <String>[];
   List<String> pendingSelected = [], pendingExcluded = [];
   String? pendingParent, editParent;
-  bool speaking = false, restoring = false, editing = false;
+  bool speaking = false, restoring = false, editing = false, comparing = false;
 
   AskAnswer? answer;
   String asked = '', pending = '', requestId = '', openingId = '';
@@ -42,7 +43,12 @@ class _AskExperienceState extends State<AskExperience> {
   @override
   void initState() {
     super.initState();
+    inputFocus.addListener(_focusChanged);
     unawaited(AskRecorder.clearAbandoned().catchError((_) {}));
+  }
+
+  void _focusChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> cancelRequest(String id) async {
@@ -59,6 +65,7 @@ class _AskExperienceState extends State<AskExperience> {
     if (working) unawaited(cancelRequest(requestId));
     generation++;
     input.dispose();
+    inputFocus.removeListener(_focusChanged);
     inputFocus.dispose();
     super.dispose();
   }
@@ -109,6 +116,7 @@ class _AskExperienceState extends State<AskExperience> {
         selected.clear();
         excluded.clear();
         editing = false;
+        comparing = false;
         input.clear();
         working = false;
       });
@@ -138,6 +146,7 @@ class _AskExperienceState extends State<AskExperience> {
       paging = false;
       error = null;
       editing = false;
+      comparing = false;
       history.clear();
       selected.clear();
       excluded.clear();
@@ -167,6 +176,7 @@ class _AskExperienceState extends State<AskExperience> {
         selected.clear();
         excluded.clear();
         editing = false;
+        comparing = false;
       });
     } catch (e) {
       if (mounted && turn == generation) {
@@ -209,6 +219,8 @@ class _AskExperienceState extends State<AskExperience> {
 
   Widget composer(BuildContext context) {
     final current = answer;
+    final colors = Theme.of(context).colorScheme;
+    final askBlue = LibraryStyle.searchFocus(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -241,10 +253,10 @@ class _AskExperienceState extends State<AskExperience> {
               ],
             ),
           ),
-          if (selected.length >= 2)
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
+          if (comparing && selected.length >= 2)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: FilledButton.icon(
                 onPressed: working || restoring || speaking
                     ? null
                     : () {
@@ -253,42 +265,68 @@ class _AskExperienceState extends State<AskExperience> {
                       },
                 icon: const Icon(Icons.compare_arrows_rounded, size: 20),
                 label: Text('Compare ${selected.length}'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: RekkyTheme.navAsk,
+                  foregroundColor: RekkyTheme.onNavAsk,
+                  minimumSize: const Size.fromHeight(48),
+                ),
               ),
             ),
         ],
-        TextField(
-          controller: input,
-          focusNode: inputFocus,
-          minLines: 1,
-          maxLines: 3,
-          maxLength: 500,
-          textInputAction: TextInputAction.search,
-          onSubmitted: (_) => submit(),
-          decoration: InputDecoration(
-            hintText: current == null
-                ? 'Somewhere we can sit and talk…'
-                : editing
-                ? 'Edit your question…'
-                : 'Ask a follow-up…',
-            counterText: '',
-            prefixIcon: IconButton(
-              tooltip: 'Speak a question',
-              onPressed: speaking || restoring ? null : speak,
-              icon: Icon(
-                Icons.mic_none_rounded,
-                color: LibraryStyle.searchFocus(context),
+        AnimatedContainer(
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 150),
+          decoration: BoxDecoration(
+            color: colors.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: inputFocus.hasFocus ? askBlue : colors.outlineVariant,
+            ),
+          ),
+          child: TextField(
+            controller: input,
+            focusNode: inputFocus,
+            minLines: 1,
+            maxLines: 3,
+            maxLength: 500,
+            textInputAction: TextInputAction.search,
+            style: Theme.of(context).textTheme.bodyLarge,
+            onSubmitted: (_) => submit(),
+            decoration: InputDecoration(
+              filled: false,
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              errorBorder: InputBorder.none,
+              focusedErrorBorder: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(vertical: 17),
+              hintText: current == null
+                  ? 'Ask what you have saved…'
+                  : editing
+                  ? 'Edit your question…'
+                  : 'Ask a follow-up…',
+              hintStyle: TextStyle(color: colors.onSurfaceVariant),
+              counterText: '',
+              prefixIconConstraints: const BoxConstraints(minWidth: 52),
+              prefixIcon: IconButton(
+                tooltip: 'Speak a question',
+                onPressed: speaking || restoring ? null : speak,
+                icon: Icon(Icons.mic_none_rounded, color: askBlue),
               ),
-            ),
-            suffixIcon: IconButton(
-              tooltip: current == null ? 'Ask' : 'Ask follow-up',
-              onPressed: speaking || restoring ? null : () => submit(),
-              icon: const Icon(Icons.arrow_forward_rounded),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(
-                color: LibraryStyle.searchFocus(context),
-                width: 2,
+              suffixIconConstraints: const BoxConstraints(minWidth: 56),
+              suffixIcon: Padding(
+                padding: const EdgeInsets.only(right: 5),
+                child: IconButton.filled(
+                  tooltip: current == null ? 'Ask' : 'Ask follow-up',
+                  onPressed: speaking || restoring ? null : () => submit(),
+                  style: IconButton.styleFrom(
+                    backgroundColor: RekkyTheme.navAsk,
+                    foregroundColor: RekkyTheme.onNavAsk,
+                    minimumSize: const Size(48, 48),
+                  ),
+                  icon: const Icon(Icons.arrow_upward_rounded),
+                ),
               ),
             ),
           ),
@@ -377,262 +415,269 @@ class _AskExperienceState extends State<AskExperience> {
     final uncertain =
         current?.results.where((r) => r.section != 'supported').toList() ??
         <AskResult>[];
+    final centerHome =
+        current == null &&
+        MediaQuery.textScalerOf(context).scale(16) <= 22 &&
+        MediaQuery.sizeOf(context).height >= 720 &&
+        MediaQuery.viewInsetsOf(context).bottom == 0;
+    final intro = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (current == null) ...[
+          Text(
+            'What do you have in mind?',
+            style: LibraryStyle.heading(context, 32),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Find something you saved, or ask what fits.',
+            style: theme.textTheme.bodyLarge?.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 26),
+          composer(context),
+        ],
+        if (current != null)
+          Wrap(
+            spacing: 8,
+            runSpacing: 2,
+            children: [
+              if (history.isNotEmpty)
+                TextButton.icon(
+                  onPressed: restoring ? null : previousAnswer,
+                  icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                  label: Text(restoring ? 'Restoring…' : 'Previous answer'),
+                ),
+              TextButton.icon(
+                onPressed: newQuestion,
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: const Text('New question'),
+              ),
+            ],
+          ),
+        if (working)
+          Padding(
+            padding: const EdgeInsets.only(top: 14),
+            child: Row(
+              children: [
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Semantics(
+                    liveRegion: true,
+                    child: Text('Finding useful connections…'),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    unawaited(cancelRequest(requestId));
+                    setState(() {
+                      generation++;
+                      working = false;
+                    });
+                  },
+                  child: const Text('Cancel'),
+                ),
+              ],
+            ),
+          ),
+        if (error != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Semantics(
+                  liveRegion: true,
+                  child: Text(error!, style: TextStyle(color: colors.error)),
+                ),
+                TextButton(
+                  onPressed: working ? null : () => submit(retry: true),
+                  child: const Text('Try again'),
+                ),
+              ],
+            ),
+          ),
+        if (current == null && !working && error == null) ...[
+          const SizedBox(height: 18),
+          for (final example in [
+            'Who was that taxi driver?',
+            'Something fun to try this weekend',
+            'A place for a quiet dinner',
+          ])
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: InkWell(
+                onTap: () {
+                  input.text = example;
+                  submit();
+                },
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 13,
+                    horizontal: 10,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(example, style: theme.textTheme.bodyMedium),
+                      ),
+                      const SizedBox(width: 12),
+                      Icon(
+                        Icons.arrow_upward_rounded,
+                        size: 18,
+                        color: LibraryStyle.searchFocus(context),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          const SizedBox(height: 16),
+          Text(
+            'Ask sends your question and relevant saved recommendations to OpenAI.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+        ],
+        if (current != null) ...[
+          const SizedBox(height: 14),
+          InkWell(
+            onTap: working
+                ? null
+                : () {
+                    setState(() {
+                      editing = true;
+                      editParent = answer?.turnCount == 1
+                          ? null
+                          : history.lastOrNull?.answer.requestId;
+                      input.text = asked;
+                    });
+                    inputFocus.requestFocus();
+                  },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Semantics(
+                button: true,
+                label: 'Edit question: $asked',
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        asked,
+                        style: LibraryStyle.heading(context, 24),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.edit_outlined, size: 20),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (current.results.length >= 2 && current.comparison == null)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: TextButton.icon(
+                onPressed: working
+                    ? null
+                    : () => setState(() {
+                        comparing = !comparing;
+                        selected.clear();
+                      }),
+                icon: Icon(
+                  comparing
+                      ? Icons.close_rounded
+                      : Icons.compare_arrows_rounded,
+                  size: 19,
+                ),
+                label: Text(comparing ? 'Done comparing' : 'Compare options'),
+              ),
+            ),
+          if (current.mode == 'limited')
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text(
+                'The full answer couldn’t finish. These saved matches may help.',
+              ),
+            ),
+          if (current.searchIncomplete && current.mode != 'limited')
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text(
+                'There may be more matches. Add another detail to narrow your search.',
+              ),
+            ),
+          if (current.changed)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text(
+                'Some recommendations changed. Ask again for an updated answer.',
+              ),
+            ),
+          if (current.clarification.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text(current.clarification, style: theme.textTheme.titleMedium),
+            if (current.choices.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: current.choices
+                      .map(
+                        (choice) => ActionChip(
+                          label: Text(choice),
+                          onPressed: () {
+                            input.text = choice;
+                            submit();
+                          },
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+          ],
+          if (current.results.isEmpty &&
+              current.comparison == null &&
+              !current.changed &&
+              current.clarification.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 20),
+              child: Text(
+                'There isn’t enough in your Library to answer this yet. Try another detail or a broader question.',
+              ),
+            ),
+        ],
+      ],
+    );
     final content = CustomScrollView(
       key: const PageStorageKey('intelligent-ask'),
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       slivers: [
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-          sliver: SliverToBoxAdapter(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  current == null ? 'What do you have in mind?' : 'Ask Rekky',
-                  style: LibraryStyle.heading(
-                    context,
-                    current == null ? 32 : 27,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                if (current == null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 24),
-                    child: Text(
-                      'A half-remembered name. A plan for tonight.\nStart with what you know.',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: colors.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                if (current == null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 14),
-                    child: Text(
-                      'Ask uses OpenAI with your question and relevant saved recommendations.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colors.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                if (current == null) composer(context),
-                if (current != null)
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      if (history.isNotEmpty)
-                        TextButton.icon(
-                          onPressed: restoring ? null : previousAnswer,
-                          icon: const Icon(Icons.undo_rounded, size: 18),
-                          label: Text(
-                            restoring ? 'Restoring…' : 'Previous answer',
-                          ),
-                        ),
-                      TextButton(
-                        onPressed: newQuestion,
-                        child: const Text('New question'),
-                      ),
-                    ],
-                  ),
-                if (working)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 14),
-                    child: Row(
-                      children: [
-                        const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Semantics(
-                            liveRegion: true,
-                            child: Text('Finding useful connections…'),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            unawaited(cancelRequest(requestId));
-                            setState(() {
-                              generation++;
-                              working = false;
-                            });
-                          },
-                          child: const Text('Cancel'),
-                        ),
-                      ],
-                    ),
-                  ),
-                if (error != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Semantics(
-                          liveRegion: true,
-                          child: Text(
-                            error!,
-                            style: TextStyle(color: colors.error),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: working ? null : () => submit(retry: true),
-                          child: const Text('Try again'),
-                        ),
-                      ],
-                    ),
-                  ),
-                if (current == null && !working && error == null) ...[
-                  const SizedBox(height: 28),
-                  for (final example in [
-                    'Who was that taxi driver?',
-                    'Something fun to try this weekend',
-                    'A place for a quiet dinner',
-                  ])
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: TextButton(
-                        onPressed: () {
-                          input.text = example;
-                          input.selection = TextSelection.collapsed(
-                            offset: example.length,
-                          );
-                        },
-                        style: TextButton.styleFrom(
-                          foregroundColor: colors.onSurface,
-                          alignment: Alignment.centerLeft,
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 14,
-                            horizontal: 12,
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(child: Text(example)),
-                            Icon(
-                              Icons.north_west_rounded,
-                              size: 16,
-                              color: LibraryStyle.searchFocus(context),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                ],
-                if (current != null) ...[
-                  const SizedBox(height: 24),
-                  InkWell(
-                    onTap: working
-                        ? null
-                        : () {
-                            setState(() {
-                              editing = true;
-                              editParent = answer?.turnCount == 1
-                                  ? null
-                                  : history.lastOrNull?.answer.requestId;
-                              input.text = asked;
-                            });
-                            inputFocus.requestFocus();
-                          },
-                    child: Semantics(
-                      button: true,
-                      label: 'Edit question: $asked',
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              asked,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: colors.onSurfaceVariant,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          const Icon(Icons.edit_outlined, size: 16),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    current.title.isEmpty
-                        ? 'Your saved knowledge'
-                        : current.title,
-                    style: LibraryStyle.heading(context, 26),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    current.location.isEmpty
-                        ? 'From your Library'
-                        : 'From your Library · ${current.location}',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: LibraryStyle.searchFocus(context),
-                    ),
-                  ),
-                  if (current.mode == 'limited')
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8),
-                      child: Text(
-                        'The full answer couldn’t finish. These saved matches may help.',
-                      ),
-                    ),
-                  if (current.searchIncomplete && current.mode != 'limited')
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8),
-                      child: Text(
-                        'There may be more matches. Add another detail to narrow your search.',
-                      ),
-                    ),
-                  if (current.changed)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8),
-                      child: Text(
-                        'Some recommendations changed. Ask again for an updated answer.',
-                      ),
-                    ),
-                  if (current.clarification.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      current.clarification,
-                      style: theme.textTheme.titleMedium,
-                    ),
-                    if (current.choices.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: current.choices
-                              .map(
-                                (choice) => ActionChip(
-                                  label: Text(choice),
-                                  onPressed: () {
-                                    input.text = choice;
-                                    submit();
-                                  },
-                                ),
-                              )
-                              .toList(),
-                        ),
-                      ),
-                  ],
-                  if (current.results.isEmpty &&
-                      current.comparison == null &&
-                      !current.changed &&
-                      current.clarification.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 20),
-                      child: Text(
-                        'There isn’t enough in your Library to answer this yet. Try another detail or a broader question.',
-                      ),
-                    ),
-                ],
-              ],
+        if (centerHome)
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              child: Center(
+                child: SizedBox(width: double.infinity, child: intro),
+              ),
             ),
+          )
+        else
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+            sliver: SliverToBoxAdapter(child: intro),
           ),
-        ),
         if (current?.comparison != null)
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
@@ -675,15 +720,25 @@ class _AskExperienceState extends State<AskExperience> {
           ),
       ],
     );
-    return Column(
-      children: [
-        Expanded(child: content),
-        if (current != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: composer(context),
-          ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) => Column(
+        children: [
+          Expanded(child: content),
+          if (current != null)
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: constraints.maxHeight * .5,
+              ),
+              child: SingleChildScrollView(
+                reverse: true,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  child: composer(context),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -701,7 +756,86 @@ class _AskExperienceState extends State<AskExperience> {
     setState(() {
       editing = false;
       if (!selected.remove(item.id)) selected.add(item.id);
+      if (answer?.comparison != null) comparing = selected.length >= 2;
     });
+  }
+
+  bool _showCaveatOnCard(String caveat) {
+    final lower = caveat.toLowerCase();
+    final genericAvailability =
+        lower.contains('past visit') && lower.contains('current availability');
+    final availabilityAsked = RegExp(
+      r'\b(open|opening|hours|available|availability|booking|book|reservation|reserve)\b',
+    ).hasMatch(asked.toLowerCase());
+    return !genericAvailability || availabilityAsked;
+  }
+
+  void _showSavedEvidence(BuildContext context, AskResult result) {
+    final theme = Theme.of(context);
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => SafeArea(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  result.item.subject,
+                  style: LibraryStyle.heading(context, 24),
+                ),
+                const SizedBox(height: 16),
+                for (final evidence in result.evidence)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Text(
+                      '“${evidence.text}”',
+                      style: theme.textTheme.bodyLarge,
+                    ),
+                  ),
+                if (result.caveat.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Text(
+                      result.caveat,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                Text(
+                  'From your saved recommendation',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _resultMenuAction(String action, RekkyItem item) {
+    if (action == 'ask') {
+      setState(() {
+        comparing = false;
+        selected.clear();
+        selected.add(item.id);
+        editing = false;
+      });
+      inputFocus.requestFocus();
+    } else if (action == 'exclude') {
+      setState(() {
+        comparing = false;
+        selected.clear();
+        excluded.add(item.id);
+      });
+      input.text = 'Leave this option out and show other possibilities.';
+      submit();
+    }
   }
 
   Widget resultCard(BuildContext context, AskResult result) {
@@ -727,13 +861,13 @@ class _AskExperienceState extends State<AskExperience> {
           InkWell(
             onTap: openingId.isEmpty ? () => open(result.item) : null,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+              padding: const EdgeInsets.fromLTRB(16, 16, 12, 10),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
-                    width: 36,
-                    height: 40,
+                    width: 42,
+                    height: 42,
                     decoration: BoxDecoration(
                       color: LibraryStyle.itemFill(context, item),
                       borderRadius: BorderRadius.circular(10),
@@ -741,7 +875,7 @@ class _AskExperienceState extends State<AskExperience> {
                     child: Icon(
                       LibraryStyle.itemIcon(item),
                       color: LibraryStyle.itemForeground(context),
-                      size: 21,
+                      size: 22,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -751,14 +885,15 @@ class _AskExperienceState extends State<AskExperience> {
                       children: [
                         Text(
                           item.subject,
-                          style: theme.textTheme.titleMedium?.copyWith(
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontSize: 19,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                         if (location != null)
                           Text(
                             location,
-                            style: theme.textTheme.bodySmall?.copyWith(
+                            style: theme.textTheme.bodyMedium?.copyWith(
                               color: colors.onSurfaceVariant,
                             ),
                           ),
@@ -766,61 +901,61 @@ class _AskExperienceState extends State<AskExperience> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  const Icon(Icons.arrow_outward_rounded, size: 18),
+                  if (comparing)
+                    Semantics(
+                      label: 'Select ${item.subject} for comparison',
+                      child: Checkbox(
+                        value: selected.contains(item.id),
+                        onChanged: working
+                            ? null
+                            : (_) => toggleSelection(item),
+                        activeColor: RekkyTheme.navAsk,
+                        checkColor: RekkyTheme.onNavAsk,
+                      ),
+                    )
+                  else
+                    const Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: Icon(Icons.chevron_right_rounded, size: 24),
+                    ),
                 ],
               ),
             ),
           ),
           if (result.reason.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: Text(result.reason, style: theme.textTheme.bodyMedium),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: Text(result.reason, style: theme.textTheme.bodyLarge),
             ),
-          if (result.caveat.isNotEmpty)
+          if (result.caveat.isNotEmpty && _showCaveatOnCard(result.caveat))
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: Text(
-                result.caveat,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: colors.onSurfaceVariant,
-                ),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 17,
+                    color: colors.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      result.caveat,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
             child: Wrap(
               spacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                TextButton(
-                  onPressed: working
-                      ? null
-                      : () {
-                          setState(() {
-                            selected.clear();
-                            selected.add(item.id);
-                            editing = false;
-                          });
-                          inputFocus.requestFocus();
-                        },
-                  child: const Text('Ask about this'),
-                ),
-                FilterChip(
-                  label: const Text('Compare'),
-                  selected: selected.contains(item.id),
-                  onSelected: working ? null : (_) => toggleSelection(item),
-                ),
-                IconButton(
-                  tooltip: 'Exclude this option for this conversation',
-                  onPressed: working
-                      ? null
-                      : () {
-                          selected.clear();
-                          excluded.add(item.id);
-                          input.text = 'Exclude this option and show other possibilities.';
-                          submit();
-                        },
-                  icon: const Icon(Icons.remove_circle_outline, size: 18),
-                ),
                 if (phone != null || maps != null)
                   TextButton.icon(
                     onPressed: openingId.isEmpty
@@ -832,44 +967,24 @@ class _AskExperienceState extends State<AskExperience> {
                     ),
                     label: Text(phone != null ? 'Call' : 'Maps'),
                   ),
-                TextButton(
-                  onPressed: () => showModalBottomSheet<void>(
-                    context: context,
-                    showDragHandle: true,
-                    isScrollControlled: true,
-                    useSafeArea: true,
-                    builder: (context) => SafeArea(
-                      child: SingleChildScrollView(
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                item.subject,
-                                style: LibraryStyle.heading(context, 24),
-                              ),
-                              const SizedBox(height: 16),
-                              for (final evidence in result.evidence)
-                                Padding(
-                                  padding: const EdgeInsets.only(bottom: 16),
-                                  child: Text(
-                                    '“${evidence.text}”',
-                                    style: theme.textTheme.bodyLarge,
-                                  ),
-                                ),
-                              Text(
-                                'From your saved recommendation',
-                                style: theme.textTheme.bodySmall,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
+                if (result.evidence.isNotEmpty)
+                  TextButton.icon(
+                    onPressed: () => _showSavedEvidence(context, result),
+                    icon: const Icon(Icons.format_quote_rounded, size: 18),
+                    label: const Text('Saved note'),
                   ),
-                  child: const Text('Why this fits'),
+                PopupMenuButton<String>(
+                  tooltip: 'More options for ${item.subject}',
+                  enabled: !working,
+                  onSelected: (action) => _resultMenuAction(action, item),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'ask', child: Text('Ask about this')),
+                    PopupMenuItem(
+                      value: 'exclude',
+                      child: Text('Leave this out'),
+                    ),
+                  ],
+                  icon: const Icon(Icons.more_horiz_rounded),
                 ),
               ],
             ),

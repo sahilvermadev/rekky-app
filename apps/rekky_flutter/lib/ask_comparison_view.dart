@@ -91,11 +91,14 @@ class AskComparisonView extends StatelessWidget {
                           Expanded(
                             child: Text(
                               item.subject,
-                              style: theme.textTheme.titleMedium,
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                fontSize: 19,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                           const SizedBox(width: 8),
-                          const Icon(Icons.arrow_outward_rounded, size: 18),
+                          const Icon(Icons.chevron_right_rounded, size: 24),
                         ],
                       ),
                     ),

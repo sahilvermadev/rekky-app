@@ -99,6 +99,114 @@ Future<void> submit(WidgetTester t, String text) async {
 }
 
 void main() {
+  testWidgets('an example starts Ask in one tap', (t) async {
+    final api = FakeAsk();
+    await t.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AskExperience(api: api, onOpen: (_) async {}),
+        ),
+      ),
+    );
+    expect(find.text('What do you have in mind?'), findsOneWidget);
+    expect(
+      find.text(
+        'Ask sends your question and relevant saved recommendations to OpenAI.',
+      ),
+      findsOneWidget,
+    );
+    await t.tap(find.text('Who was that taxi driver?'));
+    await t.pump();
+    expect(api.contexts.single['question'], 'Who was that taxi driver?');
+    api.pending.single.complete(fixture());
+    await t.pumpAndSettle();
+  });
+
+  for (final width in [320.0, 375.0, 414.0, 768.0]) {
+    testWidgets('centred Ask home at $width with 200% text scrolls', (t) async {
+      t.view.physicalSize = Size(width, 800);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.resetPhysicalSize);
+      addTearDown(t.view.resetDevicePixelRatio);
+      final api = FakeAsk();
+      await t.pumpWidget(
+        MaterialApp(
+          theme: RekkyTheme.build(Brightness.dark),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context)
+                .copyWith(textScaler: const TextScaler.linear(2)),
+            child: child!,
+          ),
+          home: Scaffold(
+            body: AskExperience(api: api, onOpen: (_) async {}),
+          ),
+        ),
+      );
+      await t.ensureVisible(find.text('A place for a quiet dinner'));
+      await t.pumpAndSettle();
+      expect(t.takeException(), isNull);
+      expect(find.byTooltip('Speak a question'), findsOneWidget);
+      expect(find.byTooltip('Ask'), findsOneWidget);
+    });
+  }
+
+  testWidgets(
+    'routine availability caveat stays in evidence; exclusion is clear',
+    (t) async {
+      final api = FakeAsk();
+      final original = fixture();
+      const caveat =
+          'The note is about a past visit and does not establish current availability.';
+      final answer = AskAnswer(
+        requestId: original.requestId,
+        question: 'Something fun to try this weekend',
+        title: original.title,
+        intent: original.intent,
+        mode: original.mode,
+        clarification: '',
+        choices: const [],
+        location: '',
+        results: [
+          AskResult(
+            item: original.results.single.item,
+            section: 'supported',
+            reason: 'We could talk easily.',
+            caveat: caveat,
+            evidence: original.results.single.evidence,
+          ),
+        ],
+      );
+      await t.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AskExperience(api: api, onOpen: (_) async {}),
+          ),
+        ),
+      );
+      await submit(t, answer.question);
+      api.pending.single.complete(answer);
+      await t.pumpAndSettle();
+      expect(find.text(caveat), findsNothing);
+      await t.ensureVisible(find.text('Saved note'));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Saved note'));
+      await t.pumpAndSettle();
+      expect(find.text(caveat), findsOneWidget);
+      Navigator.of(t.element(find.text('From your saved recommendation')))
+          .pop();
+      await t.pumpAndSettle();
+      await t.ensureVisible(find.byTooltip('More options for Lantern Kitchen'));
+      await t.pumpAndSettle();
+      await t.tap(find.byTooltip('More options for Lantern Kitchen'));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Leave this out'));
+      await t.pump();
+      expect(api.contexts.last['excluded'], [original.results.single.item.id]);
+      api.pending.last.complete(fixture(turn: 2));
+      await t.pumpAndSettle();
+    },
+  );
+
   test(
     'comparison contract keeps cells, unknowns and named source citations',
     () {
@@ -128,10 +236,12 @@ void main() {
       await submit(t, 'dinner options');
       api.pending.single.complete(twoOptions());
       await t.pumpAndSettle();
+      await t.tap(find.text('Compare options'));
+      await t.pumpAndSettle();
       for (var i = 0; i < 2; i++) {
-        await t.ensureVisible(find.widgetWithText(FilterChip, 'Compare').at(i));
+        await t.ensureVisible(find.byType(Checkbox).at(i));
         await t.pumpAndSettle();
-        await t.tap(find.widgetWithText(FilterChip, 'Compare').at(i));
+        await t.tap(find.byType(Checkbox).at(i));
         await t.pumpAndSettle();
       }
       await t.tap(find.text('Compare 2'));
@@ -252,9 +362,9 @@ void main() {
       expect(api.reads, 1);
       expect(opened, 1);
       expect(api.pages, 1);
-      await t.ensureVisible(find.text('Why this fits'));
+      await t.ensureVisible(find.text('Saved note'));
       await t.pumpAndSettle();
-      await t.tap(find.text('Why this fits'));
+      await t.tap(find.text('Saved note'));
       await t.pumpAndSettle();
       expect(
         find.text('“We could talk easily. The tables are small.”'),
@@ -276,7 +386,9 @@ void main() {
       await submit(t, 'quiet dinner in Delhi');
       api.pending[0].complete(fixture());
       await t.pumpAndSettle();
-      await t.ensureVisible(find.text('Ask about this'));
+      await t.ensureVisible(find.byTooltip('More options for Lantern Kitchen'));
+      await t.pumpAndSettle();
+      await t.tap(find.byTooltip('More options for Lantern Kitchen'));
       await t.pumpAndSettle();
       await t.tap(find.text('Ask about this'));
       await t.pump();
@@ -323,9 +435,11 @@ void main() {
       await submit(t, 'quiet dinner');
       api.pending.single.complete(fixture());
       await t.pumpAndSettle();
-      await t.ensureVisible(find.text('Why this fits'));
+      await t.ensureVisible(find.text('Saved note'));
       await t.pumpAndSettle();
-      await t.ensureVisible(find.text('Ask about this'));
+      await t.ensureVisible(find.byTooltip('More options for Lantern Kitchen'));
+      await t.pumpAndSettle();
+      await t.tap(find.byTooltip('More options for Lantern Kitchen'));
       await t.pumpAndSettle();
       await t.tap(find.text('Ask about this'));
       await t.pump();
