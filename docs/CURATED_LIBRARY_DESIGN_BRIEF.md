@@ -125,3 +125,8 @@ Completion means the real native surfaces match the intended composition with th
 ## Subsequent palette and navigation revision — 2026-09-27
 
 The user's review supersedes the blue/slate palette and compact Remember treatment above. Use the neutral black/charcoal surfaces, varied category accents and raised coral **Recommend** dock documented in `design.md` and the canonical plan. The layout, typography, accessibility and interaction requirements still apply. Remember remains an internal callback/API term only.
+
+
+## User sketch refinement — 2026-09-27
+
+The user's drawn capsule supersedes the raised dock: text-only Ask / Recommend / Library on one horizontal centreline, with an approximately half-width coral centre pill and equal neutral ends. No navigation icons or elevation. Follow `design.md` for dimensions and large-text reflow.

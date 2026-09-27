@@ -954,3 +954,11 @@ Rename the visible capture action to **Recommend**, including the empty Library 
 
 
 Validation: all 144 Flutter tests passed, including navigation at 320/375/414/768 widths and 200% text, label/microphone dispatch and non-overlapping 48-point-minimum capture targets. Analysis and formatting are clean. Calculated contrast is 7.82:1 for capture text, 5.71:1/9.94:1 for secondary text on light/dark canvas, and at least 4.25:1 for category icons on their tinted backgrounds. The Android debug build was installed; Library and dock were visually inspected in light/dark mode, plus the dark Ask screen and neutral filter sheet. Original dark mode was restored and local backend/USB forwarding remain active. No recording or content mutation was performed for visual QA. iOS and physical-device large-text/assistive-technology checks remain open; these are not implied by widget coverage.
+
+
+### User-sketched navigation capsule — 2026-09-27
+
+Replace the raised Recommend dock with the user's horizontal capsule sketch: text-only Ask, a longer rounded coral Recommend centre, and Library at the other end. Keep the three segments flat on one centreline with 48-point-minimum touch height; remove navigation icons and selection underlines. Cap the capsule at 380 points and inset it from screen edges. Preserve one-tap recording and selected-destination semantics. When scaled labels cannot fit, reflow without shrinking text. This supersedes the raised dock geometry above; the neutral palette remains.
+
+
+Validation: eight navigation tests pass using the bundled Manrope font at 320/375/414/768 widths and 100%/200% text. They cover one-tap capture, destination dispatch, separate touch targets, and a flat centreline/compact height at ordinary text size. Flutter analysis and formatting are clean. Android debug build installed; the flat capsule was visually inspected on the physical phone in dark mode. No real recording was created for visual QA. Physical-device large-text and iOS checks remain open.
