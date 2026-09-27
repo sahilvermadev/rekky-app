@@ -73,7 +73,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "free_source_phrase" => old_schema(true),
                     _ => old_schema(false),
                 };
-                let request = json!({"model":extraction::EXTRACTION_MODEL,"store":false,"max_output_tokens":5500,"input":[{"role":"system","content":format!("{prompt}\n{wrapper}\n{}",serde_json::to_string(taxonomy::vocabulary())?)},{"role":"user","content":json!({"transcript_units":extraction::source_units(source)}).to_string()}],"text":{"format":{"type":"json_schema","name":"rekky_understanding_v2","strict":true,"schema":schema}}});
+                let request = json!({"model":extraction::EXTRACTION_MODEL,"reasoning":{"effort":"none"},"store":false,"max_output_tokens":5500,"input":[{"role":"system","content":format!("{prompt}\n{wrapper}\n{}",serde_json::to_string(taxonomy::vocabulary())?)},{"role":"user","content":json!({"transcript_units":extraction::source_units(source)}).to_string()}],"text":{"format":{"type":"json_schema","name":"rekky_understanding_v2","strict":true,"schema":schema}}});
                 let start = Instant::now();
                 let response = client
                     .post("https://api.openai.com/v1/responses")

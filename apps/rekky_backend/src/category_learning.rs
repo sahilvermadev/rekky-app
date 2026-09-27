@@ -20,6 +20,7 @@ pub const FOCUS: &[&str] = &[
     "accessibility",
     "attribution",
 ];
+pub const CATEGORY_LEARNING_MODEL: &str = "gpt-6-luna";
 
 pub async fn catalog(pool: &PgPool) -> Result<Vocabulary, sqlx::Error> {
     let row = sqlx::query("SELECT revision, (SELECT coalesce(jsonb_agg(definition ORDER BY id),'[]') FROM learned_categories WHERE active) concepts, (SELECT coalesce(jsonb_agg(jsonb_build_object('phrase',phrase,'concept_id',concept_id) ORDER BY normalized),'[]') FROM learned_category_aliases WHERE active) aliases FROM category_registry_state WHERE id")
@@ -247,7 +248,7 @@ impl OpenAiCategoryLearner {
             return Err(());
         }
         let response = self.client.post("https://api.openai.com/v1/responses").bearer_auth(self.key.as_ref().ok_or(())?)
-            .json(&json!({"model":"gpt-4.1-mini","store":false,"max_output_tokens":1800,
+            .json(&json!({"model":CATEGORY_LEARNING_MODEL,"reasoning":{"effort":"none"},"store":false,"max_output_tokens":1800,
                 "input":[{"role":"system","content":instructions},{"role":"user","content":input.to_string()}],
                 "text":{"format":{"type":"json_schema","name":"category_learning_v1","strict":true,"schema":schema}}}))
             .send().await.map_err(|_| ())?;
@@ -595,7 +596,7 @@ pub async fn process_one(
         Ok((d, target)) => {
             sqlx::query("INSERT INTO category_registry_events(registry_revision,action,concept_id,receipt) VALUES($1,$2,$3,$4)")
                 .bind(revision+1).bind(&d.decision).bind(&target)
-                .bind(json!({"learning_version":1,"model":"gpt-4.1-mini","proposal":d,"independent_review_all_checks_passed":true}))
+                .bind(json!({"learning_version":1,"model":CATEGORY_LEARNING_MODEL,"proposal":d,"independent_review_all_checks_passed":true}))
                 .execute(&mut *tx).await?;
             if d.decision == "create" {
                 let c = Concept {

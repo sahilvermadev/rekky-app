@@ -293,7 +293,7 @@ class _VoiceDraftsSheetState extends State<VoiceDraftsSheet> {
           title: const Text('Save recommendations from transcripts?'),
           content: const SingleChildScrollView(
             child: Text(
-              'Rekky will send your private machine transcript text to OpenAI’s gpt-4.1-mini service to identify recommendations and their supporting words. OpenAI says API data is not used to train models by default unless the API account opts in. Its default abuse-monitoring logs may include content for up to 30 days, or longer when required by law or to protect services. New completed recommendations default to Friends and can be changed to Only me. Incomplete results and the transcript stay private; existing recordings keep their saved audience. You can turn off future transcript processing here. Saved recommendations remain until you delete them.',
+              'Rekky will send your private machine transcript text to OpenAI’s gpt-6-luna service to identify recommendations and their supporting words. OpenAI says API data is not used to train models by default unless the API account opts in. Its default abuse-monitoring logs may include content for up to 30 days, or longer when required by law or to protect services. New completed recommendations default to Friends and can be changed to Only me. Incomplete results and the transcript stay private; existing recordings keep their saved audience. You can turn off future transcript processing here. Saved recommendations remain until you delete them.',
             ),
           ),
           actions: [

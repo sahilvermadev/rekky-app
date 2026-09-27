@@ -2,7 +2,7 @@
 
 Current audience behavior: new completed voice recommendations inherit Friends by default; legacy captures keep their stored audience and partial/fallback results initially stay Private. Transcripts stay owner-only. Actual friend-authorized reads remain a later F-03 slice. The historical checkpoint below describes the original private-only implementation.
 
-Historical record of the first preservation bridge. The current implementation is [understanding v2](./RECOMMENDATION_UNDERSTANDING.md); the word-for-word excerpt design below is superseded.
+Historical record of the first preservation bridge. The current implementation is [understanding v2](./RECOMMENDATION_UNDERSTANDING.md); the word-for-word excerpt design below is superseded. The historical `gpt-4.1-mini` references below describe that pilot; current extraction uses `gpt-6-luna`.
 
 
 This slice lets a signed-in owner turn a retained private voice transcript into up to five private recommendations. For an existing transcript, **Save recommendation** is available in the draft/transcript sheet. After one separate disclosure for sending transcript text to OpenAI, later transcriptions attempt extraction automatically after their audio is acknowledged for deletion. The saved items appear in Library and own Ask; this pilot does not publish them to friends.

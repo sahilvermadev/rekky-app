@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use std::{collections::HashSet, env, time::Duration};
 
 pub const EXTRACTION_DISCLOSURE_VERSION: i32 = 1;
-pub const EXTRACTION_MODEL: &str = "gpt-4.1-mini";
+pub const EXTRACTION_MODEL: &str = "gpt-6-luna";
 pub const UNDERSTANDING_VERSION: i32 = 2;
 pub const EDITORIAL_VERSION: i32 = 1;
 
@@ -248,7 +248,7 @@ impl TranscriptExtractor for OpenAiExtractor {
         let response = self.client.post("https://api.openai.com/v1/responses")
             .bearer_auth(self.key.as_ref().ok_or(ExtractionError::Unavailable)?)
             .json(&json!({
-                "model":EXTRACTION_MODEL,"store":false,"max_output_tokens":5500,
+                "model":EXTRACTION_MODEL,"reasoning":{"effort":"none"},"store":false,"max_output_tokens":5500,
                 "input":[
                     {"role":"system","content":format!("{}\nKnown category IDs and aliases. Use these only when supported; unfamiliar explicit types belong in type_description with types=[], never in a guessed ID:\n{}",include_str!("../prompts/understanding_v2.txt"),serde_json::to_string(catalog).expect("vocabulary"))},
                     {"role":"user","content":json!({"transcript_units":source_units(transcript)}).to_string()}
