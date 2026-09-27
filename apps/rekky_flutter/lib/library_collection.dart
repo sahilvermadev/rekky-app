@@ -19,74 +19,109 @@ enum LibraryShelf {
 }
 
 class LibraryArea {
-  const LibraryArea(this.id, this.label);
-  final String id, label;
+  const LibraryArea(
+    this.id,
+    this.label, {
+    this.aliases = const [],
+    this.count,
+    this.kind = 'city',
+    this.context = '',
+  });
+  final String id, label, kind, context;
+  final List<String> aliases;
+  final int? count;
+  bool matches(String query) => [
+    label,
+    context,
+    ...aliases,
+  ].join(' ').toLowerCase().contains(query.trim().toLowerCase());
 }
 
-// Browsing uses the geographic identity already supplied with the owner item.
-// A past trip or contextual mention never establishes present coverage.
+// Past trips and contextual mentions never establish a location or coverage.
 Iterable<RecommendationDetail> libraryLocations(RekkyItem item) =>
     item.recommendation?.locations.where(
       (l) => const {'venue', 'practice', 'service_area'}.contains(l.kind),
     ) ??
     const [];
 
-List<LibraryArea> libraryAreas(List<RekkyItem> items) {
-  final areas = <String, String>{};
-  final kinds = <String, String>{};
-  final direct = <String, String>{};
+Map<String, dynamic>? _browse(RecommendationDetail l) =>
+    l.geography?['browse'] as Map<String, dynamic>?;
+
+List<LibraryArea> libraryAreas(
+  List<RekkyItem> items, {
+  bool regions = false,
+  String? cityId,
+}) {
+  final areas = <String, Map<String, dynamic>>{};
   for (final item in items) {
     for (final location in libraryLocations(item)) {
       final geo = location.geography;
       if (geo?['status'] != 'resolved') continue;
-      final id = geo?['area_id'];
-      if (id is String) direct[id] = location.displayText;
-      final filterIds = (geo?['filter_ids'] as List? ?? const []).toSet();
-      for (final parent in (geo?['hierarchy'] as List? ?? const [])) {
-        if (parent is Map &&
-            parent['id'] is String &&
-            parent['name'] is String &&
-            filterIds.contains(parent['id'])) {
-          final id = parent['id'] as String;
-          areas[id] = parent['name'] as String;
-          kinds[id] = parent['kind'] as String? ?? '';
+      final browse = _browse(location);
+      final candidates = <Map<String, dynamic>>[];
+      if (cityId != null) {
+        if (browse?['destination']?['id'] == cityId &&
+            browse?['neighbourhood'] is Map<String, dynamic>) {
+          candidates.add(browse!['neighbourhood'] as Map<String, dynamic>);
         }
+      } else if (regions) {
+        candidates.addAll(
+          (browse?['regions'] as List? ?? const [])
+              .whereType<Map<String, dynamic>>(),
+        );
+      } else if (browse?['destination'] is Map<String, dynamic>) {
+        candidates.add(browse!['destination'] as Map<String, dynamic>);
+      } else if (geo?['area_id'] is String) {
+        // Older backend: retain the explicit place without exposing all ancestors.
+        candidates.add({
+          'id': geo!['area_id'],
+          'label': location.displayText,
+          'kind': 'locality',
+        });
+      }
+      for (final candidate in candidates) {
+        final id = candidate['id'] as String;
+        areas[id] = candidate;
       }
     }
   }
-  // Prefer the resolved place's display label when it also occurs as a parent.
-  areas.addAll(direct);
-  final counts = <String, int>{};
-  for (final label in areas.values) {
-    counts[label] = (counts[label] ?? 0) + 1;
-  }
   return areas.entries.map((e) {
-    final kind = switch (kinds[e.key]) {
-      'ADM1' => 'State / region',
-      'ADM2' => 'District',
-      'ADM3' => 'Subdistrict',
-      'PCLI' => 'Country',
-      _ => 'Place',
-    };
+    final value = e.value;
     return LibraryArea(
       e.key,
-      counts[e.value]! > 1 ? '${e.value} · $kind' : e.value,
+      value['label'] as String,
+      aliases: (value['aliases'] as List? ?? const [])
+          .whereType<String>()
+          .toList(),
+      count: cityId == null
+          ? items.where((i) => libraryInArea(i, e.key)).length
+          : items
+                .where((i) => libraryInArea(i, cityId, neighbourhoodId: e.key))
+                .length,
+      kind: value['kind'] as String? ?? 'locality',
+      context: value['country_code'] as String? ?? '',
     );
-  }).toList()..sort((a, b) {
-    final label = a.label.compareTo(b.label);
-    return label == 0 ? a.id.compareTo(b.id) : label;
-  });
+  }).toList()..sort((a, b) => a.label.compareTo(b.label));
 }
 
-bool libraryInArea(RekkyItem item, String area) {
+bool libraryInArea(RekkyItem item, String area, {String? neighbourhoodId}) {
   final resolved = libraryLocations(item)
       .where((l) => l.geography?['status'] == 'resolved');
   if (area == 'unresolved') return resolved.isEmpty;
-  return resolved.any(
-    (l) =>
-        l.geography?['area_id'] == area ||
-        (l.geography?['filter_ids'] as List? ?? const []).contains(area),
-  );
+  return resolved.any((l) {
+    final geo = l.geography!;
+    final browse = _browse(l);
+    final matchesArea =
+        geo['area_id'] == area ||
+        (geo['filter_ids'] as List? ?? const []).contains(area);
+    if (!matchesArea) return false;
+    if (neighbourhoodId == null) return true;
+    if (browse?['destination']?['id'] != area) return false;
+    return browse?['neighbourhood']?['id'] == neighbourhoodId ||
+        // Explicit city-wide service coverage is useful within the city. A city-only
+        // practice/venue must never be presented as a neighbourhood match.
+        (l.kind == 'service_area' && geo['area_id'] == area);
+  });
 }
 
 bool libraryMatches(RekkyItem item, String query) {
@@ -115,6 +150,7 @@ List<RekkyItem> librarySelection(
   LibraryShelf? shelf,
   String? typeId,
   String? areaId,
+  String? neighbourhoodId,
   LibraryOrder order = LibraryOrder.browse,
 }) =>
     items
@@ -126,7 +162,12 @@ List<RekkyItem> librarySelection(
                         (c) => c.id == typeId,
                       ) ??
                       false)) &&
-              (areaId == null || libraryInArea(item, areaId)) &&
+              (areaId == null ||
+                  libraryInArea(
+                    item,
+                    areaId,
+                    neighbourhoodId: neighbourhoodId,
+                  )) &&
               (order != LibraryOrder.pinned || item.pinned) &&
               libraryMatches(item, query),
         )

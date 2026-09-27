@@ -91,3 +91,56 @@ fn geographic_wire_separates_source_clean_name_and_resolved_identity() {
     assert_eq!(l["geography"]["area_id"], "geonames:1273294");
     assert_eq!(fixture["locations"][1]["geography"]["status"], "unresolved");
 }
+
+#[test]
+fn browse_scopes_use_supported_cities_not_administrative_namesakes() {
+    use rekky_backend::geography::{browse_projection, display_name};
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../contracts/rekky/v1/fixtures/location_browsing.json"
+    ))
+    .unwrap();
+    let mut city = area(
+        "geonames:1",
+        "Bengaluru",
+        &["Bengaluru", "Bangalore"],
+        &[("geonames:4", "ADM2")],
+    );
+    city.feature = "PPLA".into();
+    let neighbourhood = area(
+        "geonames:2",
+        "Indiranagar",
+        &["Indiranagar"],
+        &[("geonames:4", "ADM2")],
+    );
+    let mut state = area("geonames:3", "State of Karnataka", &["Karnataka"], &[]);
+    state.feature = "ADM1".into();
+    let mut district = area("geonames:4", "Bangalore Urban", &["Bangalore Urban"], &[]);
+    district.feature = "ADM2".into();
+    let areas = vec![city, neighbourhood, state, district];
+    assert_eq!(
+        browse_projection(&fixture["geography"], &areas),
+        fixture["geography"]["browse"]
+    );
+    // Without a supported city ID, a shared district is not a city boundary.
+    let local = json!({"status":"resolved","area_id":"geonames:2","filter_ids":["geonames:2","geonames:3","geonames:4"]});
+    assert_eq!(
+        browse_projection(&local, &areas)["destination"]["id"],
+        "geonames:2"
+    );
+    let district_only = json!({"status":"resolved","area_id":"geonames:4","filter_ids":["geonames:3","geonames:4"]});
+    let b = browse_projection(&district_only, &areas);
+    assert_eq!(b["destination"]["kind"], "region");
+    assert_eq!(b["destination"]["id"], "geonames:4");
+    assert!(b["neighbourhood"].is_null());
+    let mut country = area("geonames:10", "Republic of India", &["India"], &[]);
+    country.feature = "PCLI".into();
+    let country_scope =
+        json!({"status":"resolved","area_id":"geonames:10","filter_ids":["geonames:10"]});
+    assert_eq!(
+        browse_projection(&country_scope, &[country])["destination"]["label"],
+        "India"
+    );
+    assert_eq!(display_name("State of Uttarakhand"), "Uttarakhand");
+    assert_eq!(display_name("National Capital Territory of Delhi"), "Delhi");
+    assert!(browse_projection(&json!({"status":"unresolved"}), &areas).is_null());
+}

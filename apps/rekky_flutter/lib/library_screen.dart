@@ -39,7 +39,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   final scroll = ScrollController();
   LibraryOrder order = LibraryOrder.browse;
   LibraryShelf? shelf;
-  String? typeId, areaId, areaLabel;
+  String? typeId, areaId, areaLabel, neighbourhoodId, neighbourhoodLabel;
   final pendingPins = <String>{};
 
   @override
@@ -69,23 +69,70 @@ class _LibraryScreenState extends State<LibraryScreen> {
     });
   }
 
+  List<RekkyItem> get locationScope => librarySelection(
+    widget.items,
+    query: search.text,
+    shelf: shelf,
+    typeId: typeId,
+    order: order,
+  );
+
   Future<void> chooseArea() async {
+    final scope = locationScope;
     final areas = [
-      const LibraryArea('all', 'All locations'),
-      ...libraryAreas(widget.items),
-      const LibraryArea('unresolved', 'No confirmed location'),
+      LibraryArea('all', 'All locations', count: scope.length),
+      ...libraryAreas(scope),
+      if (scope.any((i) => libraryInArea(i, 'unresolved')))
+        LibraryArea(
+          'unresolved',
+          'No confirmed location',
+          count: scope.where((i) => libraryInArea(i, 'unresolved')).length,
+        ),
     ];
+    final regions = libraryAreas(scope, regions: true);
     final choice = await _choose(
       context,
-      'Saved locations',
+      'Location',
       areas,
       areaId ?? 'all',
-      description: 'Places, practice locations and stated service areas.',
+      regions: regions,
+      searchable: true,
     );
     if (!mounted || choice == null) return;
     change(() {
       areaId = choice == 'all' ? null : choice;
-      areaLabel = areas.firstWhere((a) => a.id == choice).label;
+      areaLabel = [
+        ...areas,
+        ...regions,
+      ].firstWhere((a) => a.id == choice).label;
+      neighbourhoodId = null;
+      neighbourhoodLabel = null;
+    });
+  }
+
+  Future<void> chooseNeighbourhood() async {
+    final city = areaId;
+    if (city == null) return;
+    final scope = locationScope;
+    final options = [
+      LibraryArea(
+        'all',
+        'All neighbourhoods',
+        count: scope.where((i) => libraryInArea(i, city)).length,
+      ),
+      ...libraryAreas(scope, cityId: city),
+    ];
+    final choice = await _choose(
+      context,
+      areaLabel ?? 'Neighbourhood',
+      options,
+      neighbourhoodId ?? 'all',
+      searchable: options.length > 8,
+    );
+    if (!mounted || choice == null) return;
+    change(() {
+      neighbourhoodId = choice == 'all' ? null : choice;
+      neighbourhoodLabel = options.firstWhere((a) => a.id == choice).label;
     });
   }
 
@@ -139,6 +186,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
     typeId = null;
     areaId = null;
     areaLabel = null;
+    neighbourhoodId = null;
+    neighbourhoodLabel = null;
     order = LibraryOrder.browse;
   });
 
@@ -151,6 +200,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       shelf: shelf,
       typeId: typeId,
       areaId: areaId,
+      neighbourhoodId: neighbourhoodId,
       order: order,
     );
     final groups = <String, List<RekkyItem>>{};
@@ -252,6 +302,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           active: areaId != null,
                           onTap: chooseArea,
                         ),
+                        if (areaId != null &&
+                            areaId != 'unresolved' &&
+                            (neighbourhoodId != null ||
+                                libraryAreas(
+                                  locationScope,
+                                  cityId: areaId,
+                                ).isNotEmpty))
+                          _Filter(
+                            label: neighbourhoodId == null
+                                ? 'All neighbourhoods'
+                                : neighbourhoodLabel!,
+                            icon: Icons.near_me_outlined,
+                            active: neighbourhoodId != null,
+                            onTap: chooseNeighbourhood,
+                          ),
                       ],
                     ),
                     const SizedBox(height: 8),
@@ -481,6 +546,8 @@ Future<String?> _choose(
   List<LibraryArea> options,
   String selected, {
   String? description,
+  List<LibraryArea> regions = const [],
+  bool searchable = false,
 }) => showModalBottomSheet<String>(
   context: context,
   isScrollControlled: true,
@@ -491,6 +558,8 @@ Future<String?> _choose(
     options: options,
     selected: selected,
     description: description,
+    regions: regions,
+    searchable: searchable,
   ),
 );
 
@@ -500,7 +569,11 @@ class _Choices extends StatefulWidget {
     required this.options,
     required this.selected,
     this.description,
+    this.regions = const [],
+    this.searchable = false,
   });
+  final List<LibraryArea> regions;
+  final bool searchable;
   final String title, selected;
   final String? description;
   final List<LibraryArea> options;
@@ -510,11 +583,19 @@ class _Choices extends StatefulWidget {
 
 class _ChoicesState extends State<_Choices> {
   String query = '';
+  bool showRegions = false;
+  @override
+  void initState() {
+    super.initState();
+    showRegions =
+        !widget.options.any((o) => o.id == widget.selected) &&
+        widget.regions.any((o) => o.id == widget.selected);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final options = widget.options
-        .where((o) => o.label.toLowerCase().contains(query.toLowerCase()))
-        .toList();
+    final source = showRegions ? widget.regions : widget.options;
+    final options = source.where((o) => o.matches(query)).toList();
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: SizedBox(
@@ -551,7 +632,31 @@ class _ChoicesState extends State<_Choices> {
                       ),
                       child: Text(widget.description!),
                     ),
-                  if (widget.options.length > 8)
+                  if (widget.regions.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      child: Wrap(
+                        spacing: 8,
+                        children: [
+                          ChoiceChip(
+                            label: const Text('Cities & places'),
+                            selected: !showRegions,
+                            onSelected: (_) =>
+                                setState(() => showRegions = false),
+                          ),
+                          ChoiceChip(
+                            label: const Text('Regions'),
+                            selected: showRegions,
+                            onSelected: (_) =>
+                                setState(() => showRegions = true),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (widget.searchable || widget.options.length > 8)
                     Padding(
                       padding: const EdgeInsets.all(16),
                       child: TextField(
@@ -572,9 +677,25 @@ class _ChoicesState extends State<_Choices> {
                 return ListTile(
                   title: Text(option.label),
                   selected: option.id == widget.selected,
-                  trailing: option.id == widget.selected
-                      ? const Icon(Icons.check)
+                  subtitle:
+                      source.where((o) => o.label == option.label).length > 1 &&
+                          option.context.isNotEmpty
+                      ? Text(option.context)
                       : null,
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (option.count != null)
+                        Text(
+                          '${option.count}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      if (option.id == widget.selected) ...[
+                        const SizedBox(width: 12),
+                        const Icon(Icons.check),
+                      ],
+                    ],
+                  ),
                   onTap: () => Navigator.pop(context, option.id),
                 );
               },

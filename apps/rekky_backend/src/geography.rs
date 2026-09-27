@@ -160,6 +160,120 @@ pub fn resolve(name: &str, areas: &[Area]) -> Value {
         "match_method":"name_and_context"})
 }
 
+/// Public display names are presentation, not a replacement for geographic IDs.
+pub fn display_name(name: &str) -> String {
+    for prefix in [
+        "National Capital Territory of ",
+        "State of ",
+        "Province of ",
+    ] {
+        if let Some(short) = name.strip_prefix(prefix) {
+            return short.to_owned();
+        }
+    }
+    name.to_owned()
+}
+fn browse_area(area: &Area, kind: &str) -> Value {
+    static COUNTRIES: OnceLock<Value> = OnceLock::new();
+    let countries = COUNTRIES.get_or_init(|| {
+        serde_json::from_str(include_str!("../data/country_names.json"))
+            .expect("bundled GeoNames country names")
+    });
+    let label = if area.feature == "PCLI" {
+        countries[&area.country]
+            .as_str()
+            .unwrap_or(&area.name)
+            .to_owned()
+    } else {
+        display_name(&area.name)
+    };
+    json!({"id":area.id,"label":label,"kind":kind,
+        "aliases":area.aliases,"country_code":area.country})
+}
+
+/// Only supported filter identities can establish browsing membership. Never
+/// map an entire district to its namesake city or infer membership by proximity.
+pub fn browse_projection(geo: &Value, areas: &[Area]) -> Value {
+    if geo["status"] != "resolved" {
+        return Value::Null;
+    }
+    let supported: Vec<&Area> = areas
+        .iter()
+        .filter(|a| {
+            geo["filter_ids"]
+                .as_array()
+                .is_some_and(|ids| ids.iter().any(|id| id == &a.id))
+        })
+        .collect();
+    let Some(primary) = supported.iter().find(|a| geo["area_id"] == a.id).copied() else {
+        return Value::Null;
+    };
+    let mut cities: Vec<&Area> = supported
+        .iter()
+        .copied()
+        .filter(|a| a.feature.starts_with("PPLA") || a.feature == "PPLC" || a.feature == "PPL")
+        .collect();
+    // Gazetteer neighbourhoods can be typed PPL. An explicitly supported
+    // administrative-seat city remains the browse parent, not its suburb.
+    if cities
+        .iter()
+        .any(|a| a.feature.starts_with("PPLA") || a.feature == "PPLC")
+    {
+        cities.retain(|a| a.feature.starts_with("PPLA") || a.feature == "PPLC");
+    }
+    // A settlement nested in another named settlement browses under its parent.
+    let candidates = cities.clone();
+    cities.retain(|a| {
+        !candidates
+            .iter()
+            .any(|b| a.id != b.id && a.ancestors.contains(&b.id))
+    });
+    let destination = if cities.len() == 1 {
+        cities[0]
+    } else {
+        primary
+    };
+    let kind = if destination.feature.starts_with("ADM") || destination.feature == "PCLI" {
+        "region"
+    } else if destination.feature == "PPLX" || cities.len() > 1 {
+        "locality"
+    } else {
+        "city"
+    };
+    let neighbourhood = (kind == "city"
+        && primary.id != destination.id
+        && !primary.feature.starts_with("ADM")
+        && primary.feature != "PCLI")
+        .then(|| browse_area(primary, "neighbourhood"));
+    let regions: Vec<Value> = supported
+        .iter()
+        .filter(|a| a.feature == "ADM1" || a.feature == "PCLI")
+        .map(|a| {
+            browse_area(
+                a,
+                if a.feature == "PCLI" {
+                    "country"
+                } else {
+                    "region"
+                },
+            )
+        })
+        .collect();
+    let mut destination_json = browse_area(destination, kind);
+    if primary.id == destination.id && primary.name.ends_with(" Cantonment") {
+        destination_json["label"] = json!(
+            geo["label"]
+                .as_str()
+                .unwrap_or(&primary.name)
+                .split(',')
+                .next()
+                .unwrap_or(&primary.name)
+        );
+    }
+    json!({"version":1,"destination":destination_json,"neighbourhood":neighbourhood,"regions":regions,
+        "membership":"supported_geographic_scope"})
+}
+
 pub async fn enrich(
     connection: &mut PgConnection,
     locations: &mut [Value],
@@ -176,6 +290,13 @@ pub async fn enrich(
         } else {
             resolve(&name, &areas)
         };
+        if l["geography"]["status"] == "resolved" {
+            let ids: Vec<String> =
+                serde_json::from_value(l["geography"]["filter_ids"].clone()).unwrap_or_default();
+            let scoped: Vec<Area> = sqlx::query_as("SELECT id,name,label,country,feature,population,aliases,ancestors,hierarchy FROM geographic_areas WHERE id=ANY($1)")
+                .bind(ids).fetch_all(&mut *connection).await?;
+            l["geography"]["browse"] = browse_projection(&l["geography"], &scoped);
+        }
     }
     Ok(())
 }
@@ -191,7 +312,7 @@ pub async fn process_one(pool: &PgPool, owner: Option<uuid::Uuid>) -> Result<boo
     if catalog == 0 {
         return Ok(false);
     }
-    let row=sqlx::query("SELECT id,recommendation FROM knowledge_items WHERE deleted_at IS NULL AND jsonb_typeof(recommendation)='object' AND jsonb_typeof(recommendation->'locations')='array' AND ($1::uuid IS NULL OR owner_id=$1) AND recommendation->'geography_revision' IS DISTINCT FROM to_jsonb($2::bigint) ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED")
+    let row=sqlx::query("SELECT id,recommendation FROM knowledge_items WHERE deleted_at IS NULL AND jsonb_typeof(recommendation)='object' AND jsonb_typeof(recommendation->'locations')='array' AND ($1::uuid IS NULL OR owner_id=$1) AND (recommendation->'geography_revision' IS DISTINCT FROM to_jsonb($2::bigint) OR EXISTS(SELECT 1 FROM jsonb_array_elements(recommendation->'locations') l WHERE l->'geography'->>'status'='resolved' AND l->'geography'->'browse'->'version' IS DISTINCT FROM '1'::jsonb)) ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED")
         .bind(owner).bind(catalog).fetch_optional(&mut *tx).await?;
     let Some(row) = row else { return Ok(false) };
     let id: uuid::Uuid = row.get("id");

@@ -3160,6 +3160,19 @@ async fn geography_enrichment_and_filters_preserve_roles_privacy_and_edit_fences
             .await
             .unwrap()
     );
+    // An older worker may have written the current catalog revision without
+    // the new projection. Repair the missing derived format once, not forever.
+    sqlx::query("UPDATE knowledge_items SET recommendation=recommendation #- '{locations,0,geography,browse}' WHERE id=$1").bind(ids[0]).execute(&t.pool).await.unwrap();
+    assert!(
+        rekky_backend::geography::process_one(&t.pool, Some(owner))
+            .await
+            .unwrap()
+    );
+    assert!(
+        !rekky_backend::geography::process_one(&t.pool, Some(owner))
+            .await
+            .unwrap()
+    );
     let path = "/v1/items?area_id=geonames:990000001";
     let (_, body) = t.call(Method::GET, path, Some(&token), None, &[]).await;
     assert_eq!(body["items"].as_array().unwrap().len(), 2); // No past trip/context as coverage.
@@ -3169,6 +3182,10 @@ async fn geography_enrichment_and_filters_preserve_roles_privacy_and_edit_fences
         assert_eq!(item["recommendation"]["rating"]["value"], 8);
         assert_eq!(item["recommendation"]["contact"]["phone"], "+12025550123");
         assert_eq!(item["recommendation"]["locations"][0]["name"], "Testburg");
+        assert_eq!(
+            item["recommendation"]["locations"][0]["geography"]["browse"]["destination"]["id"],
+            "geonames:990000001"
+        );
         assert_eq!(
             item["recommendation"]["locations"][0]["text"],
             "based right here in Testburg"

@@ -1,0 +1,15 @@
+{
+  "geography": {
+    "status": "resolved",
+    "area_id": "geonames:2",
+    "filter_ids": ["geonames:1", "geonames:2", "geonames:3", "geonames:4"],
+    "browse": {
+      "version": 1,
+      "destination": {"id":"geonames:1","label":"Bengaluru","kind":"city","aliases":["bengaluru","bangalore"],"country_code":"IN"},
+      "neighbourhood": {"id":"geonames:2","label":"Indiranagar","kind":"neighbourhood","aliases":["indiranagar"],"country_code":"IN"},
+      "regions": [{"id":"geonames:3","label":"Karnataka","kind":"region","aliases":["karnataka"],"country_code":"IN"}],
+      "membership": "supported_geographic_scope"
+    }
+  },
+  "rules": "City includes supported neighbourhoods. City-wide service_area may match neighbourhood filters, but city-only practice/venue does not. Administrative ancestors do not become city options or imply city membership. Identity, content, audience and source are unchanged."
+}

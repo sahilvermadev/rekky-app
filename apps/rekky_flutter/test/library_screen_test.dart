@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -163,29 +164,95 @@ void main() {
     expect(libraryAreas(items).where((a) => a.label == 'Delhi').length, 1);
   });
 
-  test('location choices disambiguate administrative areas and omit unsupported parents', () {
-    final areas = libraryAreas([
-      entry(
-        '1',
-        'Service',
-        geography: {
-          'status': 'resolved',
-          'area_id': 'local',
-          'label': 'Landour',
-          'filter_ids': ['local', 'district', 'subdistrict'],
-          'hierarchy': [
-            {'id': 'district', 'name': 'Dehradun', 'kind': 'ADM2'},
-            {'id': 'subdistrict', 'name': 'Dehradun', 'kind': 'ADM3'},
-            {'id': 'unsupported', 'name': 'Elsewhere', 'kind': 'PPLA'},
-          ],
-        },
-      ),
-    ]);
+  test('city scopes reuse the wire contract, aliases and unique counts', () {
+    final geo =
+        (jsonDecode(
+              File('../../contracts/rekky/v1/fixtures/location_browsing.json')
+                  .readAsStringSync(),
+            ) as Map<String, dynamic>)['geography']
+            as Map<String, dynamic>;
+    final cityGeo = Map<String, dynamic>.from(geo)..['area_id'] = 'geonames:1';
+    cityGeo['browse'] = Map<String, dynamic>.from(geo['browse'] as Map)
+      ..['neighbourhood'] = null;
+    final items = [
+      entry('1', 'Bar', geography: geo),
+      entry('2', 'City restaurant', geography: cityGeo),
+      entry('3', 'Taxi', role: 'service_area', geography: cityGeo),
+      entry('4', 'Doctor', role: 'practice', geography: cityGeo),
+      entry('5', 'Trip', role: 'past_experience', geography: geo),
+    ];
+    final cities = libraryAreas(items);
+    expect(cities.length, 1);
+    expect(cities.single.label, 'Bengaluru');
+    expect(cities.single.count, 4);
+    expect(cities.single.matches('Bangalore'), true);
+    expect(libraryAreas(items, regions: true).single.label, 'Karnataka');
+    expect(libraryAreas(items, cityId: 'geonames:1').single.count, 2);
     expect(
-      areas.map((a) => a.label),
-      containsAll(['Landour', 'Dehradun · District', 'Dehradun · Subdistrict']),
+      librarySelection(
+        items,
+        areaId: 'geonames:1',
+        neighbourhoodId: 'geonames:2',
+      ).map((i) => i.id),
+      ['3', '1'],
     );
-    expect(areas.any((a) => a.id == 'unsupported'), isFalse);
+    expect(
+      libraryAreas([
+        entry(
+          'old',
+          'Older',
+          geography: {
+            'status': 'resolved',
+            'area_id': 'local',
+            'label': 'Landour',
+            'filter_ids': ['local', 'district'],
+            'hierarchy': [
+              {'id': 'district', 'name': 'Dehradun', 'kind': 'ADM2'},
+            ],
+          },
+        ),
+      ]).single.label,
+      'Landour',
+    );
+  });
+
+  testWidgets('choose a city once, then optionally narrow its neighbourhood', (
+    tester,
+  ) async {
+    final geo =
+        (jsonDecode(
+              File('../../contracts/rekky/v1/fixtures/location_browsing.json')
+                  .readAsStringSync(),
+            ) as Map<String, dynamic>)['geography']
+            as Map<String, dynamic>;
+    final city = Map<String, dynamic>.from(geo)..['area_id'] = 'geonames:1';
+    city['browse'] = Map<String, dynamic>.from(geo['browse'] as Map)
+      ..['neighbourhood'] = null;
+    await tester.pumpWidget(
+      app([
+        entry('1', 'Local bar', geography: geo),
+        entry('2', 'City-only venue', geography: city),
+      ]),
+    );
+    await tester.tap(find.text('All locations'));
+    await tester.pumpAndSettle();
+    expect(find.text('Karnataka'), findsNothing);
+    expect(find.text('Indiranagar'), findsNothing);
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Find a location'),
+      'Bangalore',
+    );
+    await tester.pump();
+    await tester.tap(find.text('Bengaluru'));
+    await tester.pumpAndSettle();
+    expect(find.text('Local bar'), findsOneWidget);
+    expect(find.text('City-only venue'), findsOneWidget);
+    await tester.tap(find.text('All neighbourhoods'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Indiranagar'));
+    await tester.pumpAndSettle();
+    expect(find.text('Local bar'), findsOneWidget);
+    expect(find.text('City-only venue'), findsNothing);
   });
 
   testWidgets('empty Library invites recording without blank categories', (
@@ -371,7 +438,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('All locations'));
     await tester.pumpAndSettle();
-    expect(find.text('Saved locations'), findsOneWidget);
+    expect(find.text('Location'), findsOneWidget);
     tester.view.viewInsets = FakeViewPadding(bottom: 280);
     await tester.pumpAndSettle();
     await tester.enterText(
@@ -397,7 +464,7 @@ void main() {
     await tester.tap(choice);
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    expect(find.text('Saved locations'), findsNothing);
+    expect(find.text('Location'), findsNothing);
     expect(find.text('Area 7'), findsOneWidget);
   });
   testWidgets('dark Library has no layout errors', (tester) async {
