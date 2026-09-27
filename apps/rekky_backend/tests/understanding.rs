@@ -236,3 +236,11 @@ fn an_activity_can_have_a_venue_without_becoming_a_service_address() {
     assert!(!partial);
     assert_eq!(items[0].recommendation["locations"][0]["role"], "venue");
 }
+
+#[test]
+fn nearby_city_is_not_exact_practice_or_service_coverage() {
+    let source = "Mira is based near Kochi and was helpful.";
+    let proposal=serde_json::from_value(serde_json::json!({"items":[{"subject":"Mira","subject_evidence":[1],"entity_kind":"person_service","experience":"firsthand","summary":{"text":source,"evidence":[1]},"observations":[],"locations":[{"role":"practice","text":"Kochi","evidence":[1]}],"use_cases":[]}],"ignored_unit_ids":[],"unresolved_unit_ids":[]})).unwrap();
+    let (items, _) = rekky_backend::extraction::validate(proposal, source).unwrap();
+    assert_eq!(items[0].recommendation["locations"][0]["role"], "context");
+}

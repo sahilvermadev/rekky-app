@@ -37,6 +37,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         extractor,
         places: Arc::new(rekky_backend::places::GooglePlaces::from_env()),
     };
+    let geography_pool = state.pool.clone();
+    let geography_worker = tokio::spawn(async move {
+        loop {
+            if rekky_backend::geography::process_one(&geography_pool, None)
+                .await
+                .is_err()
+            {
+                eprintln!("Local geography enrichment failed; will retry");
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        }
+    });
     let learning_pool = state.pool.clone();
     let learning_worker = tokio::spawn(async move {
         let learner = rekky_backend::category_learning::OpenAiCategoryLearner::from_env();
@@ -70,5 +82,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     worker.abort();
     learning_worker.abort();
+    geography_worker.abort();
     Ok(())
 }

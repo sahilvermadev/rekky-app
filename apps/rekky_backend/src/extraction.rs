@@ -460,10 +460,17 @@ pub fn validate_with_catalog(
             let cited = support(&location.evidence, &units)?;
             let explicit_practice = practice_pattern.is_match(&cited);
             let explicit_service = service_pattern.is_match(&cited);
+            let approximate = Regex::new(&format!(
+                r"(?i)\b(?:near|around|outside|outskirts of)\s+{}\b",
+                regex::escape(location.text.trim())
+            ))
+            .is_ok_and(|pattern| pattern.is_match(&cited));
             if (location.role == "venue"
                 && !["place", "activity_event"].contains(&item.entity_kind.as_str()))
                 || (location.role == "practice" && !explicit_practice)
                 || (location.role == "service_area" && !explicit_service)
+                || (approximate
+                    && ["venue", "practice", "service_area"].contains(&location.role.as_str()))
             {
                 location.role = if past_pattern.is_match(&cited) {
                     "past_experience"

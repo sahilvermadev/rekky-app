@@ -61,6 +61,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "015_voice_sharing_default.sql",
         include_str!("../migrations/015_voice_sharing_default.sql"),
     ),
+    (
+        "016_geographic_locations.sql",
+        include_str!("../migrations/016_geographic_locations.sql"),
+    ),
 ];
 
 pub async fn run(pool: &PgPool) -> Result<(), sqlx::Error> {

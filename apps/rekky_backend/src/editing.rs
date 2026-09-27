@@ -199,6 +199,18 @@ impl EditInput {
             && previous["destination"]["url"] == self.destination.url
             && (self.subject != previous_subject
                 || previous["entity_kind"] != self.entity_kind
-                || previous["locations"] != json!(self.locations))
+                || previous["locations"]
+                    .as_array()
+                    .map(|ls| {
+                        ls.iter()
+                            .map(|l| json!({"role":l["role"],"text":l["text"]}))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default()
+                    != self
+                        .locations
+                        .iter()
+                        .map(|l| json!({"role":l.role,"text":l.text}))
+                        .collect::<Vec<_>>())
     }
 }

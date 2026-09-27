@@ -1,0 +1,6 @@
+{
+  "locations": [
+    {"role":"practice","text":"based right here in Delhi","name":"Delhi","geography":{"status":"resolved","area_id":"geonames:1273294","name":"Delhi","label":"Delhi","country_code":"IN","hierarchy":[{"id":"geonames:1273293","name":"National Capital Territory of Delhi","kind":"ADM1"}],"filter_ids":["geonames:1273294","geonames:1273293","geonames:1269750"],"source":"geonames","source_url":"https://www.geonames.org/","match_method":"name_and_context"}},
+    {"role":"practice","text":"Dwarka","name":"Dwarka","geography":{"status":"unresolved"}}
+  ]
+}

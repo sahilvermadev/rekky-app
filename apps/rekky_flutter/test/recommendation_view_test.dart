@@ -18,6 +18,43 @@ RekkyItem fixture([String name = 'structured_recommendation']) {
 
 void main() {
   testWidgets(
+    'geographic labels replace conversational phrases while roles and source remain',
+    (tester) async {
+      final wire = jsonDecode(
+        File('../../contracts/rekky/v1/fixtures/editorial_recommendation.json')
+            .readAsStringSync(),
+      ) as Map<String, dynamic>;
+      final locations = jsonDecode(
+        File('../../contracts/rekky/v1/fixtures/geographic_locations.json')
+            .readAsStringSync(),
+      )['locations'];
+      wire['recommendation']['locations'] = [locations[0]];
+      final item = RekkyItem.fromJson(wire);
+      expect(
+        item.recommendation!.locations.single.text,
+        'based right here in Delhi',
+      );
+      expect(item.recommendation!.locations.single.kind, 'practice');
+      expect(item.recommendation!.primaryLocation, 'Delhi');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: RecommendationView(item: item, expanded: true),
+            ),
+          ),
+        ),
+      );
+      expect(find.text('Delhi'), findsOneWidget);
+      expect(find.textContaining('based right here'), findsNothing);
+      wire['recommendation']['locations'] = [locations[1]];
+      expect(
+        RekkyItem.fromJson(wire).recommendation!.primaryLocation,
+        'Dwarka',
+      );
+    },
+  );
+  testWidgets(
     'learned category uses the same compact card and readable detail',
     (tester) async {
       final item = RekkyItem.fromJson(
@@ -66,7 +103,7 @@ void main() {
         ),
       );
       expect(find.text('Taxi service'), findsOneWidget);
-      expect(find.text('Serves Kochi'), findsOneWidget);
+      expect(find.text('Kochi'), findsOneWidget);
       expect(find.text(item.recommendation!.summary), findsOneWidget);
       for (final o in item.recommendation!.observations) {
         expect(find.text(o.text), findsOneWidget);

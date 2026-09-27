@@ -15,3 +15,5 @@ Personal ratings are additive inside recommendation v2. [Rating fixtures](v1/fix
 Provider contact snapshots and matching preferences are illustrated in `v1/fixtures/contact.json`. The number inherits the containing item's audience, with no separate visibility property. See [contact API and precedence](../../docs/CONTACTS.md).
 
 Quota waiting is an additive receipt state: `waiting_reason: "processing_limit"` with UTC `retry_at` for a transcribed capture awaiting a new extraction slot. Both fields are null otherwise; old clients may ignore them. The time is earliest eligibility, not guaranteed completion. The `remember_waiting_limit` fixture is shared by Rust and Dart.
+
+Locations add optional `name` and `geography` fields without changing `text` or `role`. `v1/fixtures/geographic_locations.json` distinguishes a resolved area and an ambiguous clean name. `GET /v1/items` accepts `area_id` and optional `location_role`, with filter-bound pagination; owner scope always applies. See [geographic locations](../../docs/GEOGRAPHIC_LOCATIONS.md).

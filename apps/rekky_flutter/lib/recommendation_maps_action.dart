@@ -14,7 +14,7 @@ Uri? recommendationMapsSearch(RekkyItem item) {
   }
   final locations = recommendation.locations
       .where((location) => location.kind == 'venue')
-      .map((location) => location.text.trim())
+      .map((location) => location.displayText.trim())
       .where((text) => text.isNotEmpty)
       .toSet();
   // Don't choose a branch from conflicting locations or use the device's city.

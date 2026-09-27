@@ -47,8 +47,18 @@ class RekkyItem {
 }
 
 class RecommendationDetail {
-  const RecommendationDetail(this.kind, this.text);
+  const RecommendationDetail(
+    this.kind,
+    this.text, {
+    this.locationName,
+    this.geography,
+  });
   final String kind, text;
+  final String? locationName;
+  final Map<String, dynamic>? geography;
+  String get displayText => geography?['status'] == 'resolved'
+      ? (geography?['label'] as String? ?? locationName ?? text)
+      : locationName ?? text;
 }
 
 class CategoryConcept {
@@ -187,10 +197,8 @@ class RekkyRecommendation {
             : location.kind == 'venue',
       )
       .firstOrNull;
-  String? get primaryLocation => _primaryLocation?.text;
-  String? get primaryLocationLabel => _primaryLocation?.kind == 'service_area'
-      ? 'Serves ${_primaryLocation!.text}'
-      : primaryLocation;
+  String? get primaryLocation => _primaryLocation?.displayText;
+  String? get primaryLocationLabel => primaryLocation;
   List<RecommendationDetail> get cautions =>
       observations.where((o) => o.kind == 'caution').toList();
   factory RekkyRecommendation.fromJson(
@@ -222,7 +230,12 @@ class RekkyRecommendation {
         .toList(),
     locations: (json['locations'] as List)
         .map(
-          (o) => RecommendationDetail(o['role'] as String, o['text'] as String),
+          (o) => RecommendationDetail(
+            o['role'] as String,
+            o['text'] as String,
+            locationName: o['name'] as String?,
+            geography: o['geography'] as Map<String, dynamic>?,
+          ),
         )
         .toList(),
     useCases: (json['use_cases'] as List).cast<String>(),

@@ -136,7 +136,7 @@ class RecommendationView extends StatelessWidget {
           facet.label,
     };
     final otherLocations = recommendation.locations.where(
-      (l) => l.text != recommendation.primaryLocation,
+      (l) => l.displayText != recommendation.primaryLocation,
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -232,7 +232,7 @@ class RecommendationView extends StatelessWidget {
                 'past_experience' => 'Experience in',
                 'venue' when recommendation.entityKind == 'place' => 'Also in',
                 _ => 'Mentioned',
-              }}: ${location.text}',
+              }}: ${location.displayText}',
               style: secondary,
             ),
           ),

@@ -1661,10 +1661,16 @@ async fn save_item(State(state): State<AppState>, headers: HeaderMap, body: Byte
 #[derive(Deserialize)]
 struct ListQuery {
     cursor: Option<String>,
+    area_id: Option<String>,
+    location_role: Option<String>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ItemCursor {
+    #[serde(default)]
+    area_id: Option<String>,
+    #[serde(default)]
+    location_role: Option<String>,
     created_at: DateTime<Utc>,
     id: Uuid,
 }
@@ -1687,12 +1693,38 @@ async fn list_items(
 ) -> ApiResult {
     let owner_id = owner(&state, &headers, true).await?;
     let cursor: Option<ItemCursor> = query.cursor.as_deref().map(decode).transpose()?;
-    let rows: Vec<ItemRow> = sqlx::query_as("SELECT id,capture_id,subject,body,visibility,revision,created_at,recommendation,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review FROM knowledge_items WHERE owner_id=$1 AND deleted_at IS NULL AND ($2::timestamptz IS NULL OR (created_at,id)<($2::timestamptz,$3::uuid)) ORDER BY created_at DESC,id DESC LIMIT 21")
-        .bind(owner_id).bind(cursor.as_ref().map(|c| c.created_at)).bind(cursor.as_ref().map(|c| c.id))
+    if query.area_id.as_ref().is_some_and(|id| {
+        !id.starts_with("geonames:")
+            || id.len() > 40
+            || !id[9..].chars().all(|c| c.is_ascii_digit())
+            || id.len() == 9
+    }) || query.location_role.as_deref().is_some_and(|r| {
+        ![
+            "venue",
+            "practice",
+            "service_area",
+            "past_experience",
+            "context",
+        ]
+        .contains(&r)
+    }) || (query.location_role.is_some() && query.area_id.is_none())
+    {
+        return Err(ApiError::bad("Choose a valid area and location role"));
+    }
+    if cursor
+        .as_ref()
+        .is_some_and(|c| c.area_id != query.area_id || c.location_role != query.location_role)
+    {
+        return Err(ApiError::cursor());
+    }
+    let rows: Vec<ItemRow> = sqlx::query_as("SELECT id,capture_id,subject,body,visibility,revision,created_at,recommendation,EXISTS(SELECT 1 FROM captures c WHERE c.id=knowledge_items.capture_id AND c.status='partial') needs_review FROM knowledge_items WHERE owner_id=$1 AND deleted_at IS NULL AND ($2::timestamptz IS NULL OR (created_at,id)<($2::timestamptz,$3::uuid)) AND ($4::text IS NULL OR EXISTS(SELECT 1 FROM item_location_index l WHERE l.item_id=knowledge_items.id AND l.locations_snapshot=knowledge_items.recommendation->'locations' AND knowledge_items.recommendation->'geography_revision'=to_jsonb((SELECT revision FROM geographic_catalog WHERE singleton)) AND l.area_ids @> ARRAY[$4] AND (($5::text IS NOT NULL AND l.role=$5) OR ($5 IS NULL AND l.role IN ('venue','practice','service_area'))))) ORDER BY created_at DESC,id DESC LIMIT 21")
+        .bind(owner_id).bind(cursor.as_ref().map(|c| c.created_at)).bind(cursor.as_ref().map(|c| c.id)).bind(&query.area_id).bind(&query.location_role)
         .fetch_all(&state.pool).await?;
     let next_cursor = if rows.len() > 20 {
         rows.get(19).map(|r| {
             encode(&ItemCursor {
+                area_id: query.area_id.clone(),
+                location_role: query.location_role.clone(),
                 created_at: r.created_at,
                 id: r.id,
             })

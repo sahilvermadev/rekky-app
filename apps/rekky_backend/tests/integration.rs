@@ -3112,3 +3112,134 @@ async fn remember_reports_quota_wait_and_resumes_without_retranscription() {
         t.cleanup().await;
     }
 }
+
+#[tokio::test]
+async fn geography_enrichment_and_filters_preserve_roles_privacy_and_edit_fences() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    let (owner, token) = t.sign_in("google", "valid-a").await;
+    let (_, other) = t.sign_in("google", "valid-b").await;
+    for who in [&token, &other] {
+        t.call(
+            Method::POST,
+            "/v1/me/visibility-disclosure",
+            Some(who),
+            Some(json!({"accept":true})),
+            &[],
+        )
+        .await;
+    }
+    // Dedicated synthetic geographic IDs; no public geocoder or private note is used.
+    sqlx::query("INSERT INTO geographic_areas(id,name,label,country,feature,population,aliases,ancestors,hierarchy) VALUES('geonames:990000001','Testburg','Testburg','ZZ','PPL',0,ARRAY['testburg'],ARRAY['geonames:990000002'],'[]') ON CONFLICT DO NOTHING").execute(&t.pool).await.unwrap();
+    sqlx::query("UPDATE geographic_catalog SET revision=1 WHERE singleton")
+        .execute(&t.pool)
+        .await
+        .unwrap();
+    let capture = Uuid::new_v4();
+    sqlx::query("INSERT INTO captures(id,owner_id,kind,status,desired_visibility) VALUES($1,$2,'typed','completed','private')")
+        .bind(capture)
+        .bind(owner)
+        .execute(&t.pool)
+        .await
+        .unwrap();
+    let mut ids = vec![];
+    for role in ["practice", "service_area", "past_experience", "context"] {
+        let id = Uuid::new_v4();
+        ids.push(id);
+        let r = json!({"version":2,"entity_kind":"person_service","locations":[{"role":role,"text":"based right here in Testburg"}],"rating":{"value":8},"contact":{"phone":"+12025550123"}});
+        sqlx::query("INSERT INTO knowledge_items(id,capture_id,owner_id,subject,body,visibility,recommendation) VALUES($1,$2,$3,'Test helper','Original body','private',$4)").bind(id).bind(capture).bind(owner).bind(r).execute(&t.pool).await.unwrap();
+        assert!(
+            rekky_backend::geography::process_one(&t.pool, Some(owner))
+                .await
+                .unwrap()
+        );
+    }
+    assert!(
+        !rekky_backend::geography::process_one(&t.pool, Some(owner))
+            .await
+            .unwrap()
+    );
+    let path = "/v1/items?area_id=geonames:990000001";
+    let (_, body) = t.call(Method::GET, path, Some(&token), None, &[]).await;
+    assert_eq!(body["items"].as_array().unwrap().len(), 2); // No past trip/context as coverage.
+    for item in body["items"].as_array().unwrap() {
+        assert_eq!(item["body"], "Original body");
+        assert_eq!(item["visibility"], "private");
+        assert_eq!(item["recommendation"]["rating"]["value"], 8);
+        assert_eq!(item["recommendation"]["contact"]["phone"], "+12025550123");
+        assert_eq!(item["recommendation"]["locations"][0]["name"], "Testburg");
+        assert_eq!(
+            item["recommendation"]["locations"][0]["text"],
+            "based right here in Testburg"
+        );
+    }
+    assert_eq!(
+        t.call(Method::GET, path, Some(&other), None, &[]).await.1["items"],
+        json!([])
+    );
+    assert_eq!(
+        t.call(
+            Method::GET,
+            "/v1/items?area_id=geonames:990000002&location_role=service_area",
+            Some(&token),
+            None,
+            &[]
+        )
+        .await
+        .1["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        t.call(
+            Method::GET,
+            "/v1/items?area_id=geonames:990000001&location_role=past_experience",
+            Some(&token),
+            None,
+            &[]
+        )
+        .await
+        .1["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    // An owner edit invalidates the old index immediately, before background work.
+    sqlx::query("UPDATE knowledge_items SET recommendation=jsonb_set(recommendation - 'geography_revision','{locations}',$2),revision=revision+1 WHERE id=$1").bind(ids[0]).bind(json!([{"role":"practice","text":"Unknown village"}])).execute(&t.pool).await.unwrap();
+    assert_eq!(
+        t.call(Method::GET, path, Some(&token), None, &[]).await.1["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    rekky_backend::geography::process_one(&t.pool, Some(owner))
+        .await
+        .unwrap();
+    assert_eq!(
+        t.call(Method::GET, path, Some(&token), None, &[]).await.1["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    // Soft-deleted items cannot appear through their residual derived index.
+    sqlx::query("UPDATE knowledge_items SET deleted_at=now() WHERE id=$1")
+        .bind(ids[1])
+        .execute(&t.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        t.call(Method::GET, path, Some(&token), None, &[]).await.1["items"],
+        json!([])
+    );
+    t.cleanup().await;
+    sqlx::query("DELETE FROM geographic_areas WHERE id='geonames:990000001'")
+        .execute(&t.pool)
+        .await
+        .unwrap();
+}

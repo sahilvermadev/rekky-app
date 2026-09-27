@@ -13,3 +13,5 @@ pub mod voice;
 pub use app::{AppState, router};
 
 pub mod category_learning;
+
+pub mod geography;

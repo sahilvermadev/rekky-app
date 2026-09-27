@@ -808,6 +808,17 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
               if (value == 'contacts') unawaited(_contactSettings());
               if (value == 'recordings') unawaited(_openVoiceDrafts());
               if (value == 'processing') unawaited(_processingSettings());
+              if (value == 'credits') {
+                showAboutDialog(
+                  context: context,
+                  applicationName: 'Rekky',
+                  children: const [
+                    Text(
+                      'Geographic names and area hierarchy: GeoNames (geonames.org), CC BY 4.0 (creativecommons.org/licenses/by/4.0). Names are normalized and selected datasets are combined for local matching. Coverage and matches may be incomplete.',
+                    ),
+                  ],
+                );
+              }
               if (value == 'signout') unawaited(_signOut());
             },
             itemBuilder: (_) => const [
@@ -820,6 +831,7 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
                 value: 'recordings',
                 child: Text('Pending recordings'),
               ),
+              PopupMenuItem(value: 'credits', child: Text('About Rekky')),
               PopupMenuItem(value: 'signout', child: Text('Sign out')),
             ],
           ),
