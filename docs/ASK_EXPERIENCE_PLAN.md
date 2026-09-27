@@ -1,6 +1,6 @@
 # Ask: from a loose intention to a useful decision
 
-Status: approved product direction; first integrated ASK-0/1 pilot implemented 2026-09-27. ASK-2 adds spoken questions and bounded follow-up refinement ([checkpoint](ASK_SPEAK_AND_REFINE.md), 2026-09-28). ASK-3 now adds a bounded own-library comparison pilot ([checkpoint](ASK_COMPARE_PILOT.md), 2026-09-28). Full slice/release gates remain open. See [implementation, evidence and limitations](ASK_AGENT_SLICE.md). This document expands the Ask sections of [the canonical product plan](REKKY_FLUTTER_PRODUCT_PLAN.md); the canonical plan owns access, consent, retention and release gates. ASK-0 through ASK-7 are implementation checkpoints within that plan, not a replacement phase system.
+Status: approved product direction; first integrated ASK-0/1 pilot implemented 2026-09-27. ASK-2 adds spoken questions and bounded follow-up refinement ([checkpoint](ASK_SPEAK_AND_REFINE.md), 2026-09-28). ASK-3 now adds a bounded own-library comparison pilot ([checkpoint](ASK_COMPARE_PILOT.md), 2026-09-28). The observed local-discovery/follow-up failure and its unimplemented repairs are tracked in the [conversation reliability checkpoint](ASK_CONVERSATION_REPAIR.md). Full slice/release gates remain open. See [implementation, evidence and limitations](ASK_AGENT_SLICE.md). This document expands the Ask sections of [the canonical product plan](REKKY_FLUTTER_PRODUCT_PLAN.md); the canonical plan owns access, consent, retention and release gates. ASK-0 through ASK-7 are implementation checkpoints within that plan, not a replacement phase system.
 
 ## 1. Outcome and principles
 
@@ -59,7 +59,7 @@ The first release includes these three journeys, typed and spoken input, follow-
 
 Ask remains the home. Keep one prominent voice/text entry, the established navigation capsule and uninterrupted access to Recommend. An Ask microphone is explicitly for a question; it never creates a recommendation. No automatic listening on page entry. Allow dictation correction, stop and cancel. Submit the spoken question after the person finishes, with its transcript available to edit.
 
-The empty state explains what the person can ask through a few short illustrative examples. Once real saved material exists, optional suggestions must be grounded in accessible knowledge. Do not fabricate personal context, infer the user's location silently or produce a daily feed of speculative recommendations. Recent sessions belong in a secondary entry.
+The empty state explains what the person can ask through a few short illustrative examples. Once real saved material exists, optional suggestions must be grounded in accessible knowledge. Do not fabricate personal context or produce a daily feed of speculative recommendations. For open-ended local discovery, a foreground-permission-derived approximate city may become a **visible, editable** Ask scope; explicit cities and `All locations` override it. Do not silently use a device city as a hard constraint or as evidence about a saved person's service area. Denied permission retains manual city choice. Recent sessions belong in a secondary entry. See the [tracked implementation and acceptance](ASK_CONVERSATION_REPAIR.md).
 
 ### Answer surface
 
@@ -111,7 +111,7 @@ The working state records the current interpretation, unresolved questions, evid
 | --- | --- |
 | Search knowledge | Query exact names, lexical fields, category/facets, typed locations or multilingual semantic similarity inside the authorized scope; return paginated IDs, snippets, evidence references and matched/unknown constraints |
 | Inspect evidence | Read relevant saved observations, caveats, attribution, confirmed destinations and field freshness for selected candidates; exclude raw friend transcripts and unnecessary contact values |
-| Resolve a place expression | Resolve a user-mentioned city/area against available geographic identities; return ambiguity explicitly; device location requires permission and public calls count against the budget |
+| Resolve a place expression | Resolve user-mentioned cities and a permission-derived, visibly scoped approximate city against available geographic identities; return ambiguity explicitly. Explicit place requests win. Device location requires foreground permission; public calls count against the budget |
 | Explore related knowledge | Find supported alternatives or complementary items across collections using the request and retrieved evidence; ordinary search projections suffice initially, with no speculative knowledge graph requirement |
 | Propose clarification | Return one consequential question/choice and any already useful results; suspend until the user responds, with no live reasoning loop |
 | Present or revise answer | Submit evidence-linked claims and a composition built from approved native components, result IDs, actions, constraints and stable section IDs; code validates before display |
