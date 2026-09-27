@@ -94,6 +94,7 @@ class _LibraryFilterSheetState extends State<LibraryFilterSheet> {
             ?.copyWith(fontWeight: FontWeight.w700),
       ),
     );
+    final libraryAccent = LibraryStyle.libraryAccent(context);
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: SizedBox(
@@ -113,6 +114,9 @@ class _LibraryFilterSheetState extends State<LibraryFilterSheet> {
                   if (MediaQuery.textScalerOf(context).scale(14) <= 20)
                     TextButton(
                       onPressed: () => update(const LibraryFilters()),
+                      style: TextButton.styleFrom(
+                        foregroundColor: libraryAccent,
+                      ),
                       child: const Text('Clear all'),
                     )
                   else
@@ -143,6 +147,7 @@ class _LibraryFilterSheetState extends State<LibraryFilterSheet> {
                       ChoiceChip(
                         label: const Text('All collections'),
                         selected: selection.shelf == null,
+                        selectedColor: LibraryStyle.libraryTint(context),
                         onSelected: (_) => update(
                           LibraryFilters(
                             areaId: selection.areaId,
@@ -163,6 +168,7 @@ class _LibraryFilterSheetState extends State<LibraryFilterSheet> {
                           ),
                           label: Text(shelf.label),
                           selected: selection.shelf == shelf,
+                          selectedColor: LibraryStyle.libraryTint(context),
                           onSelected: (_) => update(
                             LibraryFilters(
                               shelf: shelf,
@@ -185,6 +191,7 @@ class _LibraryFilterSheetState extends State<LibraryFilterSheet> {
                           ChoiceChip(
                             label: Text(entry.value),
                             selected: (selection.typeId ?? '') == entry.key,
+                            selectedColor: LibraryStyle.libraryTint(context),
                             onSelected: (_) => update(
                               LibraryFilters(
                                 shelf: selection.shelf,
@@ -214,6 +221,7 @@ class _LibraryFilterSheetState extends State<LibraryFilterSheet> {
                             label: Text(a.label),
                             selected:
                                 (selection.neighbourhoodId ?? 'all') == a.id,
+                            selectedColor: LibraryStyle.libraryTint(context),
                             onSelected: (_) => update(
                               LibraryFilters(
                                 shelf: selection.shelf,
@@ -232,9 +240,16 @@ class _LibraryFilterSheetState extends State<LibraryFilterSheet> {
                   ],
                   heading('Location'),
                   TextField(
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       hintText: 'Search locations',
-                      prefixIcon: Icon(Icons.search),
+                      prefixIcon: const Icon(Icons.search),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(
+                          color: LibraryStyle.searchFocus(context),
+                          width: 1.5,
+                        ),
+                      ),
                     ),
                     onChanged: (v) => setState(() => query = v),
                   ),
@@ -248,7 +263,7 @@ class _LibraryFilterSheetState extends State<LibraryFilterSheet> {
                           'Destinations',
                           style: TextStyle(
                             color: !regions
-                                ? colors.primary
+                                ? libraryAccent
                                 : colors.onSurfaceVariant,
                           ),
                         ),
@@ -259,7 +274,7 @@ class _LibraryFilterSheetState extends State<LibraryFilterSheet> {
                           'Regions',
                           style: TextStyle(
                             color: regions
-                                ? colors.primary
+                                ? libraryAccent
                                 : colors.onSurfaceVariant,
                           ),
                         ),
@@ -287,7 +302,7 @@ class _LibraryFilterSheetState extends State<LibraryFilterSheet> {
                           if ((selection.areaId ?? 'all') == a.id)
                             Padding(
                               padding: const EdgeInsets.only(left: 8),
-                              child: Icon(Icons.check, color: colors.primary),
+                              child: Icon(Icons.check, color: libraryAccent),
                             ),
                         ],
                       ),

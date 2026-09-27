@@ -6,22 +6,26 @@ abstract final class RekkyTheme {
   static const paper = Color(0xfff7f7f5);
   static const ink = Color(0xff202020);
   static const charcoal = Color(0xff0c0c0c);
-  static const coral = Color(0xffac452e);
-  static const plum = Color(0xff854886);
-  static const jade = Color(0xff227057);
-  static const citron = Color(0xff686719);
-  static const gold = Color(0xff89650c);
+  static const placeOnLight = Color(0xffb43e27);
+  static const placeOnDark = Color(0xfff0785a);
+  static const peopleOnLight = Color(0xff744092);
+  static const peopleOnDark = Color(0xffc497f0);
+  static const thingsOnLight = Color(0xff146c79);
+  static const thingsOnDark = Color(0xff6ac7d0);
+  static const activitiesOnLight = Color(0xff4f6f2a);
+  static const activitiesOnDark = Color(0xffa6d37b);
+  static const ideasOnLight = Color(0xff8d590a);
+  static const ideasOnDark = Color(0xfff0b95a);
+  static const notesOnLight = Color(0xff973e65);
+  static const notesOnDark = Color(0xffe69abb);
   static const capture = Color(0xfff34f47);
   static const onCapture = Color(0xff17110f);
   static const navAsk = Color(0xff2856d8);
   static const onNavAsk = Color(0xffffffff);
+  static const askFocusDark = Color(0xff6c92ff);
   static const navLibrary = Color(0xffffd43b);
   static const onNavLibrary = Color(0xff1b170a);
-  static const coralLight = Color(0xffffa58c);
-  static const plumLight = Color(0xffdda6db);
-  static const jadeLight = Color(0xff9bd4b8);
-  static const citronLight = Color(0xffdcdf85);
-  static const goldLight = Color(0xffe7cc7e);
+  static const libraryControlLight = Color(0xff795700);
 
   static ThemeData build(Brightness brightness) {
     final dark = brightness == Brightness.dark;

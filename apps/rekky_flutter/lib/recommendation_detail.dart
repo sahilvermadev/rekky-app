@@ -349,13 +349,13 @@ class _RecommendationDetailSheetState extends State<RecommendationDetailSheet> {
                           height: 48,
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
-                            color: LibraryStyle.itemTint(context, item),
+                            color: LibraryStyle.itemFill(context, item),
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: Icon(
                             LibraryStyle.itemIcon(item),
                             size: 24,
-                            color: LibraryStyle.itemAccent(context, item),
+                            color: LibraryStyle.itemForeground(context),
                           ),
                         ),
                       ),

@@ -4,8 +4,8 @@ import 'library_collection.dart';
 import 'rekky_api.dart';
 import 'rekky_theme.dart';
 
-// Hallmark · curated Library · neutral surfaces and stable collection colours.
-// Pre-emit critique: P5 H5 E4 S5 R5 V4.
+// Hallmark · curated Library · neutral reading surfaces, confident accents.
+// Pre-emit critique: P5 H5 E5 S5 R5 V4.
 abstract final class LibraryStyle {
   static const gutter = 20.0;
   static const gap = 12.0;
@@ -21,38 +21,43 @@ abstract final class LibraryStyle {
   static Color accent(BuildContext context, LibraryShelf shelf) {
     final dark = Theme.of(context).brightness == Brightness.dark;
     return switch (shelf) {
-      LibraryShelf.places => dark ? RekkyTheme.coralLight : RekkyTheme.coral,
-      LibraryShelf.people => dark ? RekkyTheme.plumLight : RekkyTheme.plum,
-      LibraryShelf.things => dark ? RekkyTheme.jadeLight : RekkyTheme.jade,
+      LibraryShelf.places =>
+        dark ? RekkyTheme.placeOnDark : RekkyTheme.placeOnLight,
+      LibraryShelf.people =>
+        dark ? RekkyTheme.peopleOnDark : RekkyTheme.peopleOnLight,
+      LibraryShelf.things =>
+        dark ? RekkyTheme.thingsOnDark : RekkyTheme.thingsOnLight,
       LibraryShelf.activities =>
-        dark ? RekkyTheme.citronLight : RekkyTheme.citron,
-      LibraryShelf.ideas => dark ? RekkyTheme.goldLight : RekkyTheme.gold,
-      LibraryShelf.notes => Theme.of(context).colorScheme.onSurfaceVariant,
+        dark ? RekkyTheme.activitiesOnDark : RekkyTheme.activitiesOnLight,
+      LibraryShelf.ideas =>
+        dark ? RekkyTheme.ideasOnDark : RekkyTheme.ideasOnLight,
+      LibraryShelf.notes =>
+        dark ? RekkyTheme.notesOnDark : RekkyTheme.notesOnLight,
     };
   }
 
-  static Color tint(BuildContext context, LibraryShelf shelf) =>
-      Color.alphaBlend(
-        accent(context, shelf).withValues(alpha: .12),
-        Theme.of(context).colorScheme.surface,
-      );
+  static Color itemFill(BuildContext context, RekkyItem item) =>
+      accent(context, LibraryShelf.of(item));
 
-  static Color itemAccent(BuildContext context, RekkyItem item) {
-    final glyph = itemIcon(item);
-    final palette = switch (glyph) {
-      Icons.local_bar_outlined || Icons.bed_outlined => LibraryShelf.people,
-      Icons.local_cafe_outlined => LibraryShelf.ideas,
-      Icons.fitness_center => LibraryShelf.things,
-      _ => LibraryShelf.of(item),
-    };
-    return accent(context, palette);
-  }
+  static Color itemForeground(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark
+      ? RekkyTheme.ink
+      : RekkyTheme.onNavAsk;
 
-  static Color itemTint(BuildContext context, RekkyItem item) =>
-      Color.alphaBlend(
-        itemAccent(context, item).withValues(alpha: .12),
-        Theme.of(context).colorScheme.surface,
-      );
+  static Color libraryAccent(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark
+      ? RekkyTheme.navLibrary
+      : RekkyTheme.libraryControlLight;
+
+  static Color libraryTint(BuildContext context) => Color.alphaBlend(
+    libraryAccent(context).withValues(alpha: .14),
+    Theme.of(context).colorScheme.surfaceContainerLow,
+  );
+
+  static Color searchFocus(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark
+      ? RekkyTheme.askFocusDark
+      : RekkyTheme.navAsk;
 
   // Only existing category metadata chooses an icon; this never reclassifies data.
   static IconData itemIcon(RekkyItem item) {

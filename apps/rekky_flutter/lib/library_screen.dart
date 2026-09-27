@@ -165,6 +165,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
         areaId != null ||
         search.text.isNotEmpty ||
         typeId != null;
+    final filterActive = shelf != null || areaId != null || typeId != null;
+    final libraryAccent = LibraryStyle.libraryAccent(context);
+    Widget filterChip(String label, VoidCallback onDeleted) => InputChip(
+      label: Text(label),
+      onPressed: chooseFilters,
+      onDeleted: onDeleted,
+      backgroundColor: LibraryStyle.libraryTint(context),
+      side: BorderSide(color: libraryAccent.withValues(alpha: .55)),
+      deleteIconColor: libraryAccent,
+    );
     int visibleCount(List<RekkyItem> items) =>
         order == LibraryOrder.browse &&
             shelf == null &&
@@ -261,6 +271,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           decoration: InputDecoration(
                             hintText: 'Search your library',
                             prefixIcon: const Icon(Icons.search, size: 22),
+                            prefixIconColor: WidgetStateColor.resolveWith(
+                              (states) => states.contains(WidgetState.focused)
+                                  ? LibraryStyle.searchFocus(context)
+                                  : colors.onSurfaceVariant,
+                            ),
                             suffixIcon: search.text.isEmpty
                                 ? null
                                 : IconButton(
@@ -278,6 +293,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
                               borderRadius: BorderRadius.circular(12),
                               borderSide: BorderSide.none,
                             ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: LibraryStyle.searchFocus(context),
+                                width: 1.5,
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -289,16 +311,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           tooltip: 'Filters',
                           onPressed: chooseFilters,
                           icon: Badge(
-                            backgroundColor: colors.primary,
-                            isLabelVisible:
-                                shelf != null ||
-                                areaId != null ||
-                                typeId != null,
+                            backgroundColor: libraryAccent,
+                            isLabelVisible: filterActive,
                             child: const Icon(Icons.tune, size: 22),
                           ),
                           style: IconButton.styleFrom(
-                            backgroundColor: colors.surfaceContainerLow,
-                            foregroundColor: colors.onSurface,
+                            backgroundColor: filterActive
+                                ? LibraryStyle.libraryTint(context)
+                                : colors.surfaceContainerLow,
+                            foregroundColor: filterActive
+                                ? libraryAccent
+                                : colors.onSurface,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
@@ -323,7 +346,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                                 ),
                                 minimumSize: const Size(48, 48),
                                 foregroundColor: order == mode
-                                    ? colors.onSurface
+                                    ? libraryAccent
                                     : colors.onSurfaceVariant,
                                 shape: const RoundedRectangleBorder(),
                               ),
@@ -335,7 +358,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                                   border: Border(
                                     bottom: BorderSide(
                                       color: order == mode
-                                          ? colors.onSurface
+                                          ? libraryAccent
                                           : Colors.transparent,
                                       width: 2,
                                     ),
@@ -364,39 +387,34 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         runSpacing: 4,
                         children: [
                           if (shelf != null)
-                            InputChip(
-                              label: Text(shelf!.label),
-                              onPressed: chooseFilters,
-                              onDeleted: () => change(() {
+                            filterChip(
+                              shelf!.label,
+                              () => change(() {
                                 shelf = null;
                                 typeId = null;
                               }),
                             ),
                           if (typeId != null)
-                            InputChip(
-                              label: Text(
-                                widget.items
-                                        .expand(
-                                          (i) =>
-                                              i
-                                                  .recommendation
-                                                  ?.classification
-                                                  ?.types ??
-                                              <CategoryConcept>[],
-                                        )
-                                        .where((t) => t.id == typeId)
-                                        .firstOrNull
-                                        ?.label ??
-                                    'Selected type',
-                              ),
-                              onPressed: chooseFilters,
-                              onDeleted: () => change(() => typeId = null),
+                            filterChip(
+                              widget.items
+                                      .expand(
+                                        (i) =>
+                                            i
+                                                .recommendation
+                                                ?.classification
+                                                ?.types ??
+                                            <CategoryConcept>[],
+                                      )
+                                      .where((t) => t.id == typeId)
+                                      .firstOrNull
+                                      ?.label ??
+                                  'Selected type',
+                              () => change(() => typeId = null),
                             ),
                           if (areaId != null)
-                            InputChip(
-                              label: Text(areaLabel ?? 'Selected location'),
-                              onPressed: chooseFilters,
-                              onDeleted: () => change(() {
+                            filterChip(
+                              areaLabel ?? 'Selected location',
+                              () => change(() {
                                 areaId = null;
                                 areaLabel = null;
                                 neighbourhoodId = null;
@@ -404,12 +422,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
                               }),
                             ),
                           if (neighbourhoodId != null)
-                            InputChip(
-                              label: Text(
-                                neighbourhoodLabel ?? 'Selected neighbourhood',
-                              ),
-                              onPressed: chooseFilters,
-                              onDeleted: () => change(() {
+                            filterChip(
+                              neighbourhoodLabel ?? 'Selected neighbourhood',
+                              () => change(() {
                                 neighbourhoodId = null;
                                 neighbourhoodLabel = null;
                               }),
@@ -656,13 +671,13 @@ class _LibraryRowState extends State<_LibraryRow> {
                     height: 40,
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: LibraryStyle.itemTint(context, item),
+                      color: LibraryStyle.itemFill(context, item),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Icon(
                       LibraryStyle.itemIcon(item),
                       size: 22,
-                      color: LibraryStyle.itemAccent(context, item),
+                      color: LibraryStyle.itemForeground(context),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -681,17 +696,20 @@ class _LibraryRowState extends State<_LibraryRow> {
                               height: 1.25,
                             ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        metadata,
-                        maxLines: large ? null : 2,
-                        overflow: large ? null : TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontSize: 13,
-                          color: colors.onSurfaceVariant,
-                          height: 1.4,
+                      if (metadata.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          metadata,
+                          maxLines: large ? null : 2,
+                          overflow: large ? null : TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                fontSize: 13,
+                                color: colors.onSurfaceVariant,
+                                height: 1.4,
+                              ),
                         ),
-                      ),
+                      ],
                       const SizedBox(height: 4),
                       Wrap(
                         spacing: 8,
@@ -713,9 +731,8 @@ class _LibraryRowState extends State<_LibraryRow> {
                                       Icon(
                                         Icons.star,
                                         size: 15,
-                                        color: LibraryStyle.accent(
+                                        color: LibraryStyle.libraryAccent(
                                           context,
-                                          LibraryShelf.ideas,
                                         ),
                                       ),
                                       const SizedBox(width: 4),
@@ -748,7 +765,7 @@ class _LibraryRowState extends State<_LibraryRow> {
                             Icon(
                               Icons.push_pin,
                               size: 14,
-                              color: colors.primary,
+                              color: LibraryStyle.libraryAccent(context),
                               semanticLabel: 'Pinned',
                             ),
                           if (RecommendationReviewButton.needed(item))
