@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 import 'rekky_api.dart';
 import 'original_note_view.dart';
@@ -13,12 +14,14 @@ class RecommendationDetailSheet extends StatefulWidget {
     required this.loadSource,
     this.loadPlace,
     this.manageContact,
+    this.contactUpdates,
     required this.changeAudience,
     required this.deleteItem,
     required this.editRecommendation,
     required this.refineItem,
   });
   final RekkyItem item;
+  final ValueListenable<RekkyItem>? contactUpdates;
   final Future<RekkyItem?> Function(RekkyItem)? manageContact;
   final Future<RekkySource?> Function() loadSource;
   final Future<ResolvedPlace?> Function()? loadPlace;
@@ -43,8 +46,25 @@ class _RecommendationDetailSheetState extends State<RecommendationDetailSheet> {
   @override
   void initState() {
     super.initState();
+    widget.contactUpdates?.addListener(contactUpdated);
     loadSource();
     loadPlace();
+  }
+
+  void contactUpdated() {
+    final updated = widget.contactUpdates?.value;
+    if (mounted &&
+        updated != null &&
+        updated.id == item.id &&
+        updated.revision > item.revision) {
+      setState(() => item = updated);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.contactUpdates?.removeListener(contactUpdated);
+    super.dispose();
   }
 
   Future<void> loadPlace() async {

@@ -24,6 +24,7 @@ class _ContactSheetState extends State<ContactSheet> {
   late final phone = TextEditingController(
     text: widget.item.recommendation?.contactPhone ?? '',
   );
+  late String? savedName = widget.item.recommendation?.contactSavedName;
   bool busy = false;
   String? error;
   List<LocalContact>? candidates;
@@ -43,7 +44,11 @@ class _ContactSheetState extends State<ContactSheet> {
       if (generation == null) return;
       final contacts = await widget.book.read();
       if (!mounted) return;
-      final automatic = automaticContactPhone(widget.item.subject, contacts);
+      final automatic = automaticContactMatch(
+        widget.item.subject,
+        contacts,
+        recommendation: widget.item.recommendation,
+      );
       if (automatic != null &&
           widget.item.recommendation?.contactPhone == null &&
           widget.item.recommendation?.contactMatchingOff != true) {
@@ -51,14 +56,19 @@ class _ContactSheetState extends State<ContactSheet> {
         if (!await widget.book.hasAccess() || !mounted) return;
         final saved = await widget.save({
           'mode': 'automatic',
-          'phone': automatic,
+          'phone': automatic.phone,
+          'saved_name': automatic.contact.name.trim(),
           'generation': generation,
         });
         if (mounted) Navigator.pop(context, saved);
         return;
       }
       setState(
-        () => candidates = contactCandidates(widget.item.subject, contacts),
+        () => candidates = contactCandidates(
+          widget.item.subject,
+          contacts,
+          recommendation: widget.item.recommendation,
+        ),
       );
     } catch (_) {
       if (mounted) {
@@ -115,7 +125,13 @@ class _ContactSheetState extends State<ContactSheet> {
     });
     try {
       final updated = await widget.save(
-        remove ? {'mode': 'none'} : {'mode': 'set', 'phone': number},
+        remove
+            ? {'mode': 'none'}
+            : {
+                'mode': 'set',
+                'phone': number,
+                if (savedName != null) 'saved_name': savedName,
+              },
       );
       if (mounted) Navigator.pop(context, updated);
     } catch (e) {
@@ -190,6 +206,7 @@ class _ContactSheetState extends State<ContactSheet> {
                         : () {
                             setState(() {
                               phone.text = number;
+                              savedName = candidate.name.trim();
                               error = null;
                             });
                           },
@@ -200,13 +217,18 @@ class _ContactSheetState extends State<ContactSheet> {
               controller: phone,
               enabled: !busy,
               keyboardType: TextInputType.phone,
-              autofillHints: const [AutofillHints.telephoneNumber],
+              onChanged: (_) => setState(() => savedName = null),
               decoration: const InputDecoration(
                 labelText: 'Phone number',
                 hintText: '+91 …',
                 border: OutlineInputBorder(),
               ),
             ),
+            if (savedName != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(savedName!),
+              ),
             if (error != null)
               Padding(
                 padding: const EdgeInsets.only(top: 12),

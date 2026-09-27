@@ -1,5 +1,5 @@
 //! Contact snapshots belong to the recommendation and inherit its audience.
-//! Address-book records and candidate names never cross this API boundary.
+//! Only the attached number and its saved label cross this boundary.
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -10,6 +10,8 @@ pub enum Edit {
     Keep,
     Set {
         phone: String,
+        #[serde(default)]
+        saved_name: Option<String>,
     },
     None,
 }
@@ -36,10 +38,28 @@ pub fn normalize(phone: &str) -> Result<String, &'static str> {
     Ok(compact)
 }
 
+pub fn snapshot(
+    phone: &str,
+    saved_name: Option<&str>,
+    origin: &str,
+) -> Result<Value, &'static str> {
+    let mut value = json!({"phone":normalize(phone)?,"origin":origin});
+    if let Some(name) = saved_name {
+        let name = name.trim();
+        if name.chars().count() > 200 || name.chars().any(char::is_control) {
+            return Err("Contact name must be at most 200 characters without control characters");
+        }
+        // An explicitly cleared label is a choice, not missing metadata for
+        // automatic backfill to restore. Older clients omit the field entirely.
+        value["saved_name"] = json!(name);
+    }
+    Ok(value)
+}
+
 impl Edit {
     pub fn check(&self) -> Result<(), &'static str> {
-        if let Self::Set { phone } = self {
-            normalize(phone)?;
+        if let Self::Set { phone, saved_name } = self {
+            snapshot(phone, saved_name.as_deref(), "user")?;
         }
         Ok(())
     }
@@ -65,11 +85,11 @@ impl Edit {
                     next["contact_matching"] = json!("off");
                 }
             }
-            Self::Set { phone } => {
+            Self::Set { phone, saved_name } => {
                 if next["entity_kind"] != "person_service" {
                     return Err("Contact numbers are supported for people and services");
                 }
-                next["contact"] = json!({"phone":normalize(phone)?,"origin":"user"});
+                next["contact"] = snapshot(phone, saved_name.as_deref(), "user")?;
                 next["contact_matching"] = json!("off");
             }
             Self::None => {
@@ -86,6 +106,25 @@ impl Edit {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn saved_name_is_bounded_and_optional() {
+        assert_eq!(
+            snapshot("+12025550123", Some(" Maya Rao "), "contacts").unwrap()["saved_name"],
+            "Maya Rao"
+        );
+        assert!(snapshot("+12025550123", Some("Maya\nRao"), "contacts").is_err());
+        assert_eq!(
+            snapshot("+12025550123", Some(""), "user").unwrap()["saved_name"],
+            ""
+        );
+        assert!(snapshot("+12025550123", Some(&"a".repeat(201)), "contacts").is_err());
+        assert!(
+            snapshot("+12025550123", None, "user")
+                .unwrap()
+                .get("saved_name")
+                .is_none()
+        );
+    }
     #[test]
     fn international_numbers_only() {
         assert_eq!(normalize("+91 (98765) 43210").unwrap(), "+919876543210");

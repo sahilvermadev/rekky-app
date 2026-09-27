@@ -1,8 +1,34 @@
 {
-  "matching_preference": { "enabled": true, "generation": 1 },
-  "automatic_attachment": { "mode": "automatic", "phone": "+12025550123", "generation": 1 },
-  "manual_attachment": { "mode": "set", "phone": "+12025550123" },
-  "removal": { "mode": "none" },
-  "saved_contact": { "phone": "+12025550123", "origin": "contacts" },
-  "removed_override": { "contact_matching": "off" }
+  "matching_preference": {
+    "enabled": true,
+    "generation": 1
+  },
+  "automatic_attachment": {
+    "mode": "automatic",
+    "phone": "+12025550123",
+    "generation": 1,
+    "saved_name": "Maya Rao"
+  },
+  "manual_attachment": {
+    "mode": "set",
+    "phone": "+12025550123",
+    "saved_name": "Maya Rao"
+  },
+  "removal": {
+    "mode": "none"
+  },
+  "saved_contact": {
+    "phone": "+12025550123",
+    "origin": "contacts",
+    "saved_name": "Maya Rao"
+  },
+  "removed_override": {
+    "contact_matching": "off"
+  },
+  "describe_attachment": {
+    "mode": "describe",
+    "phone": "+12025550123",
+    "saved_name": "Maya Rao",
+    "generation": 1
+  }
 }

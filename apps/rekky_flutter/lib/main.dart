@@ -56,6 +56,7 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
   ContactMatchingCoordinator? contactMatching;
   final contactBook = DeviceContactBook();
   int itemScreensOpen = 0;
+  final _contactReaders = <String, ValueNotifier<RekkyItem>>{};
   String? processingMessage;
 
   @override
@@ -123,11 +124,14 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
           api.token == token &&
           itemScreensOpen == 0 &&
           WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed,
-      onSaved: (updated) => setState(
-        () => library = library
-            .map((i) => i.id == updated.id ? updated : i)
-            .toList(),
-      ),
+      onSaved: (updated) {
+        setState(
+          () => library = library
+              .map((i) => i.id == updated.id ? updated : i)
+              .toList(),
+        );
+        _contactReaders[updated.id]?.value = updated;
+      },
     );
     unawaited(contactMatching!.process(library));
   }
@@ -154,7 +158,7 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
             content: Text(
               enabled
                   ? 'Turning this off stops future matching. Numbers already attached stay with their recommendations; you can remove them in Edit.'
-                  : 'Rekky checks names and numbers on this phone for clear matches to people you recommend. Matched numbers are added automatically, including to existing recommendations, and friends can see them when the recommendation is shared. Only attached numbers are saved to Rekky; your address book stays on this phone.',
+                  : 'Rekky checks names and numbers on this phone for clear matches to people you recommend. Matched numbers are added automatically, including to existing recommendations, and friends can see them when the recommendation is shared. Only attached numbers and their saved contact names are saved to Rekky; your address book stays on this phone.',
             ),
             actions: [
               TextButton(
@@ -217,38 +221,44 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
       }
     }
 
-    final updated = await showModalBottomSheet<RekkyItem>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      showDragHandle: true,
-      builder: (_) => ContactSheet(
-        item: item,
-        book: contactBook,
-        enableMatching: () async {
-          if (!await _contactSettings(enableOnly: true)) return null;
-          check();
-          final preference = await scoped.contactPreference();
-          check();
-          return preference['enabled'] == true
-              ? preference['generation'] as int
-              : null;
-        },
-        save: (contact) async {
-          check();
-          final updated = await scoped.attachContact(item, contact);
-          check();
-          setState(
-            () => library = library
-                .map((i) => i.id == updated.id ? updated : i)
-                .toList(),
-          );
-          return updated;
-        },
-      ),
-    );
-    check();
-    return updated;
+    itemScreensOpen++;
+    try {
+      final updated = await showModalBottomSheet<RekkyItem>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        showDragHandle: true,
+        builder: (_) => ContactSheet(
+          item: item,
+          book: contactBook,
+          enableMatching: () async {
+            if (!await _contactSettings(enableOnly: true)) return null;
+            check();
+            final preference = await scoped.contactPreference();
+            check();
+            return preference['enabled'] == true
+                ? preference['generation'] as int
+                : null;
+          },
+          save: (contact) async {
+            check();
+            final updated = await scoped.attachContact(item, contact);
+            check();
+            setState(
+              () => library = library
+                  .map((i) => i.id == updated.id ? updated : i)
+                  .toList(),
+            );
+            return updated;
+          },
+        ),
+      );
+      check();
+      return updated;
+    } finally {
+      itemScreensOpen--;
+      if (mounted && accountId == owner) unawaited(_reload());
+    }
   }
 
   Future<void> _restore() async {
@@ -564,7 +574,8 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
     }
 
     checkAccount();
-    itemScreensOpen++;
+    final contactUpdates = ValueNotifier(item);
+    _contactReaders[item.id] = contactUpdates;
     try {
       await showModalBottomSheet<void>(
         context: context,
@@ -578,6 +589,7 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
           ),
           child: RecommendationDetailSheet(
             item: item,
+            contactUpdates: contactUpdates,
             manageContact: _manageContact,
             loadSource: () async {
               checkAccount();
@@ -628,7 +640,8 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
         ),
       );
     } finally {
-      itemScreensOpen--;
+      _contactReaders.remove(item.id);
+      contactUpdates.dispose();
       if (mounted && signedIn && accountId == owner) unawaited(_reload());
     }
   }

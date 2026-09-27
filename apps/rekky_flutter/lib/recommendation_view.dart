@@ -188,6 +188,7 @@ class RecommendationView extends StatelessWidget {
         if (recommendation.entityKind == 'person_service')
           ContactAction(
             phone: recommendation.contactPhone,
+            savedName: recommendation.contactSavedName,
             onManage: onManageContact,
           ),
         RecommendationMapsAction(item: item, place: place),

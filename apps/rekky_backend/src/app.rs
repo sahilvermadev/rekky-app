@@ -2104,8 +2104,22 @@ async fn set_contact_preference(
 #[derive(Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
 enum ContactAttachment {
-    Automatic { phone: String, generation: i64 },
-    Set { phone: String },
+    Automatic {
+        phone: String,
+        #[serde(default)]
+        saved_name: Option<String>,
+        generation: i64,
+    },
+    Describe {
+        phone: String,
+        saved_name: String,
+        generation: i64,
+    },
+    Set {
+        phone: String,
+        #[serde(default)]
+        saved_name: Option<String>,
+    },
     None,
 }
 async fn attach_contact(
@@ -2120,7 +2134,9 @@ async fn attach_contact(
     let input: ContactAttachment = parse(&body)?;
     let mut tx = state.pool.begin().await?;
     // Serialize opt-out with automatic attachment, including requests already in flight.
-    if let ContactAttachment::Automatic { generation, .. } = &input {
+    if let ContactAttachment::Automatic { generation, .. }
+    | ContactAttachment::Describe { generation, .. } = &input
+    {
         let permission = sqlx::query("SELECT enabled,generation FROM contact_matching_preferences WHERE owner_id=$1 FOR SHARE")
             .bind(owner_id).fetch_optional(&mut *tx).await?;
         if !permission.is_some_and(|p| {
@@ -2148,7 +2164,9 @@ async fn attach_contact(
         ));
     }
     match input {
-        ContactAttachment::Automatic { phone, .. } => {
+        ContactAttachment::Automatic {
+            phone, saved_name, ..
+        } => {
             if recommendation.get("contact").is_some()
                 || recommendation["contact_matching"] == "off"
             {
@@ -2156,11 +2174,28 @@ async fn attach_contact(
                     "This recommendation already has a contact decision",
                 ));
             }
-            recommendation["contact"] = json!({"phone":crate::contacts::normalize(&phone).map_err(ApiError::bad)?,"origin":"contacts"});
+            recommendation["contact"] =
+                crate::contacts::snapshot(&phone, saved_name.as_deref(), "contacts")
+                    .map_err(ApiError::bad)?;
         }
-        ContactAttachment::Set { phone } => {
-            recommendation["contact"] = json!({"phone":crate::contacts::normalize(&phone).map_err(ApiError::bad)?,"origin":"user"});
+        ContactAttachment::Set { phone, saved_name } => {
+            recommendation["contact"] =
+                crate::contacts::snapshot(&phone, saved_name.as_deref(), "user")
+                    .map_err(ApiError::bad)?;
             recommendation["contact_matching"] = json!("off");
+        }
+        ContactAttachment::Describe {
+            phone, saved_name, ..
+        } => {
+            let normalized = crate::contacts::snapshot(&phone, Some(&saved_name), "contacts")
+                .map_err(ApiError::bad)?;
+            if recommendation["contact"]["phone"] != normalized["phone"]
+                || recommendation["contact"].get("saved_name").is_some()
+                || normalized["saved_name"].as_str().is_none_or(str::is_empty)
+            {
+                return Err(ApiError::conflict("Contact changed or already has a name"));
+            }
+            recommendation["contact"]["saved_name"] = normalized["saved_name"].clone();
         }
         ContactAttachment::None => {
             recommendation

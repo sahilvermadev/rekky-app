@@ -155,9 +155,10 @@ class RekkyRecommendation {
     this.destinationLabel = '',
     this.rating,
     this.contactPhone,
+    this.contactSavedName,
     this.contactMatchingOff = false,
   });
-  final String? contactPhone;
+  final String? contactPhone, contactSavedName;
   final bool contactMatchingOff;
   final RecommendationRating? rating;
   final String summary, shelf, experience, entityKind;
@@ -189,6 +190,7 @@ class RekkyRecommendation {
     Map<String, dynamic> json,
   ) => RekkyRecommendation(
     contactPhone: (json['contact'] as Map?)?['phone'] as String?,
+    contactSavedName: (json['contact'] as Map?)?['saved_name'] as String?,
     contactMatchingOff: json['contact_matching'] == 'off',
     rating: RecommendationRating.parse(json['rating']),
     summary: json['summary'] as String,

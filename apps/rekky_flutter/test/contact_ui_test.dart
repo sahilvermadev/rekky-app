@@ -2,10 +2,56 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rekky_flutter/contact_action.dart';
 import 'package:rekky_flutter/contact_sheet.dart';
+import 'package:rekky_flutter/recommendation_detail.dart';
+import 'package:rekky_flutter/rekky_api.dart';
 
 import 'contact_matching_test.dart' show item, Book;
 
 void main() {
+  testWidgets('contact appears live in an already open recommendation', (
+    tester,
+  ) async {
+    final original = item();
+    final updates = ValueNotifier(original);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RecommendationDetailSheet(
+            item: original,
+            contactUpdates: updates,
+            loadSource: () async => null,
+            changeAudience: (value, _) async => value,
+            deleteItem: (_) async {},
+            editRecommendation: (_) {},
+            refineItem: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Dr. Maya Rao'), findsOneWidget); // Title only.
+    updates.value = RekkyItem(
+      id: original.id,
+      captureId: original.captureId,
+      subject: original.subject,
+      body: original.body,
+      visibility: original.visibility,
+      revision: 2,
+      createdAt: '',
+      recommendation: item(
+        phone: '+12025550123',
+        savedName: 'Maya Rao Clinic',
+      ).recommendation,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Maya Rao Clinic'), findsOneWidget);
+    expect(find.text('Call'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    updates.value = original;
+    expect(tester.takeException(), isNull);
+    updates.dispose();
+  });
+
   testWidgets(
     'manual contact works with permission denied; validates before saving',
     (tester) async {
@@ -66,6 +112,7 @@ void main() {
     expect(sent, {
       'mode': 'automatic',
       'phone': '+919876543210',
+      'saved_name': 'Dr. Maya Rao',
       'generation': 7,
     });
   });
@@ -102,11 +149,16 @@ void main() {
         home: Scaffold(
           body: MediaQuery(
             data: const MediaQueryData(textScaler: TextScaler.linear(2)),
-            child: ContactAction(phone: '+12025550123', onManage: () {}),
+            child: ContactAction(
+              phone: '+12025550123',
+              savedName: 'Maya Rao Family Doctor',
+              onManage: () {},
+            ),
           ),
         ),
       ),
     );
+    expect(find.text('Maya Rao Family Doctor'), findsOneWidget);
     expect(find.text('Call'), findsOneWidget);
     expect(find.byTooltip('Change contact'), findsOneWidget);
     expect(tester.takeException(), isNull);

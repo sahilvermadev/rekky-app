@@ -2652,3 +2652,118 @@ async fn contact_attachment_is_owner_scoped_revision_fenced_and_follows_item_aud
     );
     t.cleanup().await;
 }
+
+#[tokio::test]
+async fn contact_label_backfill_cannot_replace_number_or_override_owner_label() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    let (_, token) = t.sign_in("google", "valid-a").await;
+    t.call(
+        Method::POST,
+        "/v1/me/visibility-disclosure",
+        Some(&token),
+        Some(json!({"accept":true})),
+        &[],
+    )
+    .await;
+    t.call(
+        Method::POST,
+        "/v1/me/contact-matching",
+        Some(&token),
+        Some(json!({"enabled":true})),
+        &[],
+    )
+    .await;
+    let item = categorized_item(
+        &t,
+        &token,
+        "Test Doctor",
+        "person_service",
+        "service.doctor",
+        &[],
+    )
+    .await;
+    let path = format!("/v1/items/{}/contact", item["id"].as_str().unwrap());
+    let (_, attached) = t
+        .call(
+            Method::PATCH,
+            &path,
+            Some(&token),
+            Some(json!({"mode":"set","phone":"+12025550123"})),
+            &[("if-match", "1")],
+        )
+        .await;
+    let label = json!({"mode":"describe","phone":"+12025550123","saved_name":"Maya Rao Clinic","generation":1});
+    let mut blank = label.clone();
+    blank["saved_name"] = json!("");
+    assert_eq!(
+        t.call(
+            Method::PATCH,
+            &path,
+            Some(&token),
+            Some(blank),
+            &[("if-match", "2")]
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    let mut wrong = label.clone();
+    wrong["phone"] = json!("+12025550124");
+    assert_eq!(
+        t.call(
+            Method::PATCH,
+            &path,
+            Some(&token),
+            Some(wrong),
+            &[("if-match", "2")]
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    let mut invalid = label.clone();
+    invalid["saved_name"] = json!("a".repeat(201));
+    assert_eq!(
+        t.call(
+            Method::PATCH,
+            &path,
+            Some(&token),
+            Some(invalid),
+            &[("if-match", "2")]
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    let (status, named) = t
+        .call(
+            Method::PATCH,
+            &path,
+            Some(&token),
+            Some(label.clone()),
+            &[("if-match", "2")],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{named}");
+    assert_eq!(
+        named["item"]["recommendation"]["contact"],
+        json!({"phone":"+12025550123","origin":"user","saved_name":"Maya Rao Clinic"})
+    );
+    assert_eq!(named["item"]["recommendation"]["contact_matching"], "off");
+    assert_eq!(named["item"]["visibility"], attached["item"]["visibility"]);
+    assert_eq!(
+        t.call(
+            Method::PATCH,
+            &path,
+            Some(&token),
+            Some(label),
+            &[("if-match", "3")]
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    t.cleanup().await;
+}

@@ -43,6 +43,15 @@ class _RecommendationEditorState extends State<RecommendationEditor> {
   bool categoriesLoading = false;
   String ratingChoice = 'keep';
   late String contactPhone;
+  late final contactName = TextEditingController(
+    text: widget.item.recommendation?.contactSavedName ?? '',
+  );
+  @override
+  void dispose() {
+    contactName.dispose();
+    super.dispose();
+  }
+
   bool contactChanged = false;
 
   static const kinds = {
@@ -126,7 +135,11 @@ class _RecommendationEditorState extends State<RecommendationEditor> {
         ? {'mode': 'keep'}
         : contactPhone.trim().isEmpty || kind != 'person_service'
         ? {'mode': 'none'}
-        : {'mode': 'set', 'phone': contactPhone},
+        : {
+            'mode': 'set',
+            'phone': contactPhone,
+            'saved_name': contactName.text.trim(),
+          },
     'destination_confirmed': linkConfirmed,
     'rating': ratingChoice == 'keep' || ratingChoice == 'none'
         ? {'mode': ratingChoice}
@@ -569,8 +582,21 @@ class _RecommendationEditorState extends State<RecommendationEditor> {
                                 : null,
                             onChanged: (value) => setState(() {
                               contactPhone = value;
+                              contactName.clear();
                               contactChanged = true;
                             }),
+                          ),
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            controller: contactName,
+                            enabled: !saving,
+                            decoration: const InputDecoration(
+                              labelText: 'Contact name',
+                              border: OutlineInputBorder(),
+                            ),
+                            maxLength: 200,
+                            onChanged: (_) =>
+                                setState(() => contactChanged = true),
                           ),
                         ]),
                       if (widget.item.recommendation?.contactPhone != null &&

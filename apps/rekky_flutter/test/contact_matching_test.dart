@@ -16,6 +16,7 @@ RekkyItem item({
   String? phone,
   bool removed = false,
   String kind = 'person_service',
+  String? savedName = 'Dr. Maya Rao',
 }) => RekkyItem(
   id: 'item',
   captureId: 'capture',
@@ -33,6 +34,7 @@ RekkyItem item({
     useCases: [],
     entityKind: kind,
     contactPhone: phone,
+    contactSavedName: phone == null ? null : savedName,
     contactMatchingOff: removed,
   ),
 );
@@ -78,7 +80,7 @@ void main() {
     ) as Map;
     final contact = wire['saved_contact'] as Map;
     expect(internationalPhone(contact['phone'] as String), contact['phone']);
-    expect(contact.keys.toSet(), {'phone', 'origin'});
+    expect(contact.keys.toSet(), {'phone', 'origin', 'saved_name'});
     expect(wire['removal'], {'mode': 'none'});
   });
   test('one exact full name with a single international phone attaches', () {
@@ -116,18 +118,7 @@ void main() {
         automaticContactPhone('Maya Rao', [
           const LocalContact('Maya Rao', ['+919876543210']),
         ]),
-        isNull,
-      );
-      expect(
-        automaticContactPhone('Maya Rao', [
-          const LocalContact(
-            'Maya Rao dentist',
-            ['+919876543210'],
-            first: 'Maya',
-            last: 'Rao',
-          ),
-        ]),
-        isNull,
+        '+919876543210',
       );
       expect(
         contactCandidates('Maya Rao', [
@@ -155,7 +146,7 @@ void main() {
     },
   );
   test(
-    'batch sends only attached phone with generation; no address book fields',
+    'batch sends only attached phone and saved name with generation',
     () async {
       final api = Api(), book = Book();
       final saved = <RekkyItem>[];
@@ -167,11 +158,127 @@ void main() {
       );
       await coordinator.process([item()]);
       expect(api.attached, [
-        {'mode': 'automatic', 'phone': '+919876543210', 'generation': 4},
+        {
+          'mode': 'automatic',
+          'phone': '+919876543210',
+          'saved_name': 'Dr. Maya Rao',
+          'generation': 4,
+        },
       ]);
       expect(saved, hasLength(1));
       await coordinator.process([item()]);
       expect(api.attached, hasLength(1));
+    },
+  );
+  test('ranked match uses taxi synonyms, spelling variants and locality without exact names', () {
+    final rec = RekkyRecommendation(
+      summary: '',
+      shelf: 'People & services',
+      experience: 'firsthand',
+      observations: [],
+      locations: [const RecommendationDetail('context', 'Landour')],
+      useCases: [],
+      entityKind: 'person_service',
+    );
+    const selected = LocalContact('Lavneesh Landor Taxi', ['+12025550123']);
+    const unrelated = LocalContact('Rohit Taxi', ['+12025550124']);
+    const lessSpecific = LocalContact('Lavneesh Delhi Taxi', ['+12025550125']);
+    final result = automaticContactMatch('Lavnish Taxi Cabs', [
+      unrelated,
+      lessSpecific,
+      selected,
+    ], recommendation: rec);
+    expect(result?.contact.name, selected.name);
+    expect(result?.phone, '+12025550123');
+    expect(
+      contactCandidates('Lavnish Taxi Cabs', [
+        unrelated,
+        lessSpecific,
+        selected,
+      ], recommendation: rec).first.name,
+      selected.name,
+    );
+    expect(
+      automaticContactMatch('Lavneesh Taxi Cabs', [selected])?.phone,
+      '+12025550123',
+    );
+    expect(
+      automaticContactMatch('Lavnish Taxi Cabs', [selected]),
+      isNull,
+    ); // A spelling-only first name needs corroboration.
+  });
+  test('ranking rejects tied providers, profession-only matches, conflicting roles and multiple phones', () {
+    const first = LocalContact('Lavneesh Taxi', ['+12025550123']);
+    const second = LocalContact('Lavneesh Cabs', ['+12025550124']);
+    expect(
+      automaticContactMatch('Lavneesh Taxi Cabs', [first, second]),
+      isNull,
+    );
+    expect(automaticContactMatch('Taxi Cabs', [first]), isNull);
+    expect(automaticContactMatch('Priya Taxi', [first]), isNull);
+    expect(
+      automaticContactMatch('Dr Maya Rao', [
+        const LocalContact('Maya Rao Dentist', ['+12025550123']),
+      ]),
+      isNull,
+    );
+    expect(
+      automaticContactMatch('Lavneesh Taxi', [
+        const LocalContact('Lavneesh Taxi', ['+12025550123', '+12025550124']),
+      ]),
+      isNull,
+    );
+    expect(
+      automaticContactMatch('Maya Rao', [
+        const LocalContact('Maya Sharma', ['+12025550123']),
+      ]),
+      isNull,
+    );
+  });
+  test('an existing chosen number gets a label by number, never a new provider by name', () async {
+    final api = Api(), book = Book();
+    await ContactMatchingCoordinator(
+      api: api,
+      book: book,
+      isCurrent: () => true,
+      onSaved: (_) {},
+    ).process([item(phone: '+919876543210', savedName: null, removed: true)]);
+    expect(api.attached, [
+      {
+        'mode': 'describe',
+        'phone': '+919876543210',
+        'saved_name': 'Dr. Maya Rao',
+        'generation': 4,
+      },
+    ]);
+    expect(
+      savedNameForPhone('+919876543210', [
+        doctor,
+        const LocalContact('Someone Else', ['+919876543210']),
+      ]),
+      isNull,
+    );
+  });
+  test(
+    'newly saved recommendations arriving during a lookup are not dropped',
+    () async {
+      final api = Api(),
+          book = Book()..pending = Completer<List<LocalContact>>();
+      final coordinator = ContactMatchingCoordinator(
+        api: api,
+        book: book,
+        isCurrent: () => true,
+        onSaved: (_) {},
+      );
+      final task = coordinator.process([
+        item(phone: '+919876543211', savedName: null),
+      ]);
+      await Future<void>.delayed(Duration.zero);
+      await coordinator.process([item()]);
+      book.pending!.complete([doctor]);
+      await task;
+      expect(api.attached, hasLength(1));
+      expect(api.attached.single['mode'], 'automatic');
     },
   );
   test('permission denial and account opt-out never read contacts', () async {
