@@ -142,7 +142,8 @@ class _AskThinkingIndicatorState extends State<_AskThinkingIndicator>
   }
 }
 
-class _AskExperienceState extends State<AskExperience> {
+class _AskExperienceState extends State<AskExperience>
+    with WidgetsBindingObserver {
   final input = TextEditingController();
   final homeInput = TextEditingController();
   final threadScroll = ScrollController();
@@ -156,6 +157,7 @@ class _AskExperienceState extends State<AskExperience> {
   int explorerVersion = 0;
   final inputFocus = FocusNode();
   final homeFocus = FocusNode();
+  bool followKeyboardToLatest = false;
   final history = <({AskAnswer answer, String question})>[];
   final selected = <String>[];
   final excluded = <String>[];
@@ -175,6 +177,7 @@ class _AskExperienceState extends State<AskExperience> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     inputFocus.addListener(_focusChanged);
     homeFocus.addListener(_focusChanged);
     unawaited(AskRecorder.clearAbandoned().catchError((_) {}));
@@ -193,7 +196,32 @@ class _AskExperienceState extends State<AskExperience> {
   }
 
   void _focusChanged() {
+    if (inputFocus.hasFocus && !onHome && threadScroll.hasClients) {
+      followKeyboardToLatest = threadScroll.position.extentAfter < 120;
+      if (followKeyboardToLatest) _scrollLatestIntoView();
+    } else if (!inputFocus.hasFocus) {
+      followKeyboardToLatest = false;
+    }
     if (mounted) setState(() {});
+  }
+
+  @override
+  void didChangeMetrics() {
+    if (inputFocus.hasFocus && followKeyboardToLatest && !onHome) {
+      _scrollLatestIntoView();
+    }
+  }
+
+  void _scrollLatestIntoView() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted &&
+          inputFocus.hasFocus &&
+          followKeyboardToLatest &&
+          !onHome &&
+          threadScroll.hasClients) {
+        threadScroll.jumpTo(threadScroll.position.maxScrollExtent);
+      }
+    });
   }
 
   Future<void> cancelRequest(String id) async {
@@ -220,6 +248,7 @@ class _AskExperienceState extends State<AskExperience> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     if (working) unawaited(cancelRequest(requestId));
     generation++;
     input.dispose();

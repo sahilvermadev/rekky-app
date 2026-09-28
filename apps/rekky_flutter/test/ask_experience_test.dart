@@ -163,6 +163,73 @@ Future<void> submit(WidgetTester t, String text) async {
 }
 
 void main() {
+  testWidgets('opening follow-up keyboard keeps the latest card visible', (
+    t,
+  ) async {
+    t.view.physicalSize = const Size(390, 520);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.resetPhysicalSize);
+    addTearDown(t.view.resetDevicePixelRatio);
+    addTearDown(t.view.resetViewInsets);
+    final api = FakeAsk();
+    await t.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AskExperience(api: api, onOpen: (_) async {}),
+        ),
+      ),
+    );
+    await submit(t, 'evening options');
+    api.pending.single.complete(twoOptions());
+    await t.pumpAndSettle();
+    final list = t.widget<ListView>(
+      find.byKey(const PageStorageKey('ask-conversation')),
+    );
+    final scroll = list.controller!;
+    expect(scroll.position.maxScrollExtent, greaterThan(120));
+    scroll.jumpTo(scroll.position.maxScrollExtent);
+    await t.pump();
+    final bottomBefore = scroll.position.maxScrollExtent;
+    await t.tap(find.byType(TextField).last);
+    await t.pump();
+    t.view.viewInsets = const FakeViewPadding(bottom: 320);
+    await t.pumpAndSettle();
+    expect(scroll.position.maxScrollExtent, greaterThan(bottomBefore));
+    expect(scroll.offset, closeTo(scroll.position.maxScrollExtent, 1));
+  });
+
+  testWidgets('opening the keyboard preserves an older reading position', (
+    t,
+  ) async {
+    t.view.physicalSize = const Size(390, 520);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.resetPhysicalSize);
+    addTearDown(t.view.resetDevicePixelRatio);
+    addTearDown(t.view.resetViewInsets);
+    final api = FakeAsk();
+    await t.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AskExperience(api: api, onOpen: (_) async {}),
+        ),
+      ),
+    );
+    await submit(t, 'evening options');
+    api.pending.single.complete(twoOptions());
+    await t.pumpAndSettle();
+    final scroll = t
+        .widget<ListView>(find.byKey(const PageStorageKey('ask-conversation')))
+        .controller!;
+    expect(scroll.position.maxScrollExtent, greaterThan(120));
+    scroll.jumpTo(0);
+    await t.pump();
+    await t.tap(find.byType(TextField).last);
+    await t.pump();
+    t.view.viewInsets = const FakeViewPadding(bottom: 320);
+    await t.pumpAndSettle();
+    expect(scroll.offset, 0);
+  });
+
   testWidgets('streams the reply before showing recommendation cards', (
     t,
   ) async {
