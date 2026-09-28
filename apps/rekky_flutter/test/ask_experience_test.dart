@@ -59,12 +59,16 @@ class FakeAsk extends RekkyApi {
   @override
   Future<AskView> createAskView(AskBrowseSpec spec) async {
     viewRequests.add(spec);
-    final fixture = jsonDecode(File('../../contracts/rekky/v1/fixtures/ask_ui.json').readAsStringSync())
-        as Map<String, dynamic>;
-    final view = Map<String, dynamic>.from(fixture['view'] as Map<String, dynamic>);
+    final fixture = jsonDecode(
+      File('../../contracts/rekky/v1/fixtures/ask_ui.json').readAsStringSync(),
+    ) as Map<String, dynamic>;
+    final view = Map<String, dynamic>.from(
+      fixture['view'] as Map<String, dynamic>,
+    );
     view['spec'] = spec.toJson();
     return AskView.fromJson(view);
   }
+
   @override
   Future<AskAnswer> askAgent(
     String question,
@@ -114,9 +118,17 @@ Future<void> submit(WidgetTester t, String text) async {
 }
 
 void main() {
-  testWidgets('Explore filters a native collection and carries it into Ask', (t) async {
+  testWidgets('Explore filters a native collection and carries it into Ask', (
+    t,
+  ) async {
     final api = FakeAsk();
-    await t.pumpWidget(MaterialApp(home: Scaffold(body: AskExperience(api: api, onOpen: (_) async {}))));
+    await t.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AskExperience(api: api, onOpen: (_) async {}),
+        ),
+      ),
+    );
     await t.tap(find.text('Explore your saved recommendations'));
     await t.pumpAndSettle();
     expect(find.text('Saved services'), findsOneWidget);
@@ -126,10 +138,16 @@ void main() {
     await t.tap(find.text('People & services').last);
     await t.pumpAndSettle();
     expect(api.viewRequests.last.kind, 'person_service');
-    await t.enterText(find.byType(TextField).last, 'Would this suit a gift repair?');
+    await t.enterText(
+      find.byType(TextField).last,
+      'Would this suit a gift repair?',
+    );
     await t.testTextInput.receiveAction(TextInputAction.send);
     await t.pump();
-    expect(api.contexts.last['activeViewId'], 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+    expect(
+      api.contexts.last['activeViewId'],
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    );
     expect(api.contexts.last['question'], 'Would this suit a gift repair?');
     api.pending.last.complete(fixture());
     await t.pumpAndSettle();
@@ -434,15 +452,56 @@ void main() {
       expect(find.text('quiet dinner in Delhi'), findsOneWidget);
       expect(find.text('Can this one fit six people?'), findsOneWidget);
       expect(api.pending.length, 2);
-      await t.tap(find.byTooltip('Conversation options'));
+      await t.tap(find.text('New question'));
       await t.pumpAndSettle();
-      await t.tap(find.text('New conversation'));
-      await t.pumpAndSettle();
+      expect(find.text('What do you have in mind?'), findsOneWidget);
+      expect(find.text('Continue previous conversation'), findsOneWidget);
       await submit(t, 'A doctor');
       expect(api.contexts.last['parent'], isNull);
       expect(api.contexts.last['selected'], isEmpty);
       api.pending.last.complete(fixture());
       await t.pumpAndSettle();
+      await t.tap(find.widgetWithText(TextButton, 'Ask'));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Continue previous conversation'));
+      await t.pumpAndSettle();
+      expect(find.text('Can this one fit six people?'), findsOneWidget);
+      await submit(t, 'And its location?');
+      expect(api.contexts.last['parent'], fixture(turn: 2).requestId);
+      api.pending.last.complete(fixture(turn: 2));
+      await t.pumpAndSettle();
+    },
+  );
+
+  testWidgets(
+    'Back to Ask preserves a thread and its draft; tab returns home',
+    (t) async {
+      final api = FakeAsk();
+      Widget screen(int signal) => MaterialApp(
+        home: Scaffold(
+          body: AskExperience(
+            api: api,
+            onOpen: (_) async {},
+            homeSignal: signal,
+          ),
+        ),
+      );
+      await t.pumpWidget(screen(0));
+      await submit(t, 'dinner in Delhi');
+      api.pending.single.complete(fixture());
+      await t.pumpAndSettle();
+      await t.enterText(find.byType(TextField), 'Something with a garden');
+      await t.tap(find.widgetWithText(TextButton, 'Ask'));
+      await t.pumpAndSettle();
+      expect(find.text('What do you have in mind?'), findsOneWidget);
+      await t.tap(find.text('Continue conversation'));
+      await t.pumpAndSettle();
+      expect(find.text('dinner in Delhi'), findsOneWidget);
+      expect(find.text('Something with a garden'), findsOneWidget);
+      await t.pumpWidget(screen(1));
+      await t.pumpAndSettle();
+      expect(find.text('What do you have in mind?'), findsOneWidget);
+      expect(find.text('Continue conversation'), findsOneWidget);
     },
   );
   for (final width in [320.0, 375.0, 414.0, 768.0]) {

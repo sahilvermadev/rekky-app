@@ -25,23 +25,63 @@ class AskExperience extends StatefulWidget {
     required this.api,
     required this.onOpen,
     this.resolveCity,
+    this.homeSignal = 0,
   });
   final RekkyApi api;
   final Future<void> Function(RekkyItem) onOpen;
   final Future<String?> Function()? resolveCity;
+
+  /// Increment when the Ask destination is tapped, including while selected.
+  final int homeSignal;
   @override
   State<AskExperience> createState() => _AskExperienceState();
 }
 
+class _PausedAskThread {
+  _PausedAskThread({
+    required this.answer,
+    required this.history,
+    required this.asked,
+    required this.requestId,
+    required this.draft,
+    required this.activeViewId,
+    required this.explorerView,
+    required this.explorerCreated,
+    required this.explorerVersion,
+    required this.selected,
+    required this.excluded,
+    required this.viewSelectionItems,
+    required this.lastAnswerAt,
+    required this.scrollOffset,
+  });
+  final AskAnswer? answer;
+  final List<({AskAnswer answer, String question})> history;
+  final String asked, requestId, draft;
+  final String? activeViewId;
+  final AskView? explorerView;
+  final bool explorerCreated;
+  final int explorerVersion;
+  final List<String> selected, excluded;
+  final List<RekkyItem> viewSelectionItems;
+  final DateTime? lastAnswerAt;
+  final double scrollOffset;
+}
+
 class _AskExperienceState extends State<AskExperience> {
   final input = TextEditingController();
+  final homeInput = TextEditingController();
   final threadScroll = ScrollController();
+  final homeScroll = ScrollController();
+  bool onHome = true, explorerFromHome = true;
+  _PausedAskThread? pausedThread;
+  DateTime? lastAnswerAt;
   AskView? explorerView;
   bool showExplorer = false, explorerCreated = false;
   String? activeViewId, pendingViewId;
   List<RekkyItem> viewSelectionItems = [];
   int explorerVersion = 0;
   final inputFocus = FocusNode();
+  final homeFocus = FocusNode();
   final history = <({AskAnswer answer, String question})>[];
   final selected = <String>[];
   final excluded = <String>[];
@@ -60,7 +100,20 @@ class _AskExperienceState extends State<AskExperience> {
   void initState() {
     super.initState();
     inputFocus.addListener(_focusChanged);
+    homeFocus.addListener(_focusChanged);
     unawaited(AskRecorder.clearAbandoned().catchError((_) {}));
+  }
+
+  @override
+  void didUpdateWidget(covariant AskExperience oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.homeSignal != oldWidget.homeSignal) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      setState(() {
+        showExplorer = false;
+        onHome = true;
+      });
+    }
   }
 
   void _focusChanged() {
@@ -81,9 +134,13 @@ class _AskExperienceState extends State<AskExperience> {
     if (working) unawaited(cancelRequest(requestId));
     generation++;
     input.dispose();
+    homeInput.dispose();
     threadScroll.dispose();
+    homeScroll.dispose();
     inputFocus.removeListener(_focusChanged);
     inputFocus.dispose();
+    homeFocus.removeListener(_focusChanged);
+    homeFocus.dispose();
     super.dispose();
   }
 
@@ -98,10 +155,17 @@ class _AskExperienceState extends State<AskExperience> {
   Future<void> submit({bool retry = false}) async {
     final question = retry ? pending : input.text.trim();
     if (question.isEmpty) return;
+    if (answer != null && !_threadIsValid(lastAnswerAt)) {
+      setState(
+        () => error = 'This conversation expired. Start a new question.',
+      );
+      return;
+    }
     FocusScope.of(context).unfocus();
     final previousRequest = working ? requestId : null;
     final turn = ++generation;
     setState(() {
+      onHome = false;
       working = true;
       restoring = false;
       paging = false;
@@ -152,6 +216,7 @@ class _AskExperienceState extends State<AskExperience> {
         if (answer != null) history.add((answer: answer!, question: asked));
         if (history.length > 8) history.removeAt(0);
         answer = result;
+        lastAnswerAt = DateTime.now();
         asked = question;
         selected.clear();
         excluded.clear();
@@ -176,30 +241,125 @@ class _AskExperienceState extends State<AskExperience> {
     }
   }
 
-  void newQuestion() {
-    if (working) unawaited(cancelRequest(requestId));
-    generation++;
+  bool _threadIsValid(DateTime? lastAnswer) =>
+      lastAnswer != null &&
+      DateTime.now().difference(lastAnswer) < const Duration(minutes: 14);
+
+  bool get _hasCurrentThread =>
+      answer != null || history.isNotEmpty || working || input.text.isNotEmpty;
+
+  bool get _canResumeCurrent =>
+      _hasCurrentThread &&
+      (answer == null ? true : _threadIsValid(lastAnswerAt));
+
+  bool get _canResumePaused =>
+      pausedThread != null &&
+      (pausedThread!.answer == null ||
+          _threadIsValid(pausedThread!.lastAnswerAt));
+
+  _PausedAskThread _snapshotThread() => _PausedAskThread(
+    answer: answer,
+    history: List.of(history),
+    asked: asked,
+    requestId: requestId,
+    draft: input.text,
+    activeViewId: activeViewId,
+    explorerView: explorerView,
+    explorerCreated: explorerCreated,
+    explorerVersion: explorerVersion,
+    selected: List.of(selected),
+    excluded: List.of(excluded),
+    viewSelectionItems: List.of(viewSelectionItems),
+    lastAnswerAt: lastAnswerAt,
+    scrollOffset: threadScroll.hasClients ? threadScroll.offset : 0,
+  );
+
+  void _resumePausedThread() {
+    final previous = pausedThread;
+    if (previous == null || !_canResumePaused) return;
+    final current = _hasCurrentThread ? _snapshotThread() : null;
     setState(() {
-      answer = null;
-      activeViewId = null;
-      explorerCreated = false;
-      showExplorer = false;
-      asked = '';
+      pausedThread = current;
+      answer = previous.answer;
+      history
+        ..clear()
+        ..addAll(previous.history);
+      asked = previous.asked;
+      requestId = previous.requestId;
+      input.text = previous.draft;
+      activeViewId = previous.activeViewId;
+      explorerView = previous.explorerView;
+      explorerCreated = previous.explorerCreated;
+      explorerVersion = previous.explorerVersion;
+      selected
+        ..clear()
+        ..addAll(previous.selected);
+      excluded
+        ..clear()
+        ..addAll(previous.excluded);
+      viewSelectionItems = previous.viewSelectionItems;
+      lastAnswerAt = previous.lastAnswerAt;
       pending = '';
-      requestId = '';
-      working = false;
-      restoring = false;
-      paging = false;
       error = null;
       editing = false;
       comparing = false;
-      history.clear();
-      if (chosenCity == null && !allLocations) cityChecked = false;
-      selected.clear();
-      excluded.clear();
-      input.clear();
+      showExplorer = false;
+      onHome = false;
     });
-    inputFocus.requestFocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && threadScroll.hasClients) {
+        threadScroll.jumpTo(
+          previous.scrollOffset.clamp(
+            0.0,
+            threadScroll.position.maxScrollExtent,
+          ),
+        );
+      }
+    });
+  }
+
+  void _askFromHome() {
+    final question = homeInput.text.trim();
+    if (question.isEmpty) return;
+    if (working) unawaited(cancelRequest(requestId));
+    if (_hasCurrentThread) pausedThread = _snapshotThread();
+    _clearThread();
+    input.text = question;
+    homeInput.clear();
+    submit();
+  }
+
+  void _clearThread() {
+    generation++;
+    answer = null;
+    activeViewId = null;
+    explorerCreated = false;
+    showExplorer = false;
+    asked = '';
+    pending = '';
+    requestId = '';
+    working = false;
+    restoring = false;
+    paging = false;
+    error = null;
+    editing = false;
+    comparing = false;
+    lastAnswerAt = null;
+    history.clear();
+    selected.clear();
+    excluded.clear();
+    input.clear();
+    if (chosenCity == null && !allLocations) cityChecked = false;
+  }
+
+  void newQuestion() {
+    if (working) unawaited(cancelRequest(requestId));
+    setState(() {
+      if (_hasCurrentThread) pausedThread = _snapshotThread();
+      _clearThread();
+      onHome = true;
+    });
+    homeFocus.requestFocus();
   }
 
   Future<void> chooseArea() async {
@@ -287,7 +447,7 @@ class _AskExperienceState extends State<AskExperience> {
     }
   }
 
-  Future<void> speak() async {
+  Future<void> speak({bool fromHome = false}) async {
     if (speaking || restoring) return;
     if (working) {
       unawaited(cancelRequest(requestId));
@@ -310,20 +470,28 @@ class _AskExperienceState extends State<AskExperience> {
     if (!mounted) return;
     setState(() => speaking = false);
     if (text != null && text.trim().isNotEmpty) {
-      input.text = text;
-      await submit();
+      if (fromHome) {
+        homeInput.text = text;
+        _askFromHome();
+      } else {
+        input.text = text;
+        await submit();
+      }
     }
   }
 
-  Widget composer(BuildContext context) {
-    final current = answer;
+  Widget composer(BuildContext context, {bool fromHome = false}) {
+    final current = fromHome ? null : answer;
+    final controller = fromHome ? homeInput : input;
+    final focusNode = fromHome ? homeFocus : inputFocus;
+    void send() => fromHome ? _askFromHome() : submit();
     final colors = Theme.of(context).colorScheme;
     final askBlue = LibraryStyle.searchFocus(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (selected.isNotEmpty) ...[
+        if (!fromHome && selected.isNotEmpty) ...[
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -379,18 +547,18 @@ class _AskExperienceState extends State<AskExperience> {
             color: colors.surfaceContainerLow,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: inputFocus.hasFocus ? askBlue : colors.outlineVariant,
+              color: focusNode.hasFocus ? askBlue : colors.outlineVariant,
             ),
           ),
           child: TextField(
-            controller: input,
-            focusNode: inputFocus,
+            controller: controller,
+            focusNode: focusNode,
             minLines: 1,
             maxLines: 3,
             maxLength: 500,
             textInputAction: TextInputAction.search,
             style: Theme.of(context).textTheme.bodyLarge,
-            onSubmitted: (_) => submit(),
+            onSubmitted: (_) => send(),
             decoration: InputDecoration(
               filled: false,
               border: InputBorder.none,
@@ -409,7 +577,9 @@ class _AskExperienceState extends State<AskExperience> {
               prefixIconConstraints: const BoxConstraints(minWidth: 52),
               prefixIcon: IconButton(
                 tooltip: 'Speak a question',
-                onPressed: speaking || restoring ? null : speak,
+                onPressed: speaking || restoring
+                    ? null
+                    : () => speak(fromHome: fromHome),
                 icon: Icon(Icons.mic_none_rounded, color: askBlue),
               ),
               suffixIconConstraints: const BoxConstraints(minWidth: 56),
@@ -417,7 +587,7 @@ class _AskExperienceState extends State<AskExperience> {
                 padding: const EdgeInsets.only(right: 5),
                 child: IconButton.filled(
                   tooltip: current == null ? 'Ask' : 'Ask follow-up',
-                  onPressed: speaking || restoring ? null : () => submit(),
+                  onPressed: speaking || restoring ? null : send,
                   style: IconButton.styleFrom(
                     backgroundColor: RekkyTheme.navAsk,
                     foregroundColor: RekkyTheme.onNavAsk,
@@ -504,6 +674,7 @@ class _AskExperienceState extends State<AskExperience> {
 
   void explore([AskView? view]) {
     setState(() {
+      explorerFromHome = onHome;
       if (!explorerCreated || view?.id != explorerView?.id) {
         explorerView = view;
         explorerVersion++;
@@ -670,31 +841,121 @@ class _AskExperienceState extends State<AskExperience> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final started = answer != null || working || error != null;
+    final home = Column(
+      children: [
+        Expanded(
+          child: ListView(
+            controller: homeScroll,
+            key: const PageStorageKey('ask-home'),
+            padding: const EdgeInsets.fromLTRB(20, 40, 20, 20),
+            children: [
+              Text(
+                'What do you have in mind?',
+                style: LibraryStyle.heading(context, 32),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Find something you saved, or discover what fits.',
+                style: Theme.of(context).textTheme.bodyLarge
+                    ?.copyWith(color: colors.onSurfaceVariant),
+              ),
+              if (_canResumeCurrent) ...[
+                const SizedBox(height: 24),
+                OutlinedButton.icon(
+                  onPressed: () => setState(() => onHome = false),
+                  icon: const Icon(Icons.chat_bubble_outline_rounded),
+                  label: const Text('Continue conversation'),
+                ),
+              ],
+              if (_canResumePaused) ...[
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  onPressed: working ? null : _resumePausedThread,
+                  icon: const Icon(Icons.history_rounded),
+                  label: const Text('Continue previous conversation'),
+                ),
+              ],
+              if ((_hasCurrentThread && !_canResumeCurrent) ||
+                  (pausedThread != null && !_canResumePaused)) ...[
+                const SizedBox(height: 16),
+                Text(
+                  'Your earlier conversation expired. Start a new question.',
+                  style: Theme.of(context).textTheme.bodySmall
+                      ?.copyWith(color: colors.onSurfaceVariant),
+                ),
+              ],
+              const SizedBox(height: 24),
+              OutlinedButton.icon(
+                onPressed: () => explore(),
+                icon: const Icon(Icons.explore_outlined),
+                label: const Text('Explore your saved recommendations'),
+              ),
+              const SizedBox(height: 20),
+              for (final example in [
+                'Who was that taxi driver?',
+                'Something fun to try this weekend',
+                'A place for a quiet dinner',
+              ])
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(example),
+                  trailing: const Icon(Icons.north_west_rounded, size: 18),
+                  onTap: () {
+                    homeInput.text = example;
+                    _askFromHome();
+                  },
+                ),
+              const SizedBox(height: 20),
+              Text(
+                'Ask sends your question, any search city and relevant saved recommendations to OpenAI.',
+                style: Theme.of(context).textTheme.bodySmall
+                    ?.copyWith(color: colors.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: composer(context, fromHome: true),
+        ),
+      ],
+    );
     final conversation = Column(
       children: [
-        Row(
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
           children: [
+            TextButton.icon(
+              onPressed: () {
+                FocusManager.instance.primaryFocus?.unfocus();
+                setState(() => onHome = true);
+              },
+              icon: const Icon(Icons.arrow_back_rounded, size: 18),
+              label: const Text('Ask'),
+            ),
             if (explorerCreated)
-              TextButton.icon(
-                onPressed: () => setState(() => showExplorer = true),
+              IconButton(
+                tooltip: 'Back to browse',
+                onPressed: () => setState(() {
+                  explorerFromHome = false;
+                  showExplorer = true;
+                }),
                 icon: const Icon(Icons.view_agenda_outlined, size: 18),
-                label: const Text('Browse'),
               ),
-            const Spacer(),
+            TextButton(
+              onPressed: newQuestion,
+              child: const Text('New question'),
+            ),
             PopupMenuButton<String>(
               tooltip: 'Conversation options',
               onSelected: (value) {
-                if (value == 'new') {
-                  newQuestion();
-                } else if (value == 'area') {
+                if (value == 'area') {
                   chooseArea();
                 } else {
                   explore();
                 }
               },
               itemBuilder: (_) => const [
-                PopupMenuItem(value: 'new', child: Text('New conversation')),
                 PopupMenuItem(value: 'area', child: Text('Change search area')),
                 PopupMenuItem(
                   value: 'explore',
@@ -711,46 +972,6 @@ class _AskExperienceState extends State<AskExperience> {
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
             children: [
-              if (!started) ...[
-                const SizedBox(height: 40),
-                Text(
-                  'What do you have in mind?',
-                  style: LibraryStyle.heading(context, 32),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Find something you saved, or discover what fits.',
-                  style: Theme.of(context).textTheme.bodyLarge
-                      ?.copyWith(color: colors.onSurfaceVariant),
-                ),
-                const SizedBox(height: 24),
-                OutlinedButton.icon(
-                  onPressed: () => explore(),
-                  icon: const Icon(Icons.explore_outlined),
-                  label: const Text('Explore your saved recommendations'),
-                ),
-                const SizedBox(height: 20),
-                for (final example in [
-                  'Who was that taxi driver?',
-                  'Something fun to try this weekend',
-                  'A place for a quiet dinner',
-                ])
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(example),
-                    trailing: const Icon(Icons.north_west_rounded, size: 18),
-                    onTap: () {
-                      input.text = example;
-                      submit();
-                    },
-                  ),
-                const SizedBox(height: 20),
-                Text(
-                  'Ask sends your question, any search city and relevant saved recommendations to OpenAI.',
-                  style: Theme.of(context).textTheme.bodySmall
-                      ?.copyWith(color: colors.onSurfaceVariant),
-                ),
-              ],
               for (final turn in history)
                 replyView(context, turn.answer, turn.question),
               if (answer != null)
@@ -826,13 +1047,23 @@ class _AskExperienceState extends State<AskExperience> {
       ],
     );
     return PopScope(
-      canPop: !showExplorer,
+      canPop: onHome && !showExplorer,
       onPopInvokedWithResult: (didPop, result) {
-        if (!didPop) setState(() => showExplorer = false);
+        if (!didPop) {
+          setState(() {
+            if (showExplorer) {
+              showExplorer = false;
+              onHome = explorerFromHome;
+            } else {
+              onHome = true;
+            }
+          });
+        }
       },
       child: Stack(
         children: [
-          Offstage(offstage: showExplorer, child: conversation),
+          Offstage(offstage: showExplorer || !onHome, child: home),
+          Offstage(offstage: showExplorer || onHome, child: conversation),
           if (explorerCreated)
             Offstage(
               offstage: !showExplorer,
@@ -840,7 +1071,10 @@ class _AskExperienceState extends State<AskExperience> {
                 key: ValueKey(explorerVersion),
                 api: widget.api,
                 initialView: explorerView,
-                onBack: () => setState(() => showExplorer = false),
+                onBack: () => setState(() {
+                  showExplorer = false;
+                  onHome = explorerFromHome;
+                }),
                 onOpen: widget.onOpen,
                 onAsk: (view, ids, text) {
                   setState(() {
@@ -850,6 +1084,7 @@ class _AskExperienceState extends State<AskExperience> {
                       ..clear()
                       ..addAll(ids);
                     showExplorer = false;
+                    onHome = false;
                   });
                   input.text = text;
                   submit();

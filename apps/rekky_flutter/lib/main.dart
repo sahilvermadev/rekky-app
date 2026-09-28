@@ -85,6 +85,7 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
   bool busy = true, signedIn = false, disclosed = false;
   bool recordingScreenOpen = false;
   int destination = 0;
+  int askHomeSignal = 0;
   String? issue;
   List<RekkyItem> library = [];
   List<VoiceDraft> voiceDrafts = [];
@@ -863,7 +864,10 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
       ),
       bottomNavigationBar: RekkyNavigation(
         destination: destination,
-        onSelect: (value) => setState(() => destination = value),
+        onSelect: (value) => setState(() {
+          destination = value;
+          if (value == 0) askHomeSignal++;
+        }),
         onRemember: _remember,
       ),
     );
@@ -913,6 +917,7 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
   Widget _askPage() => AskExperience(
     key: ValueKey('ask-$accountId'),
     api: api,
+    homeSignal: askHomeSignal,
     resolveCity: askDeviceCity,
     onOpen: (item) async {
       if (!library.any((old) => old.id == item.id)) {
