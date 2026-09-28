@@ -30,6 +30,7 @@ use uuid::Uuid;
 pub struct AppState {
     pub pool: PgPool,
     pub daily_account_limit: i64,
+    pub ask_daily_account_limit: i64,
     pub verifier: Arc<dyn IdentityVerifier>,
     pub transcriber: Arc<dyn VoiceTranscriber>,
     pub extractor: Arc<dyn TranscriptExtractor>,

@@ -398,6 +398,7 @@ impl TestApp {
         let state = AppState {
             pool: pool.clone(),
             daily_account_limit: 12,
+            ask_daily_account_limit: 30,
             verifier,
             transcriber,
             extractor: Arc::new(TestExtractor),
@@ -4094,6 +4095,74 @@ async fn agentic_ask_is_owner_scoped_idempotent_and_revision_checked() {
         )
         .await;
     assert_eq!(code, StatusCode::FORBIDDEN);
+    t.cleanup().await;
+}
+
+#[tokio::test]
+async fn ask_account_allowance_is_configurable_without_erasing_usage() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    let model = Arc::new(ScriptedAsk {
+        decisions: std::sync::atomic::AtomicUsize::new(0),
+    });
+    t.state.ask_model = model.clone();
+    t.state.ask_daily_account_limit = 1;
+    t.app = router(t.state.clone());
+    let (owner, token) = t.sign_in("google", "valid-a").await;
+    t.call(
+        Method::POST,
+        "/v1/me/visibility-disclosure",
+        Some(&token),
+        Some(json!({"accept":true})),
+        &[],
+    )
+    .await;
+    sqlx::query("INSERT INTO transcript_extraction_permissions(account_id,enabled,generation,disclosure_version) VALUES($1,true,1,1)")
+        .bind(owner)
+        .execute(&t.pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO ask_runs(id,owner_id,request_hash,status,permission_generation) VALUES($1,$2,'earlier','completed',1)")
+        .bind(Uuid::new_v4())
+        .bind(owner)
+        .execute(&t.pool)
+        .await
+        .unwrap();
+
+    let request = json!({"request_id":Uuid::new_v4(),"question":"a quiet meal"});
+    let (status, limited) = t
+        .call(
+            Method::POST,
+            "/v1/ask/agent",
+            Some(&token),
+            Some(request.clone()),
+            &[],
+        )
+        .await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(limited["error"]["code"], "ask_daily_limit");
+    assert_eq!(model.decisions.load(std::sync::atomic::Ordering::SeqCst), 0);
+
+    t.state.ask_daily_account_limit = 2;
+    t.app = router(t.state.clone());
+    let (status, response) = t
+        .call(
+            Method::POST,
+            "/v1/ask/agent",
+            Some(&token),
+            Some(request),
+            &[],
+        )
+        .await;
+    assert_ne!(status, StatusCode::TOO_MANY_REQUESTS, "{response}");
+    assert!(model.decisions.load(std::sync::atomic::Ordering::SeqCst) > 0);
+    let runs: i64 = sqlx::query_scalar("SELECT count(*) FROM ask_runs WHERE owner_id=$1")
+        .bind(owner)
+        .fetch_one(&t.pool)
+        .await
+        .unwrap();
+    assert_eq!(runs, 2);
     t.cleanup().await;
 }
 

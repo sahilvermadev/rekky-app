@@ -844,14 +844,25 @@ pub async fn run(State(state): State<AppState>, headers: HeaderMap, body: Bytes)
         ));
     }
     let counts=sqlx::query("SELECT count(*) total,count(*) FILTER(WHERE owner_id=$1) personal,count(*) FILTER(WHERE owner_id=$1 AND status='running' AND created_at>now()-interval '1 minute') active FROM ask_runs WHERE created_at>now()-interval '24 hours' AND reserved_microusd>0").bind(owner_id).fetch_one(&mut *tx).await?;
-    if counts.get::<i64, _>("total") >= 500
-        || counts.get::<i64, _>("personal") >= 30
-        || counts.get::<i64, _>("active") >= 1
-    {
+    if counts.get::<i64, _>("active") >= 1 {
         return Err(ApiError::new(
             StatusCode::TOO_MANY_REQUESTS,
-            "ask_limit",
-            "Ask is busy or its daily allowance is reached. Try again later.",
+            "ask_running",
+            "Ask is still answering another question. Try again in a moment.",
+        ));
+    }
+    if counts.get::<i64, _>("personal") >= state.ask_daily_account_limit {
+        return Err(ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "ask_daily_limit",
+            "You’ve reached the 24-hour Ask limit. Try again later.",
+        ));
+    }
+    if counts.get::<i64, _>("total") >= 500 {
+        return Err(ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "ask_busy",
+            "Ask is busy right now. Try again later.",
         ));
     }
     sqlx::query("UPDATE ask_runs SET result=NULL,status=CASE WHEN status='running' THEN 'failed' ELSE status END WHERE expires_at<now() AND (result IS NOT NULL OR status='running')").execute(&mut *tx).await?;

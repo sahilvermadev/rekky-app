@@ -231,6 +231,7 @@ async fn background_learning_deduplicates_reuses_and_fences_results() {
     let app = rekky_backend::router(rekky_backend::AppState {
         pool: pool.clone(),
         daily_account_limit: 12,
+        ask_daily_account_limit: 30,
         verifier: Arc::new(rekky_backend::auth::OidcVerifier::from_env()),
         transcriber: Arc::new(rekky_backend::voice::OpenAiTranscriber::from_env()),
         extractor: Arc::new(rekky_backend::extraction::OpenAiExtractor::from_env()),

@@ -29,8 +29,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !(1..=100).contains(&daily_account_limit) {
         return Err("PILOT_DAILY_ACCOUNT_LIMIT must be between 1 and 100".into());
     }
+    let ask_daily_account_limit: i64 = env::var("ASK_DAILY_ACCOUNT_LIMIT")
+        .unwrap_or_else(|_| "30".into())
+        .parse()?;
+    if !(1..=100).contains(&ask_daily_account_limit) {
+        return Err("ASK_DAILY_ACCOUNT_LIMIT must be between 1 and 100".into());
+    }
     let state = AppState {
         daily_account_limit,
+        ask_daily_account_limit,
         pool,
         verifier,
         transcriber,
