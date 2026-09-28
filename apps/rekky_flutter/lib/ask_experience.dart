@@ -584,7 +584,7 @@ class _AskExperienceState extends State<AskExperience> {
                               style: LibraryStyle.heading(context, 23),
                             ),
                             const SizedBox(height: 6),
-                            Text('${view.total} saved · Explore collection'),
+                            Text('${view.total} saved · Browse matches'),
                           ],
                         ),
                       ),
@@ -679,7 +679,7 @@ class _AskExperienceState extends State<AskExperience> {
               TextButton.icon(
                 onPressed: () => setState(() => showExplorer = true),
                 icon: const Icon(Icons.view_agenda_outlined, size: 18),
-                label: const Text('Collection'),
+                label: const Text('Browse'),
               ),
             const Spacer(),
             PopupMenuButton<String>(

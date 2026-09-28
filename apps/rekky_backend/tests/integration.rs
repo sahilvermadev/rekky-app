@@ -3794,6 +3794,7 @@ async fn ask_agent_can_present_a_complete_native_collection() {
     sqlx::query("INSERT INTO transcript_extraction_permissions(account_id,enabled,generation,disclosure_version) VALUES($1,true,1,1)")
         .bind(owner).execute(&t.pool).await.unwrap();
     categorized_item(&t, &token, "Bob's Bar", "place", "place.bar", &[]).await;
+    categorized_item(&t, &token, "Another Bar", "place", "place.bar", &[]).await;
     categorized_item(&t, &token, "Dinner", "place", "place.restaurant", &[]).await;
     let (status, answer) = t
         .call(
@@ -3807,8 +3808,113 @@ async fn ask_agent_can_present_a_complete_native_collection() {
     assert_eq!(status, StatusCode::OK, "{answer}");
     assert_eq!(answer["reply"], "Here are the saved bars.");
     assert_eq!(answer["views"].as_array().unwrap().len(), 1);
-    assert_eq!(answer["views"][0]["total"], 1);
-    assert_eq!(answer["views"][0]["items"][0]["subject"], "Bob's Bar");
+    assert_eq!(answer["views"][0]["total"], 2);
+    assert!(
+        answer["views"][0]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["subject"] == "Bob's Bar")
+    );
+    t.cleanup().await;
+}
+
+struct SparseCollectionAsk;
+#[async_trait]
+impl rekky_backend::ask::AskModel for SparseCollectionAsk {
+    fn available(&self) -> bool {
+        true
+    }
+    async fn decide(
+        &self,
+        context: Value,
+        _last: bool,
+    ) -> Result<rekky_backend::ask::Decision, rekky_backend::ask::AgentError> {
+        let observations = context["tool_observations"].as_array().unwrap();
+        let (name, arguments) = if observations.is_empty() {
+            let category = if context["question"].as_str().unwrap().contains("bar") {
+                "place.bar"
+            } else {
+                "place.cafe"
+            };
+            (
+                "open_collection",
+                json!({"title":"Saved places","location":"","category_ids":[category],"kind":"place","query":"","source":"mine","location_role":"relevant","sort":"saved_newest"}),
+            )
+        } else {
+            let result = &observations[0]["result"];
+            assert_eq!(result["view_id"], Value::Null);
+            assert_eq!(result["presentation"], "direct_answer");
+            let items = result["items"].as_array().unwrap();
+            let cards: Vec<_> = items
+                .iter()
+                .map(|item| {
+                    json!({
+                        "item_id":item["item_id"],"section":"supported",
+                        "reason":"This bar is in your saved recommendations.","caveat":"",
+                        "evidence_ids":[item["evidence"][0]["id"]]
+                    })
+                })
+                .collect();
+            (
+                "present_answer",
+                json!({"intent":"discovery","new_topic":false,"title":"Saved places",
+                    "reply":if items.is_empty() {"No saved cafe matched."} else {"I found one saved bar."},
+                    "view_ids":[],"location":"","clarification":"","choices":[],"comparison":null,"results":cards}),
+            )
+        };
+        Ok(rekky_backend::ask::Decision {
+            output_items: vec![],
+            calls: vec![rekky_backend::ask::ToolCall {
+                call_id: String::new(),
+                name: name.into(),
+                arguments,
+            }],
+            input_tokens: 100,
+            output_tokens: 100,
+        })
+    }
+}
+
+#[tokio::test]
+async fn ask_agent_does_not_create_empty_or_single_item_collections() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    t.state.ask_model = Arc::new(SparseCollectionAsk);
+    t.app = router(t.state.clone());
+    let (owner, token) = t.sign_in("google", "valid-a").await;
+    t.call(
+        Method::POST,
+        "/v1/me/visibility-disclosure",
+        Some(&token),
+        Some(json!({"accept":true})),
+        &[],
+    )
+    .await;
+    sqlx::query("INSERT INTO transcript_extraction_permissions(account_id,enabled,generation,disclosure_version) VALUES($1,true,1,1)")
+        .bind(owner).execute(&t.pool).await.unwrap();
+    categorized_item(&t, &token, "Bob's Bar", "place", "place.bar", &[]).await;
+    for (question, expected_cards) in [("Find a bar", 1), ("Find a cafe", 0)] {
+        let (status, answer) = t
+            .call(
+                Method::POST,
+                "/v1/ask/agent",
+                Some(&token),
+                Some(json!({"request_id":Uuid::new_v4(),"question":question})),
+                &[],
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{answer}");
+        assert!(answer["views"].as_array().unwrap().is_empty());
+        assert_eq!(answer["results"].as_array().unwrap().len(), expected_cards);
+    }
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM ask_views WHERE owner_id=$1")
+        .bind(owner)
+        .fetch_one(&t.pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
     t.cleanup().await;
 }
 #[async_trait]

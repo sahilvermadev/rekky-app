@@ -84,7 +84,7 @@ fn tools() -> Vec<Value> {
     vec![
         tool(
             "open_collection",
-            "Create a complete browsable collection for the interpreted need; not gated on all/everything. Use available canonical category IDs from knowledge_overview. All fields required; empty strings/arrays mean unrestricted. source must be mine. location_role relevant matches venue/service coverage, any includes trip context, unknown exposes unlocated recommendations. sort saved_newest or name. Return views in present_answer using view_id.",
+            "Open a complete browsable set only when exploring several matching recommendations would help the person, including option seeking without the word 'all'. For a narrow question, first seek a direct cited answer. A zero- or one-item match returns no view ID: answer directly from any returned item instead of showing a collection. Use canonical category IDs from knowledge_overview. Empty strings/arrays mean unrestricted; query is literal subject/category text, never a subjective quality such as quiet or date-worthy. source must be mine. location_role relevant matches venue/service coverage, any includes trip context, unknown exposes unlocated recommendations. sort saved_newest or name.",
             object(json!({
                 "title":{"type":"string"},"location":{"type":"string"},"category_ids":strings(),"kind":{"type":"string"},"query":{"type":"string"},"source":{"type":"string","enum":["mine"]},"location_role":{"type":"string","enum":["relevant","any","unknown"]},"sort":{"type":"string","enum":["saved_newest","name"]}
             })),
@@ -1069,12 +1069,9 @@ async fn execute(
                         Ok(spec) => {
                             match crate::ask_views::create_view(state, owner_id, spec).await {
                                 Ok(view) => {
-                                    if let Some(id) = view["view_id"]
+                                    let view_id = view["view_id"]
                                         .as_str()
-                                        .and_then(|s| Uuid::parse_str(s).ok())
-                                    {
-                                        opened_views.insert(id);
-                                    }
+                                        .and_then(|s| Uuid::parse_str(s).ok());
                                     let found: Vec<_> = view["items"]
                                         .as_array()
                                         .into_iter()
@@ -1085,7 +1082,26 @@ async fn execute(
                                     for c in &found {
                                         seen.insert(c.item_id, c.clone());
                                     }
-                                    json!({"view_id":view["view_id"],"title":view["title"],"total":view["total"],"spec":view["spec"],"facets":view["facets"],"items":found.iter().map(model_candidate).collect::<Vec<_>>(),"complete_collection":true})
+                                    let total = view["total"].as_u64().unwrap_or(0);
+                                    if total < 2 {
+                                        // Sparse agent-created views are just answer candidates,
+                                        // not useful navigation. Native Explore may still open them.
+                                        if let Some(id) = view_id {
+                                            sqlx::query(
+                                                "DELETE FROM ask_views WHERE id=$1 AND owner_id=$2",
+                                            )
+                                            .bind(id)
+                                            .bind(owner_id)
+                                            .execute(&state.pool)
+                                            .await?;
+                                        }
+                                        json!({"view_id":null,"total":total,"items":found.iter().map(model_candidate).collect::<Vec<_>>(),"presentation":"direct_answer","message":"No browsable collection was created. Give a direct cited result if one item fits; otherwise explain the gap without an empty collection."})
+                                    } else {
+                                        if let Some(id) = view_id {
+                                            opened_views.insert(id);
+                                        }
+                                        json!({"view_id":view["view_id"],"title":view["title"],"total":view["total"],"spec":view["spec"],"facets":view["facets"],"items":found.iter().map(model_candidate).collect::<Vec<_>>(),"complete_collection":true})
+                                    }
                                 }
                                 Err(_) => {
                                     json!({"error":"Could not resolve/create that collection. An unindexed neighbourhood is not the whole city: search the exact locality phrase within a verified city, or offer a clearly broader city collection. Check available category IDs."})
@@ -1245,7 +1261,10 @@ async fn page_response(state: &AppState, owner_id: Uuid, id: Uuid, offset: usize
     let mut views = vec![];
     for view_id in &snapshot.answer.view_ids {
         match crate::ask_views::view_page(state, owner_id, *view_id, 0).await {
-            Ok(v) => views.push(v),
+            // Also hide sparse views from answers generated before the agent
+            // stopped creating them. Direct Explore has its own view route.
+            Ok(v) if v["total"].as_u64().unwrap_or(0) >= 2 => views.push(v),
+            Ok(_) => {}
             Err(_) => {
                 changed = true;
             }
