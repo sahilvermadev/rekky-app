@@ -77,7 +77,8 @@ class RecommendationDetail {
   final String kind, text;
   final String? locationName;
   final Map<String, dynamic>? geography;
-  String get displayText => geography?['status'] == 'resolved' &&
+  String get displayText =>
+      geography?['status'] == 'resolved' &&
           geography?['match_method'] != 'explicit_coarse_context'
       ? (geography?['label'] as String? ?? locationName ?? text)
       : locationName ?? text;
@@ -690,6 +691,80 @@ class RekkyApi {
       timeout: const Duration(seconds: 55),
     ),
   );
+
+  Future<AskAnswer> askAgentStream(
+    String question,
+    String requestId, {
+    String? scopeCity,
+    String? activeViewId,
+    String? previousRequestId,
+    List<String> selectedItemIds = const [],
+    List<String> excludedItemIds = const [],
+    required void Function(String) onText,
+    required void Function() onReset,
+    required void Function() onCardsPending,
+  }) async {
+    final streamRequest = http.Request('POST', _uri('/v1/ask/agent/stream'));
+    streamRequest.headers.addAll({
+      'accept': 'application/x-ndjson',
+      'content-type': 'application/json',
+      if (token != null) 'authorization': 'Bearer $token',
+    });
+    streamRequest.body = jsonEncode({
+      'question': question,
+      'request_id': requestId,
+      'scope_city': ?scopeCity,
+      'active_view_id': ?activeViewId,
+      'previous_request_id': ?previousRequestId,
+      'selected_item_ids': selectedItemIds,
+      'excluded_item_ids': excludedItemIds,
+    });
+    final response = await _client
+        .send(streamRequest)
+        .timeout(const Duration(seconds: 55));
+    if (response.statusCode != 200) {
+      final complete = await http.Response.fromStream(response);
+      _decode(complete);
+      throw const ApiFailure('ask_stream', 'Ask could not start.', 0);
+    }
+    AskAnswer? answer;
+    await for (final line
+        in response.stream
+            .transform(utf8.decoder)
+            .transform(const LineSplitter())
+            .timeout(const Duration(seconds: 55))) {
+      if (line.isEmpty) continue;
+      final event = jsonDecode(line) as Map<String, dynamic>;
+      switch (event['type']) {
+        case 'text':
+          onText(event['text'] as String);
+          break;
+        case 'reset':
+          onReset();
+          break;
+        case 'cards_pending':
+          onCardsPending();
+          break;
+        case 'answer':
+          answer = AskAnswer.fromJson(event['answer'] as Map<String, dynamic>);
+          break;
+        case 'error':
+          throw ApiFailure(
+            event['code'] as String? ?? 'ask_failed',
+            event['message'] as String? ?? 'Ask could not finish.',
+            event['status'] as int? ?? 500,
+          );
+      }
+    }
+    if (answer == null) {
+      throw const ApiFailure(
+        'ask_stream',
+        'Connection ended before Ask finished.',
+        0,
+      );
+    }
+    return answer;
+  }
 
   Future<String> transcribeQuestion(String id, List<int> audio) async {
     final request = http.Request('POST', _uri('/v1/ask/dictations/$id'));

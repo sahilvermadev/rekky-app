@@ -73,6 +73,36 @@ class FakeAsk extends RekkyApi {
   final requestIds = <String>[];
   final pending = <Completer<AskAnswer>>[];
   int cancelled = 0, reads = 0, pages = 0;
+  void Function(String)? emitText;
+  void Function()? resetText;
+  void Function()? showCardPlaceholder;
+  @override
+  Future<AskAnswer> askAgentStream(
+    String question,
+    String requestId, {
+    String? scopeCity,
+    String? activeViewId,
+    String? previousRequestId,
+    List<String> selectedItemIds = const [],
+    List<String> excludedItemIds = const [],
+    required void Function(String) onText,
+    required void Function() onReset,
+    required void Function() onCardsPending,
+  }) {
+    emitText = onText;
+    resetText = onReset;
+    showCardPlaceholder = onCardsPending;
+    return askAgent(
+      question,
+      requestId,
+      scopeCity: scopeCity,
+      activeViewId: activeViewId,
+      previousRequestId: previousRequestId,
+      selectedItemIds: selectedItemIds,
+      excludedItemIds: excludedItemIds,
+    );
+  }
+
   final viewRequests = <AskBrowseSpec>[];
   @override
   Future<AskView> createAskView(AskBrowseSpec spec) async {
@@ -136,6 +166,36 @@ Future<void> submit(WidgetTester t, String text) async {
 }
 
 void main() {
+  testWidgets('streams the reply before showing recommendation cards', (
+    t,
+  ) async {
+    final semantics = t.ensureSemantics();
+    final api = FakeAsk();
+    await t.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AskExperience(api: api, onOpen: (_) async {}),
+        ),
+      ),
+    );
+    await submit(t, 'dinner');
+    api.emitText!('Here is a dinner option.');
+    await t.pump();
+    expect(find.text('Here is a dinner option.'), findsOneWidget);
+    expect(find.text('Lantern Kitchen'), findsNothing);
+    api.showCardPlaceholder!();
+    await t.pump();
+    expect(
+      find.bySemanticsLabel('Recommendations are loading'),
+      findsOneWidget,
+    );
+    api.pending.single.complete(fixture());
+    await t.pumpAndSettle();
+    expect(find.text('Lantern Kitchen'), findsOneWidget);
+    expect(find.bySemanticsLabel('Recommendations are loading'), findsNothing);
+    semantics.dispose();
+  });
+
   testWidgets('Explore filters a native collection and carries it into Ask', (
     t,
   ) async {

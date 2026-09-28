@@ -20,6 +20,7 @@ serde_json = "1"
 sha2 = "0.10"
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "postgres", "uuid", "chrono", "json", "derive"] }
 tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
 uuid = { version = "1", features = ["serde", "v4"] }
 
 unicode-normalization = "0.1"

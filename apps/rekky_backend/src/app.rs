@@ -101,6 +101,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/v1/ask", post(ask))
         .route("/v1/ask/agent", post(crate::ask::run))
+        .route("/v1/ask/agent/stream", post(crate::ask::run_stream))
         .route("/v1/ask-ui/views", post(crate::ask_views::create))
         .route("/v1/ask-ui/views/{id}", get(crate::ask_views::page))
         .route(
@@ -121,9 +122,9 @@ pub(crate) type ApiResult = Result<Response, ApiError>;
 
 #[derive(Debug)]
 pub struct ApiError {
-    status: StatusCode,
-    code: &'static str,
-    message: &'static str,
+    pub(crate) status: StatusCode,
+    pub(crate) code: &'static str,
+    pub(crate) message: &'static str,
 }
 impl ApiError {
     pub(crate) fn new(status: StatusCode, code: &'static str, message: &'static str) -> Self {

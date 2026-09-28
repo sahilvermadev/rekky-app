@@ -169,6 +169,8 @@ class _AskExperienceState extends State<AskExperience> {
   bool cityChecked = false, checkingCity = false;
   String? error;
   bool working = false, paging = false;
+  String streamedReply = '';
+  bool cardsPending = false;
   int generation = 0;
   bool? reportedOverlay;
   @override
@@ -210,6 +212,8 @@ class _AskExperienceState extends State<AskExperience> {
     setState(() {
       generation++;
       working = false;
+      streamedReply = '';
+      cardsPending = false;
       checkingCity = false;
       input.text = pending;
     });
@@ -253,6 +257,8 @@ class _AskExperienceState extends State<AskExperience> {
     setState(() {
       onHome = false;
       working = true;
+      streamedReply = '';
+      cardsPending = false;
       restoring = false;
       paging = false;
       error = null;
@@ -280,7 +286,7 @@ class _AskExperienceState extends State<AskExperience> {
         });
       }
       if (!retry) pendingCity = deviceCity;
-      final result = await widget.api.askAgent(
+      final result = await widget.api.askAgentStream(
         question,
         requestId,
         scopeCity: pendingCity,
@@ -288,6 +294,35 @@ class _AskExperienceState extends State<AskExperience> {
         previousRequestId: pendingParent,
         selectedItemIds: pendingSelected,
         excludedItemIds: pendingExcluded,
+        onText: (chunk) {
+          if (mounted && turn == generation) {
+            final follow =
+                !threadScroll.hasClients ||
+                threadScroll.position.maxScrollExtent - threadScroll.offset <
+                    120;
+            setState(() => streamedReply += chunk);
+            if (follow) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted && turn == generation && threadScroll.hasClients) {
+                  threadScroll.jumpTo(threadScroll.position.maxScrollExtent);
+                }
+              });
+            }
+          }
+        },
+        onReset: () {
+          if (mounted && turn == generation) {
+            setState(() {
+              streamedReply = '';
+              cardsPending = false;
+            });
+          }
+        },
+        onCardsPending: () {
+          if (mounted && turn == generation) {
+            setState(() => cardsPending = true);
+          }
+        },
       );
       if (!mounted || turn != generation) return;
       if (result.mode == 'limited') {
@@ -307,12 +342,16 @@ class _AskExperienceState extends State<AskExperience> {
         comparing = false;
         input.clear();
         working = false;
+        streamedReply = '';
+        cardsPending = false;
       });
     } catch (e) {
       if (!mounted || turn != generation) return;
       RekkyHaptics.warning();
       setState(() {
         working = false;
+        streamedReply = '';
+        cardsPending = false;
         checkingCity = false;
         input.text = question;
         if (e is ApiFailure && e.code != 'ask_running') requestId = newId();
@@ -835,10 +874,7 @@ class _AskExperienceState extends State<AskExperience> {
             selected: latest ? selected : const [],
           ),
         for (final result in reply.results)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: resultCard(context, result, interactive: latest),
-          ),
+          _answerResultCard(context, result, latest: latest),
         if (reply.clarification.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 8, bottom: 12),
@@ -881,6 +917,32 @@ class _AskExperienceState extends State<AskExperience> {
           ),
         const SizedBox(height: 12),
       ],
+    );
+  }
+
+  Widget _answerResultCard(
+    BuildContext context,
+    AskResult result, {
+    required bool latest,
+  }) {
+    final card = Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: resultCard(context, result, interactive: latest),
+    );
+    if (!latest || MediaQuery.disableAnimationsOf(context)) return card;
+    return TweenAnimationBuilder<double>(
+      key: ValueKey('arrival-${result.item.id}'),
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      builder: (context, progress, child) => Opacity(
+        opacity: progress,
+        child: Transform.translate(
+          offset: Offset(0, 8 * (1 - progress)),
+          child: child,
+        ),
+      ),
+      child: card,
     );
   }
 
@@ -959,13 +1021,46 @@ class _AskExperienceState extends State<AskExperience> {
               if (working || error != null) ...[
                 if (working) ...[
                   questionBubble(context, pending),
-                  const Padding(
-                    padding: EdgeInsets.only(left: 4, top: 2, bottom: 18),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: _AskThinkingIndicator(),
+                  if (streamedReply.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.only(left: 4, top: 2, bottom: 18),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: _AskThinkingIndicator(),
+                      ),
+                    )
+                  else
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: Text(
+                        streamedReply,
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          height: 1.5,
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
                     ),
-                  ),
+                  if (cardsPending && streamedReply.isNotEmpty)
+                    Semantics(
+                      label: 'Recommendations are loading',
+                      child: Container(
+                        height: 72,
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: colors.surfaceContainerLow,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Padding(
+                            padding: EdgeInsets.only(left: 16),
+                            child: ExcludeSemantics(
+                              child: _AskThinkingIndicator(),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
                 if (error != null) ...[
                   Semantics(

@@ -2,17 +2,21 @@
 use crate::app::{ApiError, ApiResult, AppState, ok, owner, parse};
 use async_trait::async_trait;
 use axum::{
-    body::Bytes,
+    body::{Body, Bytes, to_bytes},
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sqlx::Row;
 use std::{
     collections::{HashMap, HashSet},
+    convert::Infallible,
     time::Duration,
 };
+use tokio::sync::mpsc;
+use tokio_stream::{StreamExt, wrappers::UnboundedReceiverStream};
 use uuid::Uuid;
 
 const MODEL: &str = "gpt-6-luna";
@@ -45,6 +49,14 @@ pub struct ToolCall {
 pub trait AskModel: Send + Sync {
     fn available(&self) -> bool;
     async fn decide(&self, context: Value, final_turn: bool) -> Result<Decision, AgentError>;
+    async fn decide_stream(
+        &self,
+        context: Value,
+        final_turn: bool,
+        _events: Option<mpsc::UnboundedSender<Value>>,
+    ) -> Result<Decision, AgentError> {
+        self.decide(context, final_turn).await
+    }
 }
 pub struct OpenAiAsk {
     key: Option<String>,
@@ -124,6 +136,14 @@ impl AskModel for OpenAiAsk {
         self.enabled && self.key.is_some()
     }
     async fn decide(&self, context: Value, final_turn: bool) -> Result<Decision, AgentError> {
+        self.decide_stream(context, final_turn, None).await
+    }
+    async fn decide_stream(
+        &self,
+        context: Value,
+        final_turn: bool,
+        events: Option<mpsc::UnboundedSender<Value>>,
+    ) -> Result<Decision, AgentError> {
         if !self.available() {
             return Err(AgentError::INVALID);
         }
@@ -132,7 +152,7 @@ impl AskModel for OpenAiAsk {
             {"role":"system","content":include_str!("../prompts/ask_v1.txt")},
             {"role":"user","content":context.to_string()}])
         });
-        let body = json!({"model":MODEL,"store":false,"reasoning":{"effort":"none"},"max_output_tokens":2000,
+        let body = json!({"model":MODEL,"store":false,"stream":events.is_some(),"reasoning":{"effort":"none"},"max_output_tokens":2000,
             "input":input,
             "tools":tools(),"tool_choice":if final_turn {json!({"type":"function","name":"present_answer"})}else{json!("required")}});
         // Conservative token bound at <= one token per UTF-8 byte plus headroom.
@@ -142,7 +162,7 @@ impl AskModel for OpenAiAsk {
                 code: "payload_limit",
             });
         }
-        let response = self
+        let mut response = self
             .client
             .post("https://api.openai.com/v1/responses")
             .bearer_auth(self.key.as_ref().ok_or(AgentError::INVALID)?)
@@ -161,7 +181,75 @@ impl AskModel for OpenAiAsk {
                 code: "provider_http",
             });
         }
-        let data: Value = response.json().await.map_err(|_| AgentError::INVALID)?;
+        let data: Value = if let Some(events) = events {
+            let mut pending = Vec::<u8>::new();
+            let mut complete = None;
+            let mut answer_indexes = HashSet::new();
+            let mut arguments: HashMap<i64, String> = HashMap::new();
+            let mut emitted = HashMap::<i64, usize>::new();
+            let mut card_pending = HashSet::new();
+            while let Some(chunk) = response.chunk().await.map_err(|_| AgentError::INVALID)? {
+                pending.extend_from_slice(&chunk);
+                if pending.len() > 300_000 {
+                    return Err(AgentError::INVALID);
+                }
+                while let Some(frame) = take_sse_frame(&mut pending) {
+                    let frame = String::from_utf8(frame).map_err(|_| AgentError::INVALID)?;
+                    let payload = frame.lines().find_map(|line| line.strip_prefix("data: "));
+                    let Some(payload) = payload else { continue };
+                    if payload == "[DONE]" {
+                        continue;
+                    }
+                    let event: Value =
+                        serde_json::from_str(payload).map_err(|_| AgentError::INVALID)?;
+                    match event["type"].as_str().unwrap_or_default() {
+                        "response.output_item.added" => {
+                            if event["item"]["name"] == "present_answer" {
+                                if let Some(index) = event["output_index"].as_i64() {
+                                    answer_indexes.insert(index);
+                                }
+                            }
+                        }
+                        "response.function_call_arguments.delta" => {
+                            let Some(index) = event["output_index"].as_i64() else {
+                                continue;
+                            };
+                            if !answer_indexes.contains(&index) {
+                                continue;
+                            }
+                            let Some(delta) = event["delta"].as_str() else {
+                                continue;
+                            };
+                            let buffer = arguments.entry(index).or_default();
+                            buffer.push_str(delta);
+                            if buffer.len() > 20_000 {
+                                return Err(AgentError::INVALID);
+                            }
+                            if has_started_cards(buffer) && card_pending.insert(index) {
+                                let _ = events.send(json!({"type":"cards_pending"}));
+                            }
+                            if let Some(prefix) = partial_reply(buffer) {
+                                let old = emitted.entry(index).or_default();
+                                // Only completed words are provisional; a rejected answer resets them.
+                                let safe_end = prefix.rfind(char::is_whitespace).unwrap_or(0);
+                                if safe_end > *old && safe_end - *old >= 8 {
+                                    let _ = events.send(
+                                        json!({"type":"text","text":&prefix[*old..safe_end]}),
+                                    );
+                                    *old = safe_end;
+                                }
+                            }
+                        }
+                        "response.completed" => complete = event.get("response").cloned(),
+                        "response.failed" | "error" => return Err(AgentError::INVALID),
+                        _ => {}
+                    }
+                }
+            }
+            complete.ok_or(AgentError::INVALID)?
+        } else {
+            response.json().await.map_err(|_| AgentError::INVALID)?
+        };
         if data["status"] != "completed" {
             return Err(AgentError {
                 code: "provider_incomplete",
@@ -192,6 +280,112 @@ impl AskModel for OpenAiAsk {
             input_tokens: data["usage"]["input_tokens"].as_i64().unwrap_or(0),
             output_tokens: data["usage"]["output_tokens"].as_i64().unwrap_or(0),
         })
+    }
+}
+
+// Read only the reply string from an in-progress function argument. Never send
+// JSON syntax, result IDs, evidence or an unfinished escape to the client.
+fn partial_reply(arguments: &str) -> Option<String> {
+    let key = arguments.find("\"reply\"")?;
+    let tail = arguments.get(key + 7..)?.trim_start();
+    let tail = tail.strip_prefix(':')?.trim_start().strip_prefix('"')?;
+    let bytes = tail.as_bytes();
+    let mut end = 0;
+    while end < bytes.len() {
+        match bytes[end] {
+            b'"' => break,
+            b'\\' => {
+                let Some(&next) = bytes.get(end + 1) else {
+                    break;
+                };
+                if next == b'u' {
+                    if end + 6 > bytes.len() {
+                        break;
+                    }
+                    end += 6;
+                } else {
+                    end += 2;
+                }
+            }
+            _ => end += 1,
+        }
+    }
+    let encoded = tail.get(..end)?;
+    serde_json::from_str::<String>(&format!("\"{encoded}\"")).ok()
+}
+
+fn has_started_cards(arguments: &str) -> bool {
+    let Some(index) = arguments.find("\"results\"") else {
+        return false;
+    };
+    let rest = arguments[index + 9..].trim_start();
+    let Some(rest) = rest.strip_prefix(':') else {
+        return false;
+    };
+    let Some(rest) = rest.trim_start().strip_prefix('[') else {
+        return false;
+    };
+    rest.trim_start().starts_with('{')
+}
+
+fn take_sse_frame(pending: &mut Vec<u8>) -> Option<Vec<u8>> {
+    let lf = pending
+        .windows(2)
+        .position(|w| w == b"\n\n")
+        .map(|n| (n, 2));
+    let crlf = pending
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .map(|n| (n, 4));
+    let (start, width) = match (lf, crlf) {
+        (Some(a), Some(b)) => {
+            if a.0 < b.0 {
+                a
+            } else {
+                b
+            }
+        }
+        (Some(a), None) => a,
+        (None, Some(b)) => b,
+        (None, None) => return None,
+    };
+    Some(pending.drain(..start + width).collect())
+}
+
+#[cfg(test)]
+mod stream_tests {
+    use super::{has_started_cards, partial_reply, take_sse_frame};
+
+    #[test]
+    fn reads_only_complete_reply_characters() {
+        assert_eq!(
+            partial_reply(r#"{"reply":"A quiet "#),
+            Some("A quiet ".into())
+        );
+        assert_eq!(partial_reply(r#"{"reply":"A \"#), Some("A ".into()));
+        assert_eq!(partial_reply(r#"{"reply":"A \u00"#), Some("A ".into()));
+        assert_eq!(partial_reply(r#"{"reply":"A \u00e9"#), Some("A é".into()));
+        assert_eq!(
+            partial_reply(r#"{"reply":"Done.","results":[{"item_id":"x""#),
+            Some("Done.".into())
+        );
+        assert_eq!(partial_reply(r#"{"results":[]}"#), None);
+    }
+
+    #[test]
+    fn reads_cards_and_sse_frame_boundaries() {
+        assert!(has_started_cards(r#"{"results": [{"item_id": "a"}"#));
+        assert!(!has_started_cards(r#"{"results": []}"#));
+        let mut pending = b"data: one\r\n\r\ndata: two\n\nrest".to_vec();
+        assert_eq!(
+            take_sse_frame(&mut pending),
+            Some(b"data: one\r\n\r\n".to_vec())
+        );
+        assert_eq!(
+            take_sse_frame(&mut pending),
+            Some(b"data: two\n\n".to_vec())
+        );
+        assert_eq!(pending, b"rest");
     }
 }
 
@@ -779,6 +973,52 @@ pub fn validate_answer(
 }
 
 pub async fn run(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> ApiResult {
+    run_inner(state, headers, body, None).await
+}
+
+pub async fn run_stream(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let (sender, receiver) = mpsc::unbounded_channel::<Value>();
+    let stream = UnboundedReceiverStream::new(receiver)
+        .map(|event| Ok::<Bytes, Infallible>(Bytes::from(format!("{event}\n"))));
+    tokio::spawn(async move {
+        let result = run_inner(state, headers, body, Some(sender.clone())).await;
+        match result {
+            Ok(response) => {
+                if let Ok(bytes) = to_bytes(response.into_body(), 1_000_000).await {
+                    if let Ok(answer) = serde_json::from_slice::<Value>(&bytes) {
+                        let _ = sender.send(json!({"type":"answer","answer":answer}));
+                    }
+                }
+            }
+            Err(error) => {
+                let status = error.status.as_u16();
+                let code = error.code;
+                let message = error.message;
+                let _ = sender
+                    .send(json!({"type":"error","status":status,"code":code,"message":message}));
+            }
+        }
+    });
+    (
+        [
+            (axum::http::header::CONTENT_TYPE, "application/x-ndjson"),
+            (axum::http::header::CACHE_CONTROL, "no-store"),
+        ],
+        Body::from_stream(stream),
+    )
+        .into_response()
+}
+
+async fn run_inner(
+    state: AppState,
+    headers: HeaderMap,
+    body: Bytes,
+    events: Option<mpsc::UnboundedSender<Value>>,
+) -> ApiResult {
     let owner_id = owner(&state, &headers, true).await?;
     let mut input: Input = parse(&body)?;
     input.question = input.question.trim().into();
@@ -879,6 +1119,7 @@ pub async fn run(State(state): State<AppState>, headers: HeaderMap, body: Bytes)
             &input.question,
             input.scope_city.as_deref(),
             context,
+            events.clone(),
         ),
     )
     .await;
@@ -917,6 +1158,7 @@ async fn execute(
     question: &str,
     scope_city: Option<&str>,
     turn: TurnContext,
+    events: Option<mpsc::UnboundedSender<Value>>,
 ) -> Result<Snapshot, ApiError> {
     let mut conversation = turn.conversation;
     let mut seen: HashMap<Uuid, Candidate> = turn
@@ -977,11 +1219,14 @@ async fn execute(
         context["provider_input"] = json!(provider_input);
         let decision = match state
             .ask_model
-            .decide(context, step == MAX_DECISIONS - 1)
+            .decide_stream(context, step == MAX_DECISIONS - 1, events.clone())
             .await
         {
             Ok(v) => v,
             Err(e) => {
+                if let Some(events) = &events {
+                    let _ = events.send(json!({"type":"reset"}));
+                }
                 sqlx::query("UPDATE ask_runs SET failure_code=$2 WHERE id=$1")
                     .bind(run)
                     .bind(e.code)
@@ -1006,6 +1251,9 @@ async fn execute(
                     .and_then(|a| validate_answer(a, &seen).ok())
                 {
                     if a.view_ids.iter().any(|id| !opened_views.contains(id)) {
+                        if let Some(events) = &events {
+                            let _ = events.send(json!({"type":"reset"}));
+                        }
                         observations.push(json!({"error":"Use only view IDs returned by open_collection or active_view"}));
                         continue;
                     }
@@ -1019,6 +1267,9 @@ async fn execute(
                                 && (selected.len() != comparison.item_ids.len()
                                     || selected.iter().any(|id| !comparison.item_ids.contains(id))))
                         {
+                            if let Some(events) = &events {
+                                let _ = events.send(json!({"type":"reset"}));
+                            }
                             observations.push(json!({"error":"Compare exactly the explicitly selected IDs, never excluded items. Ask for clarification if fewer than two are identified."}));
                             continue;
                         }
@@ -1037,6 +1288,9 @@ async fn execute(
                             .contains(&crate::geography::normalized(&a.location))
                         && scope_city != Some(a.location.as_str())
                     {
+                        if let Some(events) = &events {
+                            let _ = events.send(json!({"type":"reset"}));
+                        }
                         observations.push(json!({"error":"Location must come from the user question or supplied device city."}));
                         continue;
                     }
@@ -1052,6 +1306,9 @@ async fn execute(
                         location_geo,
                         search_incomplete,
                     });
+                }
+                if let Some(events) = &events {
+                    let _ = events.send(json!({"type":"reset"}));
                 }
                 observations.push(
                     json!({"error":"Invalid answer. Use only seen item IDs and evidence IDs."}),

@@ -3776,6 +3776,35 @@ impl rekky_backend::ask::AskModel for CollectionAsk {
     }
 }
 
+struct StreamingCollectionAsk;
+#[async_trait]
+impl rekky_backend::ask::AskModel for StreamingCollectionAsk {
+    fn available(&self) -> bool {
+        true
+    }
+    async fn decide(
+        &self,
+        context: Value,
+        final_turn: bool,
+    ) -> Result<rekky_backend::ask::Decision, rekky_backend::ask::AgentError> {
+        CollectionAsk.decide(context, final_turn).await
+    }
+    async fn decide_stream(
+        &self,
+        context: Value,
+        final_turn: bool,
+        events: Option<tokio::sync::mpsc::UnboundedSender<Value>>,
+    ) -> Result<rekky_backend::ask::Decision, rekky_backend::ask::AgentError> {
+        let decision = self.decide(context, final_turn).await?;
+        if decision.calls.iter().any(|call| call.name == "present_answer") {
+            if let Some(events) = events {
+                let _ = events.send(json!({"type":"text","text":"Here are the saved bars."}));
+            }
+        }
+        Ok(decision)
+    }
+}
+
 #[tokio::test]
 async fn ask_agent_can_present_a_complete_native_collection() {
     let Some(mut t) = TestApp::new().await else {
@@ -3817,6 +3846,26 @@ async fn ask_agent_can_present_a_complete_native_collection() {
             .iter()
             .any(|item| item["subject"] == "Bob's Bar")
     );
+    t.state.ask_model = Arc::new(StreamingCollectionAsk);
+    t.app = router(t.state.clone());
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/v1/ask/agent/stream")
+        .header("authorization", format!("Bearer {token}"))
+        .header("content-type", "application/json")
+        .body(Body::from(json!({"request_id":Uuid::new_v4(),"question":"Which bars have I saved?"}).to_string()))
+        .unwrap();
+    let streamed = t.app.clone().oneshot(request).await.unwrap();
+    assert_eq!(streamed.status(), StatusCode::OK);
+    let bytes = to_bytes(streamed.into_body(), 1_000_000).await.unwrap();
+    let events: Vec<Value> = String::from_utf8(bytes.to_vec())
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(events[0]["type"], "text");
+    assert_eq!(events.last().unwrap()["type"], "answer");
+    assert_eq!(events.last().unwrap()["answer"]["views"][0]["total"], 2);
     t.cleanup().await;
 }
 
