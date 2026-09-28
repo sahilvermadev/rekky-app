@@ -461,7 +461,7 @@ void main() {
       expect(api.contexts.last['selected'], isEmpty);
       api.pending.last.complete(fixture());
       await t.pumpAndSettle();
-      await t.tap(find.widgetWithText(TextButton, 'Ask'));
+      await t.tap(find.widgetWithText(TextButton, 'Back to Ask'));
       await t.pumpAndSettle();
       await t.tap(find.text('Continue previous conversation'));
       await t.pumpAndSettle();
@@ -491,7 +491,7 @@ void main() {
       api.pending.single.complete(fixture());
       await t.pumpAndSettle();
       await t.enterText(find.byType(TextField), 'Something with a garden');
-      await t.tap(find.widgetWithText(TextButton, 'Ask'));
+    await t.tap(find.widgetWithText(TextButton, 'Back to Ask'));
       await t.pumpAndSettle();
       expect(find.text('What do you have in mind?'), findsOneWidget);
       await t.tap(find.text('Continue conversation'));
