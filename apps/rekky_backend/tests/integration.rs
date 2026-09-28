@@ -3805,6 +3805,133 @@ impl rekky_backend::ask::AskModel for StreamingCollectionAsk {
     }
 }
 
+struct CanonicalCityAsk;
+#[async_trait]
+impl rekky_backend::ask::AskModel for CanonicalCityAsk {
+    fn available(&self) -> bool {
+        true
+    }
+    async fn decide(
+        &self,
+        context: Value,
+        _final_turn: bool,
+    ) -> Result<rekky_backend::ask::Decision, rekky_backend::ask::AgentError> {
+        let bangalore = context["question"] == "what about in Bangalore";
+        let observations = context["tool_observations"].as_array().unwrap();
+        let (name, arguments) = if bangalore && observations.is_empty() {
+            ("search_knowledge", json!({"terms":[],"location":"Bangalore","page":0}))
+        } else {
+            if bangalore {
+                assert_eq!(observations[0]["result"]["resolved_scope"]["area_id"], "geonames:1277333");
+            }
+            let location = if bangalore {
+            "Bengaluru"
+            } else {
+                "New Delhi"
+            };
+            ("present_answer", json!({"intent":"discovery","new_topic":false,"title":"Bars",
+                "reply":"No saved bar in this city.","view_ids":[],"location":location,
+                "clarification":"","choices":[],"comparison":null,"results":[]}))
+        };
+        Ok(rekky_backend::ask::Decision {
+            output_items: vec![],
+            calls: vec![rekky_backend::ask::ToolCall {
+                call_id: String::new(),
+                name: name.into(),
+                arguments,
+            }],
+            input_tokens: 1,
+            output_tokens: 1,
+        })
+    }
+}
+
+#[tokio::test]
+async fn ask_follow_up_accepts_indexed_city_alias() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    sqlx::query("INSERT INTO geographic_areas(id,name,label,country,feature,population,aliases,ancestors,hierarchy) VALUES('geonames:1277333','Bengaluru','Bengaluru','IN','PPLA',8000000,ARRAY['bangalore','bengaluru']::text[],ARRAY[]::text[],'{}'::jsonb) ON CONFLICT(id) DO NOTHING")
+        .execute(&t.pool).await.unwrap();
+    t.state.ask_model = Arc::new(CanonicalCityAsk);
+    t.app = router(t.state.clone());
+    let (owner, token) = t.sign_in("google", "valid-a").await;
+    t.call(Method::POST, "/v1/me/visibility-disclosure", Some(&token),
+        Some(json!({"accept":true})), &[]).await;
+    sqlx::query("INSERT INTO transcript_extraction_permissions(account_id,enabled,generation,disclosure_version) VALUES($1,true,1,1)")
+        .bind(owner).execute(&t.pool).await.unwrap();
+    let first = Uuid::new_v4();
+    let (status, first_answer) = t.call(Method::POST, "/v1/ask/agent", Some(&token),
+        Some(json!({"request_id":first,"question":"show me a bar","scope_city":"New Delhi"})), &[]).await;
+    assert_eq!(status, StatusCode::OK, "{first_answer}");
+    let (status, follow_up) = t.call(Method::POST, "/v1/ask/agent", Some(&token),
+        Some(json!({"request_id":Uuid::new_v4(),"question":"what about in Bangalore",
+            "scope_city":"New Delhi","previous_request_id":first})), &[]).await;
+    assert_eq!(status, StatusCode::OK, "{follow_up}");
+    assert_eq!(follow_up["location"], "Bengaluru");
+    t.cleanup().await;
+}
+
+struct AnswerRepairAsk {
+    calls: std::sync::atomic::AtomicUsize,
+}
+#[async_trait]
+impl rekky_backend::ask::AskModel for AnswerRepairAsk {
+    fn available(&self) -> bool {
+        true
+    }
+    async fn decide(
+        &self,
+        _context: Value,
+        _final_turn: bool,
+    ) -> Result<rekky_backend::ask::Decision, rekky_backend::ask::AgentError> {
+        let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let (name, arguments) = match call {
+            0 | 1 => ("search_knowledge", json!({"terms":[],"location":"","page":call})),
+            2 => ("present_answer", json!({"intent":"discovery"})),
+            _ => ("present_answer", json!({"intent":"discovery","new_topic":false,
+                "title":"Bars","reply":"No saved bars matched.","view_ids":[],
+                "location":"","clarification":"","choices":[],"comparison":null,"results":[]})),
+        };
+        Ok(rekky_backend::ask::Decision {
+            output_items: vec![],
+            calls: vec![rekky_backend::ask::ToolCall {
+                call_id: String::new(),
+                name: name.into(),
+                arguments,
+            }],
+            input_tokens: 1,
+            output_tokens: 1,
+        })
+    }
+}
+
+#[tokio::test]
+async fn ask_gives_model_one_bounded_repair_after_invalid_presentation() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    let model = Arc::new(AnswerRepairAsk {
+        calls: std::sync::atomic::AtomicUsize::new(0),
+    });
+    t.state.ask_model = model.clone();
+    t.app = router(t.state.clone());
+    let (owner, token) = t.sign_in("google", "valid-a").await;
+    t.call(Method::POST, "/v1/me/visibility-disclosure", Some(&token),
+        Some(json!({"accept":true})), &[]).await;
+    sqlx::query("INSERT INTO transcript_extraction_permissions(account_id,enabled,generation,disclosure_version) VALUES($1,true,1,1)")
+        .bind(owner).execute(&t.pool).await.unwrap();
+    let request_id = Uuid::new_v4();
+    let (status, answer) = t.call(Method::POST, "/v1/ask/agent", Some(&token),
+        Some(json!({"request_id":request_id,"question":"show me bars"})), &[]).await;
+    assert_eq!(status, StatusCode::OK, "{answer}");
+    assert_eq!(model.calls.load(std::sync::atomic::Ordering::SeqCst), 4);
+    let decisions: i32 = sqlx::query_scalar("SELECT decisions FROM ask_runs WHERE id=$1")
+        .bind(request_id).fetch_one(&t.pool).await.unwrap();
+    assert_eq!(decisions, 4);
+    t.cleanup().await;
+}
+
 #[tokio::test]
 async fn ask_agent_can_present_a_complete_native_collection() {
     let Some(mut t) = TestApp::new().await else {

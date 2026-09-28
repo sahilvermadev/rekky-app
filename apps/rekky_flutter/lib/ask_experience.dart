@@ -170,7 +170,6 @@ class _AskExperienceState extends State<AskExperience> {
   String? error;
   bool working = false, paging = false;
   String streamedReply = '';
-  bool cardsPending = false;
   int generation = 0;
   bool? reportedOverlay;
   @override
@@ -213,7 +212,6 @@ class _AskExperienceState extends State<AskExperience> {
       generation++;
       working = false;
       streamedReply = '';
-      cardsPending = false;
       checkingCity = false;
       input.text = pending;
     });
@@ -258,7 +256,6 @@ class _AskExperienceState extends State<AskExperience> {
       onHome = false;
       working = true;
       streamedReply = '';
-      cardsPending = false;
       restoring = false;
       paging = false;
       error = null;
@@ -314,13 +311,7 @@ class _AskExperienceState extends State<AskExperience> {
           if (mounted && turn == generation) {
             setState(() {
               streamedReply = '';
-              cardsPending = false;
             });
-          }
-        },
-        onCardsPending: () {
-          if (mounted && turn == generation) {
-            setState(() => cardsPending = true);
           }
         },
       );
@@ -343,7 +334,6 @@ class _AskExperienceState extends State<AskExperience> {
         input.clear();
         working = false;
         streamedReply = '';
-        cardsPending = false;
       });
     } catch (e) {
       if (!mounted || turn != generation) return;
@@ -351,7 +341,6 @@ class _AskExperienceState extends State<AskExperience> {
       setState(() {
         working = false;
         streamedReply = '';
-        cardsPending = false;
         checkingCity = false;
         input.text = question;
         if (e is ApiFailure && e.code != 'ask_running') requestId = newId();
@@ -1037,27 +1026,6 @@ class _AskExperienceState extends State<AskExperience> {
                         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                           height: 1.5,
                           color: colors.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                  if (cardsPending && streamedReply.isNotEmpty)
-                    Semantics(
-                      label: 'Recommendations are loading',
-                      child: Container(
-                        height: 72,
-                        margin: const EdgeInsets.only(bottom: 16),
-                        decoration: BoxDecoration(
-                          color: colors.surfaceContainerLow,
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: const Align(
-                          alignment: Alignment.centerLeft,
-                          child: Padding(
-                            padding: EdgeInsets.only(left: 16),
-                            child: ExcludeSemantics(
-                              child: _AskThinkingIndicator(),
-                            ),
-                          ),
                         ),
                       ),
                     ),

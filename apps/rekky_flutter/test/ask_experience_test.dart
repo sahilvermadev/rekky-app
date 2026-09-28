@@ -75,7 +75,6 @@ class FakeAsk extends RekkyApi {
   int cancelled = 0, reads = 0, pages = 0;
   void Function(String)? emitText;
   void Function()? resetText;
-  void Function()? showCardPlaceholder;
   @override
   Future<AskAnswer> askAgentStream(
     String question,
@@ -87,11 +86,9 @@ class FakeAsk extends RekkyApi {
     List<String> excludedItemIds = const [],
     required void Function(String) onText,
     required void Function() onReset,
-    required void Function() onCardsPending,
   }) {
     emitText = onText;
     resetText = onReset;
-    showCardPlaceholder = onCardsPending;
     return askAgent(
       question,
       requestId,
@@ -183,16 +180,9 @@ void main() {
     await t.pump();
     expect(find.text('Here is a dinner option.'), findsOneWidget);
     expect(find.text('Lantern Kitchen'), findsNothing);
-    api.showCardPlaceholder!();
-    await t.pump();
-    expect(
-      find.bySemanticsLabel('Recommendations are loading'),
-      findsOneWidget,
-    );
     api.pending.single.complete(fixture());
     await t.pumpAndSettle();
     expect(find.text('Lantern Kitchen'), findsOneWidget);
-    expect(find.bySemanticsLabel('Recommendations are loading'), findsNothing);
     semantics.dispose();
   });
 

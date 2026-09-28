@@ -187,7 +187,6 @@ impl AskModel for OpenAiAsk {
             let mut answer_indexes = HashSet::new();
             let mut arguments: HashMap<i64, String> = HashMap::new();
             let mut emitted = HashMap::<i64, usize>::new();
-            let mut card_pending = HashSet::new();
             while let Some(chunk) = response.chunk().await.map_err(|_| AgentError::INVALID)? {
                 pending.extend_from_slice(&chunk);
                 if pending.len() > 300_000 {
@@ -224,9 +223,6 @@ impl AskModel for OpenAiAsk {
                             buffer.push_str(delta);
                             if buffer.len() > 20_000 {
                                 return Err(AgentError::INVALID);
-                            }
-                            if has_started_cards(buffer) && card_pending.insert(index) {
-                                let _ = events.send(json!({"type":"cards_pending"}));
                             }
                             if let Some(prefix) = partial_reply(buffer) {
                                 let old = emitted.entry(index).or_default();
@@ -314,20 +310,6 @@ fn partial_reply(arguments: &str) -> Option<String> {
     serde_json::from_str::<String>(&format!("\"{encoded}\"")).ok()
 }
 
-fn has_started_cards(arguments: &str) -> bool {
-    let Some(index) = arguments.find("\"results\"") else {
-        return false;
-    };
-    let rest = arguments[index + 9..].trim_start();
-    let Some(rest) = rest.strip_prefix(':') else {
-        return false;
-    };
-    let Some(rest) = rest.trim_start().strip_prefix('[') else {
-        return false;
-    };
-    rest.trim_start().starts_with('{')
-}
-
 fn take_sse_frame(pending: &mut Vec<u8>) -> Option<Vec<u8>> {
     let lf = pending
         .windows(2)
@@ -354,7 +336,7 @@ fn take_sse_frame(pending: &mut Vec<u8>) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod stream_tests {
-    use super::{has_started_cards, partial_reply, take_sse_frame};
+    use super::{partial_reply, take_sse_frame};
 
     #[test]
     fn reads_only_complete_reply_characters() {
@@ -373,9 +355,7 @@ mod stream_tests {
     }
 
     #[test]
-    fn reads_cards_and_sse_frame_boundaries() {
-        assert!(has_started_cards(r#"{"results": [{"item_id": "a"}"#));
-        assert!(!has_started_cards(r#"{"results": []}"#));
+    fn reads_sse_frame_boundaries() {
         let mut pending = b"data: one\r\n\r\ndata: two\n\nrest".to_vec();
         assert_eq!(
             take_sse_frame(&mut pending),
@@ -752,7 +732,7 @@ async fn search(
     terms: &[String],
     location: &str,
     page: usize,
-) -> Result<(Vec<Candidate>, bool), ApiError> {
+) -> Result<(Vec<Candidate>, bool, Value), ApiError> {
     if terms.len() > 8
         || terms.iter().any(|s| s.chars().count() > 80)
         || location.chars().count() > 100
@@ -841,7 +821,7 @@ async fn search(
             }
         })
         .collect();
-    Ok((candidates, more))
+    Ok((candidates, more, geo))
 }
 async fn permitted(state: &AppState, owner_id: Uuid) -> Result<Option<i64>, ApiError> {
     Ok(sqlx::query_scalar("SELECT generation FROM transcript_extraction_permissions p WHERE account_id=$1 AND enabled AND NOT EXISTS(SELECT 1 FROM processing_permissions g WHERE g.account_id=p.account_id AND NOT g.enabled)")
@@ -1182,7 +1162,14 @@ async fn execute(
     let mut calls = HashSet::new();
     let mut reads = 0;
     let mut search_incomplete = false;
-    for step in 0..MAX_DECISIONS {
+    let mut rejection = "decision_limit";
+    let mut presentation_rejected = false;
+    // Ordinary turns stay within three decisions. A rejected presentation gets
+    // one bounded repair call instead of immediately failing the conversation.
+    for step in 0..=MAX_DECISIONS {
+        if step == MAX_DECISIONS && !presentation_rejected {
+            break;
+        }
         if owner(state, headers, true).await? != owner_id
             || permitted(state, owner_id).await? != Some(generation)
         {
@@ -1209,7 +1196,7 @@ async fn execute(
             }
         }
         let previous_results: Vec<_> = turn.previous_items.iter().map(model_candidate).collect();
-        let mut context = json!({"knowledge_overview":overview,"active_view":turn.active_view.as_ref().map(|v|json!({"view_id":v["view_id"],"spec":v["spec"],"total":v["total"]})),"question":question,"conversation":conversation,"scope_city":scope_city,"previous_results":previous_results,"previous_clarification":turn.clarification,"tool_observations":observations,"decisions_left":MAX_DECISIONS-step,"read_tools_left":4-reads});
+        let mut context = json!({"knowledge_overview":overview,"active_view":turn.active_view.as_ref().map(|v|json!({"view_id":v["view_id"],"spec":v["spec"],"total":v["total"]})),"question":question,"conversation":conversation,"scope_city":scope_city,"previous_results":previous_results,"previous_clarification":turn.clarification,"tool_observations":observations,"decisions_left":(MAX_DECISIONS-step).max(1),"read_tools_left":4-reads});
         if provider_input.is_empty() {
             provider_input = vec![
                 json!({"role":"system","content":include_str!("../prompts/ask_v1.txt")}),
@@ -1219,7 +1206,7 @@ async fn execute(
         context["provider_input"] = json!(provider_input);
         let decision = match state
             .ask_model
-            .decide_stream(context, step == MAX_DECISIONS - 1, events.clone())
+            .decide_stream(context, step >= MAX_DECISIONS - 1, events.clone())
             .await
         {
             Ok(v) => v,
@@ -1250,13 +1237,9 @@ async fn execute(
                     .ok()
                     .and_then(|a| validate_answer(a, &seen).ok())
                 {
-                    if a.view_ids.iter().any(|id| !opened_views.contains(id)) {
-                        if let Some(events) = &events {
-                            let _ = events.send(json!({"type":"reset"}));
-                        }
-                        observations.push(json!({"error":"Use only view IDs returned by open_collection or active_view"}));
-                        continue;
-                    }
+                    // A bad optional view reference is omitted; it must not
+                    // discard an otherwise usable answer or expose another view.
+                    a.view_ids.retain(|id| opened_views.contains(id));
                     if let Some(comparison) = &a.comparison {
                         let selected = &conversation.selected_item_ids;
                         if comparison
@@ -1267,6 +1250,8 @@ async fn execute(
                                 && (selected.len() != comparison.item_ids.len()
                                     || selected.iter().any(|id| !comparison.item_ids.contains(id))))
                         {
+                            rejection = "comparison_scope";
+                            presentation_rejected = true;
                             if let Some(events) = &events {
                                 let _ = events.send(json!({"type":"reset"}));
                             }
@@ -1283,17 +1268,6 @@ async fn execute(
                     if a.intent == "recall" {
                         a.location.clear();
                     }
-                    if !a.location.is_empty()
-                        && !crate::geography::normalized(&conversation.turns.join(" "))
-                            .contains(&crate::geography::normalized(&a.location))
-                        && scope_city != Some(a.location.as_str())
-                    {
-                        if let Some(events) = &events {
-                            let _ = events.send(json!({"type":"reset"}));
-                        }
-                        observations.push(json!({"error":"Location must come from the user question or supplied device city."}));
-                        continue;
-                    }
                     if a.intent == "discovery" && a.location.is_empty() {
                         a.location = scope_city.unwrap_or_default().to_owned();
                     }
@@ -1307,6 +1281,8 @@ async fn execute(
                         search_incomplete,
                     });
                 }
+                rejection = "invalid_answer";
+                presentation_rejected = true;
                 if let Some(events) = &events {
                     let _ = events.send(json!({"type":"reset"}));
                 }
@@ -1382,12 +1358,13 @@ async fn execute(
                 "search_knowledge" => {
                     if let Ok(s) = serde_json::from_value::<Search>(call.arguments.clone()) {
                         match search(state, owner_id, &s.terms, &s.location, s.page).await {
-                            Ok((found, more)) => {
+                            Ok((found, more, geo)) => {
                                 search_incomplete |= more;
                                 for c in &found {
                                     seen.insert(c.item_id, c.clone());
                                 }
-                                json!({"items":found.iter().map(model_candidate).collect::<Vec<_>>(),"next_page":if more {Some(s.page+1)}else{None}})
+                                json!({"items":found.iter().map(model_candidate).collect::<Vec<_>>(),"next_page":if more {Some(s.page+1)}else{None},
+                                    "resolved_scope":if geo["status"] == "resolved" {json!({"area_id":geo["area_id"],"label":geo["label"]})}else{Value::Null}})
                             }
                             Err(error) if error.is_client_correction() => {
                                 json!({"error":"That area is not indexed to the requested precision. Use an explicit city with exact locality text as a search clue, and do not call city-wide results neighbourhood matches."})
@@ -1413,6 +1390,11 @@ async fn execute(
             observations.push(json!({"tool":call.name,"arguments":call.arguments,"result":output}));
         }
     }
+    sqlx::query("UPDATE ask_runs SET failure_code=$2 WHERE id=$1 AND failure_code IS NULL")
+        .bind(run)
+        .bind(rejection)
+        .execute(&state.pool)
+        .await?;
     // A failed agent decision is an interrupted request, not evidence that the
     // owner's Library has no suitable recommendations. The client retains the
     // previous answer and can retry with a fresh request ID.

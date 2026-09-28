@@ -702,7 +702,6 @@ class RekkyApi {
     List<String> excludedItemIds = const [],
     required void Function(String) onText,
     required void Function() onReset,
-    required void Function() onCardsPending,
   }) async {
     final streamRequest = http.Request('POST', _uri('/v1/ask/agent/stream'));
     streamRequest.headers.addAll({
@@ -741,9 +740,6 @@ class RekkyApi {
           break;
         case 'reset':
           onReset();
-          break;
-        case 'cards_pending':
-          onCardsPending();
           break;
         case 'answer':
           answer = AskAnswer.fromJson(event['answer'] as Map<String, dynamic>);
