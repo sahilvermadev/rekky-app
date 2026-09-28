@@ -25,11 +25,13 @@ class AskExperience extends StatefulWidget {
     required this.api,
     required this.onOpen,
     this.resolveCity,
+    this.onOverlayChanged,
     this.homeSignal = 0,
   });
   final RekkyApi api;
   final Future<void> Function(RekkyItem) onOpen;
   final Future<String?> Function()? resolveCity;
+  final ValueChanged<bool>? onOverlayChanged;
 
   /// Increment when the Ask destination is tapped, including while selected.
   final int homeSignal;
@@ -67,6 +69,79 @@ class _PausedAskThread {
   final double scrollOffset;
 }
 
+class _AskThinkingIndicator extends StatefulWidget {
+  const _AskThinkingIndicator();
+
+  @override
+  State<_AskThinkingIndicator> createState() => _AskThinkingIndicatorState();
+}
+
+class _AskThinkingIndicatorState extends State<_AskThinkingIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1350),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      pulse.stop();
+    } else if (!pulse.isAnimating) {
+      pulse.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.onSurface;
+    return Semantics(
+      label: 'Rekky is thinking',
+      liveRegion: true,
+      child: AnimatedBuilder(
+        animation: pulse,
+        builder: (context, _) => SizedBox(
+          width: 54,
+          height: 24,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              for (var index = 0; index < 3; index++)
+                Builder(
+                  builder: (context) {
+                    final wave =
+                        (sin(pulse.value * 2 * pi - index * .9) + 1) / 2;
+                    return Transform.translate(
+                      offset: Offset(0, -2 * wave),
+                      child: Transform.scale(
+                        scale: .78 + .22 * wave,
+                        child: Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: color.withValues(alpha: .28 + .62 * wave),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _AskExperienceState extends State<AskExperience> {
   final input = TextEditingController();
   final homeInput = TextEditingController();
@@ -90,11 +165,12 @@ class _AskExperienceState extends State<AskExperience> {
 
   AskAnswer? answer;
   String asked = '', pending = '', requestId = '', openingId = '';
-  String? deviceCity, chosenCity, pendingCity;
-  bool cityChecked = false, allLocations = false, checkingCity = false;
+  String? deviceCity, pendingCity;
+  bool cityChecked = false, checkingCity = false;
   String? error;
   bool working = false, paging = false;
   int generation = 0;
+  bool? reportedOverlay;
   @override
   void initState() {
     super.initState();
@@ -126,6 +202,18 @@ class _AskExperienceState extends State<AskExperience> {
     } catch (_) {
       /* Backend deadlines still bound uncertain work. */
     }
+  }
+
+  void stopResponse() {
+    if (!working) return;
+    final id = requestId;
+    setState(() {
+      generation++;
+      working = false;
+      checkingCity = false;
+      input.text = pending;
+    });
+    unawaited(cancelRequest(id));
   }
 
   @override
@@ -169,6 +257,7 @@ class _AskExperienceState extends State<AskExperience> {
       paging = false;
       error = null;
       pending = question;
+      input.clear();
       if (!retry) {
         requestId = newId();
         pendingParent = editing ? editParent : answer?.requestId;
@@ -180,11 +269,7 @@ class _AskExperienceState extends State<AskExperience> {
     try {
       if (previousRequest != null) await cancelRequest(previousRequest);
       if (!mounted || turn != generation) return;
-      if (!retry &&
-          !allLocations &&
-          chosenCity == null &&
-          !cityChecked &&
-          widget.resolveCity != null) {
+      if (!retry && !cityChecked && widget.resolveCity != null) {
         setState(() => checkingCity = true);
         final city = await widget.resolveCity!();
         if (!mounted || turn != generation) return;
@@ -194,7 +279,7 @@ class _AskExperienceState extends State<AskExperience> {
           checkingCity = false;
         });
       }
-      if (!retry) pendingCity = allLocations ? null : chosenCity ?? deviceCity;
+      if (!retry) pendingCity = deviceCity;
       final result = await widget.api.askAgent(
         question,
         requestId,
@@ -229,6 +314,7 @@ class _AskExperienceState extends State<AskExperience> {
       setState(() {
         working = false;
         checkingCity = false;
+        input.text = question;
         if (e is ApiFailure && e.code != 'ask_running') requestId = newId();
         error = e is ApiFailure
             ? e.message
@@ -320,7 +406,11 @@ class _AskExperienceState extends State<AskExperience> {
     final question = homeInput.text.trim();
     if (question.isEmpty) return;
     if (working) unawaited(cancelRequest(requestId));
-    if (_hasCurrentThread) pausedThread = _snapshotThread();
+    if (answer != null ||
+        history.isNotEmpty ||
+        (!working && input.text.isNotEmpty)) {
+      pausedThread = _snapshotThread();
+    }
     _clearThread();
     input.text = question;
     homeInput.clear();
@@ -347,68 +437,7 @@ class _AskExperienceState extends State<AskExperience> {
     selected.clear();
     excluded.clear();
     input.clear();
-    if (chosenCity == null && !allLocations) cityChecked = false;
-  }
-
-  void newQuestion() {
-    if (working) unawaited(cancelRequest(requestId));
-    setState(() {
-      if (_hasCurrentThread) pausedThread = _snapshotThread();
-      _clearThread();
-      onHome = true;
-    });
-    homeFocus.requestFocus();
-  }
-
-  Future<void> chooseArea() async {
-    var enteredCity = chosenCity ?? '';
-    final choice = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Where should Ask look?'),
-        content: TextFormField(
-          initialValue: enteredCity,
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(
-            labelText: 'City',
-            hintText: 'Delhi',
-          ),
-          onChanged: (value) => enteredCity = value,
-          onFieldSubmitted: (value) =>
-              Navigator.pop(dialogContext, value.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, '__all__'),
-            child: const Text('All locations'),
-          ),
-          if (widget.resolveCity != null)
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, '__device__'),
-              child: const Text('Use my city'),
-            ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, enteredCity.trim()),
-            child: const Text('Use city'),
-          ),
-        ],
-      ),
-    );
-    if (!mounted || choice == null) return;
-    setState(() {
-      if (choice == '__all__') {
-        allLocations = true;
-        chosenCity = null;
-      } else if (choice == '__device__') {
-        allLocations = false;
-        chosenCity = null;
-        cityChecked = false;
-      } else if (choice.isNotEmpty && choice.length <= 100) {
-        allLocations = false;
-        chosenCity = choice;
-      }
-    });
+    cityChecked = false;
   }
 
   Future<void> previousAnswer() async {
@@ -551,12 +580,15 @@ class _AskExperienceState extends State<AskExperience> {
           child: TextField(
             controller: controller,
             focusNode: focusNode,
+            readOnly: !fromHome && working,
             minLines: 1,
             maxLines: 3,
             maxLength: 500,
             textInputAction: TextInputAction.search,
             style: Theme.of(context).textTheme.bodyLarge,
-            onSubmitted: (_) => send(),
+            onSubmitted: (_) {
+              if (!working || fromHome) send();
+            },
             decoration: InputDecoration(
               filled: false,
               border: InputBorder.none,
@@ -577,7 +609,7 @@ class _AskExperienceState extends State<AskExperience> {
               prefixIconConstraints: const BoxConstraints(minWidth: 52),
               prefixIcon: IconButton(
                 tooltip: 'Speak a question',
-                onPressed: speaking || restoring
+                onPressed: speaking || restoring || working
                     ? null
                     : () => speak(fromHome: fromHome),
                 icon: Icon(Icons.mic_none_rounded, color: askBlue),
@@ -586,14 +618,26 @@ class _AskExperienceState extends State<AskExperience> {
               suffixIcon: Padding(
                 padding: const EdgeInsets.only(right: 5),
                 child: IconButton.filled(
-                  tooltip: current == null ? 'Ask' : 'Ask follow-up',
-                  onPressed: speaking || restoring ? null : send,
+                  tooltip: !fromHome && working
+                      ? 'Stop response'
+                      : current == null
+                      ? 'Ask'
+                      : 'Ask follow-up',
+                  onPressed: speaking || restoring
+                      ? null
+                      : !fromHome && working
+                      ? stopResponse
+                      : send,
                   style: IconButton.styleFrom(
                     backgroundColor: RekkyTheme.navAsk,
                     foregroundColor: RekkyTheme.onNavAsk,
                     minimumSize: const Size(48, 48),
                   ),
-                  icon: const Icon(Icons.arrow_upward_rounded),
+                  icon: Icon(
+                    !fromHome && working
+                        ? Icons.stop_rounded
+                        : Icons.arrow_upward_rounded,
+                  ),
                 ),
               ),
             ),
@@ -684,6 +728,25 @@ class _AskExperienceState extends State<AskExperience> {
     });
   }
 
+  Widget questionBubble(BuildContext context, String question) {
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 20, bottom: 18),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 330),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: colors.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Text(question, style: Theme.of(context).textTheme.bodyLarge),
+        ),
+      ),
+    );
+  }
+
   Widget replyView(
     BuildContext context,
     AskAnswer reply,
@@ -694,24 +757,7 @@ class _AskExperienceState extends State<AskExperience> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 20, bottom: 18),
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 330),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: colors.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: Text(
-                question,
-                style: Theme.of(context).textTheme.bodyLarge,
-              ),
-            ),
-          ),
-        ),
+        questionBubble(context, question),
         if (reply.reply.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 16),
@@ -841,6 +887,15 @@ class _AskExperienceState extends State<AskExperience> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final overlay = !onHome || showExplorer;
+    if (reportedOverlay != overlay) {
+      reportedOverlay = overlay;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && (!onHome || showExplorer) == overlay) {
+          widget.onOverlayChanged?.call(overlay);
+        }
+      });
+    }
     final home = Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 560),
@@ -876,48 +931,19 @@ class _AskExperienceState extends State<AskExperience> {
     );
     final conversation = Column(
       children: [
-        Wrap(
-          alignment: WrapAlignment.spaceBetween,
-          children: [
-            TextButton.icon(
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 4, 0, 0),
+            child: IconButton(
+              tooltip: 'Back to Ask',
               onPressed: () {
                 FocusManager.instance.primaryFocus?.unfocus();
                 setState(() => onHome = true);
               },
-              icon: const Icon(Icons.arrow_back_rounded, size: 18),
-              label: const Text('Back to Ask'),
+              icon: const Icon(Icons.arrow_back_rounded),
             ),
-            if (explorerCreated)
-              IconButton(
-                tooltip: 'Back to browse',
-                onPressed: () => setState(() {
-                  explorerFromHome = false;
-                  showExplorer = true;
-                }),
-                icon: const Icon(Icons.view_agenda_outlined, size: 18),
-              ),
-            TextButton(
-              onPressed: newQuestion,
-              child: const Text('New question'),
-            ),
-            PopupMenuButton<String>(
-              tooltip: 'Conversation options',
-              onSelected: (value) {
-                if (value == 'area') {
-                  chooseArea();
-                } else {
-                  explore();
-                }
-              },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'area', child: Text('Change search area')),
-                PopupMenuItem(
-                  value: 'explore',
-                  child: Text('Explore your saved recommendations'),
-                ),
-              ],
-            ),
-          ],
+          ),
         ),
         Expanded(
           child: ListView(
@@ -931,45 +957,16 @@ class _AskExperienceState extends State<AskExperience> {
               if (answer != null)
                 replyView(context, answer!, asked, latest: true),
               if (working || error != null) ...[
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  child: Text(
-                    pending,
-                    style: Theme.of(context).textTheme.titleMedium,
+                if (working) ...[
+                  questionBubble(context, pending),
+                  const Padding(
+                    padding: EdgeInsets.only(left: 4, top: 2, bottom: 18),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: _AskThinkingIndicator(),
+                    ),
                   ),
-                ),
-                if (working)
-                  Row(
-                    children: [
-                      const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Semantics(
-                          liveRegion: true,
-                          child: Text(
-                            checkingCity
-                                ? 'Checking your area…'
-                                : 'Looking through your recommendations…',
-                          ),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          unawaited(cancelRequest(requestId));
-                          setState(() {
-                            generation++;
-                            working = false;
-                            checkingCity = false;
-                          });
-                        },
-                        child: const Text('Cancel'),
-                      ),
-                    ],
-                  ),
+                ],
                 if (error != null) ...[
                   Semantics(
                     liveRegion: true,
@@ -1017,7 +1014,13 @@ class _AskExperienceState extends State<AskExperience> {
       child: Stack(
         children: [
           Offstage(offstage: showExplorer || !onHome, child: home),
-          Offstage(offstage: showExplorer || onHome, child: conversation),
+          Offstage(
+            offstage: showExplorer || onHome,
+            child: TickerMode(
+              enabled: !showExplorer && !onHome,
+              child: conversation,
+            ),
+          ),
           if (explorerCreated)
             Offstage(
               offstage: !showExplorer,

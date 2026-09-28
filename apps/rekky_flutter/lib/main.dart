@@ -86,6 +86,7 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
   bool recordingScreenOpen = false;
   int destination = 0;
   int askHomeSignal = 0;
+  bool askOverlayOpen = false;
   String? issue;
   List<RekkyItem> library = [];
   List<VoiceDraft> voiceDrafts = [];
@@ -837,7 +838,7 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
       );
     }
     return Scaffold(
-      appBar: destination == 1
+      appBar: destination == 1 || (destination == 0 && askOverlayOpen)
           ? null
           : AppBar(title: const Text('Rekky'), actions: [_accountMenu()]),
       body: SafeArea(
@@ -862,14 +863,16 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
           ],
         ),
       ),
-      bottomNavigationBar: RekkyNavigation(
-        destination: destination,
-        onSelect: (value) => setState(() {
-          destination = value;
-          if (value == 0) askHomeSignal++;
-        }),
-        onRemember: _remember,
-      ),
+      bottomNavigationBar: destination == 0 && askOverlayOpen
+          ? null
+          : RekkyNavigation(
+              destination: destination,
+              onSelect: (value) => setState(() {
+                destination = value;
+                if (value == 0) askHomeSignal++;
+              }),
+              onRemember: _remember,
+            ),
     );
   }
 
@@ -919,6 +922,11 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
     api: api,
     homeSignal: askHomeSignal,
     resolveCity: askDeviceCity,
+    onOverlayChanged: (open) {
+      if (mounted && askOverlayOpen != open) {
+        setState(() => askOverlayOpen = open);
+      }
+    },
     onOpen: (item) async {
       if (!library.any((old) => old.id == item.id)) {
         setState(() => library = [...library, item]);

@@ -49,6 +49,24 @@ AskAnswer twoOptions() {
   );
 }
 
+AskAnswer browsableAnswer() {
+  final answer = fixture();
+  final browse = jsonDecode(
+    File('../../contracts/rekky/v1/fixtures/ask_ui.json').readAsStringSync(),
+  ) as Map<String, dynamic>;
+  return AskAnswer(
+    requestId: answer.requestId,
+    title: answer.title,
+    intent: answer.intent,
+    mode: answer.mode,
+    clarification: '',
+    choices: const [],
+    location: '',
+    results: answer.results,
+    views: [AskView.fromJson(browse['view'] as Map<String, dynamic>)],
+  );
+}
+
 class FakeAsk extends RekkyApi {
   FakeAsk() : super('http://unused');
   final contexts = <Map<String, dynamic>>[];
@@ -129,20 +147,20 @@ void main() {
         ),
       ),
     );
-    await submit(t, 'Show me what is saved');
-    api.pending.single.complete(fixture());
+    await submit(t, 'Show me saved services');
+    api.pending.single.complete(browsableAnswer());
     await t.pumpAndSettle();
-    await t.tap(find.byTooltip('Conversation options'));
-    await t.pumpAndSettle();
-    await t.tap(find.text('Explore your saved recommendations'));
+    await t.tap(find.text('Saved services'));
     await t.pumpAndSettle();
     expect(find.text('Saved services'), findsOneWidget);
     expect(find.text('1 saved · Your Library'), findsOneWidget);
-    await t.tap(find.text('All collections'));
+    await t.tap(find.text('All types'));
     await t.pumpAndSettle();
-    await t.tap(find.text('People & services').last);
+    await t.tap(find.text('Fountain pen restorer').last);
     await t.pumpAndSettle();
-    expect(api.viewRequests.last.kind, 'person_service');
+    expect(api.viewRequests.last.categoryIds, [
+      'learned.ce7de4bb5e7563576b814de6',
+    ]);
     await t.enterText(
       find.byType(TextField).last,
       'Would this suit a gift repair?',
@@ -160,10 +178,15 @@ void main() {
   });
   testWidgets('fresh Ask home contains only the question entry', (t) async {
     final api = FakeAsk();
+    final overlays = <bool>[];
     await t.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: AskExperience(api: api, onOpen: (_) async {}),
+          body: AskExperience(
+            api: api,
+            onOpen: (_) async {},
+            onOverlayChanged: overlays.add,
+          ),
         ),
       ),
     );
@@ -175,8 +198,69 @@ void main() {
     expect(find.textContaining('Ask sends your question'), findsNothing);
     await submit(t, 'Who was that taxi driver?');
     await t.pump();
+    expect(overlays.last, true);
+    expect(find.byTooltip('Back to Ask'), findsOneWidget);
+    expect(find.text('New question'), findsNothing);
+    expect(find.byTooltip('Conversation options'), findsNothing);
+    expect(find.text('Who was that taxi driver?'), findsOneWidget);
+    expect(
+      t.widget<TextField>(find.byType(TextField)).controller!.text,
+      isEmpty,
+    );
     expect(api.contexts.single['question'], 'Who was that taxi driver?');
     api.pending.single.complete(fixture());
+    await t.pumpAndSettle();
+    await t.tap(find.byTooltip('Back to Ask'));
+    await t.pumpAndSettle();
+    expect(overlays.last, false);
+  });
+
+  testWidgets(
+    'reduced motion keeps the response indicator still and labelled',
+    (t) async {
+      final api = FakeAsk();
+      await t.pumpWidget(
+        MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(disableAnimations: true),
+            child: child!,
+          ),
+          home: Scaffold(
+            body: AskExperience(api: api, onOpen: (_) async {}),
+          ),
+        ),
+      );
+      await submit(t, 'quiet dinner');
+      await t.pumpAndSettle();
+      expect(find.bySemanticsLabel('Rekky is thinking'), findsOneWidget);
+      expect(find.byTooltip('Stop response'), findsOneWidget);
+      await t.tap(find.byTooltip('Stop response'));
+      await t.pumpAndSettle();
+      expect(find.bySemanticsLabel('Rekky is thinking'), findsNothing);
+    },
+  );
+
+  testWidgets('a new home question drops a cancelled unanswered turn', (
+    t,
+  ) async {
+    final api = FakeAsk();
+    await t.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AskExperience(api: api, onOpen: (_) async {}),
+        ),
+      ),
+    );
+    await submit(t, 'first question');
+    await t.tap(find.byTooltip('Back to Ask'));
+    await t.pump();
+    await submit(t, 'second question');
+    await t.pump();
+    expect(api.cancelled, 1);
+    await t.tap(find.byTooltip('Back to Ask'));
+    await t.pump();
+    expect(find.text('Continue previous conversation'), findsNothing);
+    api.pending.last.complete(fixture());
     await t.pumpAndSettle();
   });
 
@@ -400,7 +484,9 @@ void main() {
       );
       await submit(t, 'quiet dinner');
       expect(api.pending.length, 1);
-      await t.tap(find.text('Cancel'));
+      expect(find.bySemanticsLabel('Rekky is thinking'), findsOneWidget);
+      expect(find.text('Looking through your recommendations…'), findsNothing);
+      await t.tap(find.byTooltip('Stop response'));
       await t.pump();
       expect(api.cancelled, 1);
       api.pending[0].complete(fixture());
@@ -456,16 +542,16 @@ void main() {
       expect(find.text('quiet dinner in Delhi'), findsOneWidget);
       expect(find.text('Can this one fit six people?'), findsOneWidget);
       expect(api.pending.length, 2);
-      await t.tap(find.text('New question'));
+      await t.tap(find.byTooltip('Back to Ask'));
       await t.pumpAndSettle();
       expect(find.text('Ask Rekky…'), findsOneWidget);
-      expect(find.text('Continue previous conversation'), findsOneWidget);
+      expect(find.text('Continue conversation'), findsOneWidget);
       await submit(t, 'A doctor');
       expect(api.contexts.last['parent'], isNull);
       expect(api.contexts.last['selected'], isEmpty);
       api.pending.last.complete(fixture());
       await t.pumpAndSettle();
-      await t.tap(find.widgetWithText(TextButton, 'Back to Ask'));
+      await t.tap(find.byTooltip('Back to Ask'));
       await t.pumpAndSettle();
       await t.tap(find.text('Continue previous conversation'));
       await t.pumpAndSettle();
@@ -495,7 +581,7 @@ void main() {
       api.pending.single.complete(fixture());
       await t.pumpAndSettle();
       await t.enterText(find.byType(TextField), 'Something with a garden');
-      await t.tap(find.widgetWithText(TextButton, 'Back to Ask'));
+      await t.tap(find.byTooltip('Back to Ask'));
       await t.pumpAndSettle();
       expect(find.text('Ask Rekky…'), findsOneWidget);
       await t.tap(find.text('Continue conversation'));
@@ -613,7 +699,9 @@ void main() {
       await t.pumpAndSettle();
     },
   );
-  testWidgets('denied location can be replaced with a manual city', (t) async {
+  testWidgets('denied location still allows an explicit city in Ask', (
+    t,
+  ) async {
     final api = FakeAsk();
     await t.pumpWidget(
       MaterialApp(
@@ -630,15 +718,9 @@ void main() {
     expect(api.contexts.single['scopeCity'], isNull);
     api.pending.single.complete(fixture());
     await t.pumpAndSettle();
-    await t.tap(find.byTooltip('Conversation options'));
-    await t.pumpAndSettle();
-    await t.tap(find.text('Change search area'));
-    await t.pumpAndSettle();
-    await t.enterText(find.byType(TextField).last, 'Delhi');
-    await t.tap(find.text('Use city'));
-    await t.pumpAndSettle();
-    await submit(t, 'a quiet place');
-    expect(api.contexts.last['scopeCity'], 'Delhi');
+    await submit(t, 'a quiet place in Delhi');
+    expect(api.contexts.last['scopeCity'], isNull);
+    expect(api.contexts.last['question'], 'a quiet place in Delhi');
     api.pending.last.complete(fixture(turn: 2));
     await t.pumpAndSettle();
   });
