@@ -109,6 +109,30 @@ pub fn resolve(name: &str, areas: &[Area]) -> Value {
         matched[i] = choose(k, areas, &anchors);
     }
     if matched.iter().any(Option::is_none) {
+        // A saved phrase can name a neighbourhood absent from our licensed
+        // gazetteer while explicitly naming an unambiguous city. Keep only
+        // that supported city scope for browsing. Do not apply this fallback
+        // when a named area exists but conflicts with the city (for example
+        // Landour, Delhi), or when the trailing city is itself ambiguous.
+        let unknown_only = keys.iter().zip(&matched).all(|(key, chosen)| {
+            chosen.is_some() || !areas.iter().any(|area| area.aliases.contains(key))
+        });
+        if keys.len() > 1 && unknown_only && matched.last().is_some_and(Option::is_some) {
+            let anchor = matched.last().and_then(|area| *area).unwrap();
+            if anchor.feature.starts_with("PPL") || anchor.feature.starts_with("PPLA") {
+                let mut coarse = resolve(keys.last().unwrap(), areas);
+                if coarse["status"] == "resolved" {
+                    coarse["match_method"] = json!("explicit_coarse_context");
+                    coarse["unresolved_parts"] = json!(
+                        keys.iter()
+                            .zip(&matched)
+                            .filter_map(|(key, chosen)| chosen.is_none().then_some(key))
+                            .collect::<Vec<_>>()
+                    );
+                    return coarse;
+                }
+            }
+        }
         return json!({"status":"unresolved"});
     }
     let matched: Vec<_> = matched.into_iter().flatten().collect();
@@ -304,6 +328,7 @@ pub async fn enrich(
 /// Local-only work: no transcript reads, provider calls, device location or
 /// processing permission changes. Locking fences owner edits and deletion.
 pub async fn process_one(pool: &PgPool, owner: Option<uuid::Uuid>) -> Result<bool, sqlx::Error> {
+    const RULES_VERSION: i64 = 2;
     let mut tx = pool.begin().await?;
     let catalog: i64 =
         sqlx::query_scalar("SELECT revision FROM geographic_catalog WHERE singleton")
@@ -312,8 +337,8 @@ pub async fn process_one(pool: &PgPool, owner: Option<uuid::Uuid>) -> Result<boo
     if catalog == 0 {
         return Ok(false);
     }
-    let row=sqlx::query("SELECT id,recommendation FROM knowledge_items WHERE deleted_at IS NULL AND jsonb_typeof(recommendation)='object' AND jsonb_typeof(recommendation->'locations')='array' AND ($1::uuid IS NULL OR owner_id=$1) AND (recommendation->'geography_revision' IS DISTINCT FROM to_jsonb($2::bigint) OR EXISTS(SELECT 1 FROM jsonb_array_elements(recommendation->'locations') l WHERE l->'geography'->>'status'='resolved' AND l->'geography'->'browse'->'version' IS DISTINCT FROM '1'::jsonb)) ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED")
-        .bind(owner).bind(catalog).fetch_optional(&mut *tx).await?;
+    let row=sqlx::query("SELECT id,recommendation FROM knowledge_items WHERE deleted_at IS NULL AND jsonb_typeof(recommendation)='object' AND jsonb_typeof(recommendation->'locations')='array' AND ($1::uuid IS NULL OR owner_id=$1) AND (recommendation->'geography_revision' IS DISTINCT FROM to_jsonb($2::bigint) OR recommendation->'geography_rules_version' IS DISTINCT FROM to_jsonb($3::bigint) OR EXISTS(SELECT 1 FROM jsonb_array_elements(recommendation->'locations') l WHERE l->'geography'->>'status'='resolved' AND l->'geography'->'browse'->'version' IS DISTINCT FROM '1'::jsonb)) ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED")
+        .bind(owner).bind(catalog).bind(RULES_VERSION).fetch_optional(&mut *tx).await?;
     let Some(row) = row else { return Ok(false) };
     let id: uuid::Uuid = row.get("id");
     let mut r: Value = row.get("recommendation");
@@ -334,6 +359,7 @@ pub async fn process_one(pool: &PgPool, owner: Option<uuid::Uuid>) -> Result<boo
             .bind(id).bind(i as i32).bind(l["role"].as_str().unwrap_or("context")).bind(ids).bind(&snapshot).execute(&mut *tx).await?;
     }
     r["geography_revision"] = json!(catalog);
+    r["geography_rules_version"] = json!(RULES_VERSION);
     sqlx::query("UPDATE knowledge_items SET recommendation=$2,revision=revision+1 WHERE id=$1")
         .bind(id)
         .bind(r)

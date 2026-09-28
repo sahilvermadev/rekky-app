@@ -100,6 +100,8 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/v1/ask", post(ask))
         .route("/v1/ask/agent", post(crate::ask::run))
+        .route("/v1/ask-ui/views", post(crate::ask_views::create))
+        .route("/v1/ask-ui/views/{id}", get(crate::ask_views::page))
         .route(
             "/v1/ask/dictations/{id}",
             post(crate::ask_voice::transcribe)
@@ -145,6 +147,12 @@ impl ApiError {
     }
     pub(crate) fn conflict(message: &'static str) -> Self {
         Self::new(StatusCode::CONFLICT, "revision_conflict", message)
+    }
+    pub(crate) fn is_conflict(&self) -> bool {
+        self.status == StatusCode::CONFLICT
+    }
+    pub(crate) fn is_client_correction(&self) -> bool {
+        self.status == StatusCode::BAD_REQUEST || self.status == StatusCode::UNPROCESSABLE_ENTITY
     }
 }
 impl From<sqlx::Error> for ApiError {

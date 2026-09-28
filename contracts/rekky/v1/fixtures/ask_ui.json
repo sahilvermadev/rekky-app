@@ -1,0 +1,93 @@
+{
+  "view": {
+    "schema_version": "ask_ui.v1",
+    "view_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "title": "Saved services",
+    "source": "mine",
+    "total": 1,
+    "count_kind": "exact",
+    "spec": {
+      "title": "Saved services",
+      "location": "",
+      "category_ids": [],
+      "kind": "person_service",
+      "query": "",
+      "location_role": "relevant",
+      "sort": "saved_newest",
+      "source": "mine"
+    },
+    "facets": {
+      "kinds": [
+        {
+          "id": "person_service",
+          "label": "person_service",
+          "count": 1
+        }
+      ],
+      "categories": [
+        {
+          "id": "learned.ce7de4bb5e7563576b814de6",
+          "label": "Fountain pen restorer",
+          "count": 1
+        }
+      ],
+      "areas": []
+    },
+    "area": null,
+    "items": [
+      {
+        "id": "learned-fixture",
+        "capture_id": "33333333-3333-4333-8333-333333333333",
+        "subject": "Nib Workshop",
+        "body": "Restored an old fountain pen. The nib now writes smoothly.",
+        "visibility": "private",
+        "revision": 2,
+        "created_at": "2026-09-25T00:00:00.000Z",
+        "needs_review": false,
+        "recommendation": {
+          "version": 2,
+          "entity_kind": "person_service",
+          "shelf": "People & services",
+          "experience": "firsthand",
+          "summary": "Restored an old fountain pen. The nib now writes smoothly.",
+          "observations": [],
+          "locations": [],
+          "use_cases": [],
+          "classification": {
+            "vocabulary_version": 2000001,
+            "origin": "learned",
+            "types": [
+              {
+                "id": "learned.ce7de4bb5e7563576b814de6",
+                "label": "Fountain pen restorer",
+                "dimension": "type",
+                "dimension_label": "Type"
+              }
+            ],
+            "facets": [],
+            "descriptors": [],
+            "descriptive_type": "fountain pen restorer",
+            "display_label": "Fountain pen restorer",
+            "search_ids": [
+              "learned.ce7de4bb5e7563576b814de6"
+            ],
+            "search_terms": "Fountain pen restorer pen restoration specialist"
+          }
+        }
+      }
+    ],
+    "next_offset": null
+  },
+  "proposal": {
+    "schema_version": "ask_ui.v1",
+    "reply": "Here are the saved services.",
+    "blocks": [
+      {
+        "id": "collection-1",
+        "type": "collection_preview",
+        "view_ref": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+      }
+    ],
+    "missing_parts": []
+  }
+}

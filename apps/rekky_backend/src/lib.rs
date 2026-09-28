@@ -20,3 +20,5 @@ pub mod geography;
 pub mod ask;
 
 pub mod ask_voice;
+
+pub mod ask_views;

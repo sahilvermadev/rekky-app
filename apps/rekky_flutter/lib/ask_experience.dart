@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'ask_answer.dart';
+import 'ask_view.dart';
+import 'ask_explorer.dart';
 import 'ask_comparison_view.dart';
 import 'ask_voice_sheet.dart';
 import 'ask_recorder.dart';
@@ -33,6 +35,12 @@ class AskExperience extends StatefulWidget {
 
 class _AskExperienceState extends State<AskExperience> {
   final input = TextEditingController();
+  final threadScroll = ScrollController();
+  AskView? explorerView;
+  bool showExplorer = false, explorerCreated = false;
+  String? activeViewId, pendingViewId;
+  List<RekkyItem> viewSelectionItems = [];
+  int explorerVersion = 0;
   final inputFocus = FocusNode();
   final history = <({AskAnswer answer, String question})>[];
   final selected = <String>[];
@@ -73,6 +81,7 @@ class _AskExperienceState extends State<AskExperience> {
     if (working) unawaited(cancelRequest(requestId));
     generation++;
     input.dispose();
+    threadScroll.dispose();
     inputFocus.removeListener(_focusChanged);
     inputFocus.dispose();
     super.dispose();
@@ -101,6 +110,7 @@ class _AskExperienceState extends State<AskExperience> {
       if (!retry) {
         requestId = newId();
         pendingParent = editing ? editParent : answer?.requestId;
+        pendingViewId = activeViewId;
         pendingSelected = List.of(selected);
         pendingExcluded = List.of(excluded);
       }
@@ -127,6 +137,7 @@ class _AskExperienceState extends State<AskExperience> {
         question,
         requestId,
         scopeCity: pendingCity,
+        activeViewId: pendingViewId,
         previousRequestId: pendingParent,
         selectedItemIds: pendingSelected,
         excludedItemIds: pendingExcluded,
@@ -170,6 +181,9 @@ class _AskExperienceState extends State<AskExperience> {
     generation++;
     setState(() {
       answer = null;
+      activeViewId = null;
+      explorerCreated = false;
+      showExplorer = false;
       asked = '';
       pending = '';
       requestId = '';
@@ -203,7 +217,8 @@ class _AskExperienceState extends State<AskExperience> {
             hintText: 'Delhi',
           ),
           onChanged: (value) => enteredCity = value,
-          onFieldSubmitted: (value) => Navigator.pop(dialogContext, value.trim()),
+          onFieldSubmitted: (value) =>
+              Navigator.pop(dialogContext, value.trim()),
         ),
         actions: [
           TextButton(
@@ -320,7 +335,7 @@ class _AskExperienceState extends State<AskExperience> {
                       label: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 160),
                         child: Text(
-                          current?.items
+                          [...viewSelectionItems, ...?current?.items]
                                   .where((item) => item.id == id)
                                   .firstOrNull
                                   ?.subject ??
@@ -487,376 +502,358 @@ class _AskExperienceState extends State<AskExperience> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    final current = answer;
-    final supported =
-        current?.results.where((r) => r.section == 'supported').toList() ??
-        <AskResult>[];
-    final uncertain =
-        current?.results.where((r) => r.section != 'supported').toList() ??
-        <AskResult>[];
-    final centerHome =
-        current == null &&
-        MediaQuery.textScalerOf(context).scale(16) <= 22 &&
-        MediaQuery.sizeOf(context).height >= 720 &&
-        MediaQuery.viewInsetsOf(context).bottom == 0;
-    final intro = Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
+  void explore([AskView? view]) {
+    setState(() {
+      if (!explorerCreated || view?.id != explorerView?.id) {
+        explorerView = view;
+        explorerVersion++;
+      }
+      explorerCreated = true;
+      showExplorer = true;
+    });
+  }
+
+  Widget replyView(
+    BuildContext context,
+    AskAnswer reply,
+    String question, {
+    bool latest = false,
+  }) {
+    final colors = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (current == null) ...[
-          Text(
-            'What do you have in mind?',
-            style: LibraryStyle.heading(context, 32),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'Find something you saved, or ask what fits.',
-            style: theme.textTheme.bodyLarge?.copyWith(
-              color: colors.onSurfaceVariant,
+        Padding(
+          padding: const EdgeInsets.only(top: 20, bottom: 18),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 330),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: colors.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Text(
+                question,
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
             ),
-          ),
-          const SizedBox(height: 26),
-          composer(context),
-        ],
-        const SizedBox(height: 10),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: ActionChip(
-            avatar: const Icon(Icons.location_on_outlined, size: 17),
-            label: Text(
-              checkingCity
-                  ? 'Checking your city…'
-                  : current != null && current.location.isNotEmpty
-                  ? 'Near ${current.location}'
-                  : allLocations ||
-                        (cityChecked &&
-                            chosenCity == null &&
-                            deviceCity == null)
-                  ? 'All locations'
-                  : chosenCity != null || deviceCity != null
-                  ? 'Near ${chosenCity ?? deviceCity}'
-                  : 'Use your city',
-            ),
-            onPressed: working ? null : chooseArea,
-            tooltip: 'Change search area',
           ),
         ),
-        if (current != null)
-          Wrap(
-            spacing: 8,
-            runSpacing: 2,
-            children: [
-              if (history.isNotEmpty)
-                TextButton.icon(
-                  onPressed: restoring ? null : previousAnswer,
-                  icon: const Icon(Icons.arrow_back_rounded, size: 18),
-                  label: Text(restoring ? 'Restoring…' : 'Previous answer'),
-                ),
-              TextButton.icon(
-                onPressed: newQuestion,
-                icon: const Icon(Icons.add_rounded, size: 18),
-                label: const Text('New question'),
-              ),
-            ],
-          ),
-        if (working)
+        if (reply.reply.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.only(top: 14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (current == null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Text(pending, style: theme.textTheme.titleLarge),
-                  ),
-                Row(
-                  children: [
-                    const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Semantics(
-                        liveRegion: true,
-                        child: Text(
-                          checkingCity
-                              ? 'Checking your area…'
-                              : 'Checking your saved recommendations…',
-                        ),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        unawaited(cancelRequest(requestId));
-                        setState(() {
-                          generation++;
-                          working = false;
-                          checkingCity = false;
-                        });
-                      },
-                      child: const Text('Cancel'),
-                    ),
-                  ],
-                ),
-              ],
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Text(
+              reply.reply,
+              style: Theme.of(context).textTheme.bodyLarge
+                  ?.copyWith(height: 1.5),
             ),
           ),
-        if (error != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Semantics(
-                  liveRegion: true,
-                  child: Text(error!, style: TextStyle(color: colors.error)),
-                ),
-                TextButton(
-                  onPressed: working ? null : () => submit(retry: true),
-                  child: const Text('Try again'),
-                ),
-              ],
+        if (reply.changed)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: Text(
+              'Some recommendations changed. Ask again for an updated answer.',
             ),
           ),
-        if (current == null && !working && error == null) ...[
-          const SizedBox(height: 18),
-          for (final example in [
-            'Who was that taxi driver?',
-            'Something fun to try this weekend',
-            'A place for a quiet dinner',
-          ])
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
+        for (final view in reply.views)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Material(
+              color: colors.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(18),
+              clipBehavior: Clip.antiAlias,
               child: InkWell(
-                onTap: () {
-                  input.text = example;
-                  submit();
-                },
-                borderRadius: BorderRadius.circular(12),
+                onTap: () => explore(view),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 13,
-                    horizontal: 10,
-                  ),
+                  padding: const EdgeInsets.all(18),
                   child: Row(
                     children: [
-                      Expanded(
-                        child: Text(example, style: theme.textTheme.bodyMedium),
-                      ),
-                      const SizedBox(width: 12),
                       Icon(
-                        Icons.arrow_upward_rounded,
-                        size: 18,
+                        Icons.view_agenda_outlined,
                         color: LibraryStyle.searchFocus(context),
                       ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              view.title,
+                              style: LibraryStyle.heading(context, 23),
+                            ),
+                            const SizedBox(height: 6),
+                            Text('${view.total} saved · Explore collection'),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.arrow_forward_rounded),
                     ],
                   ),
                 ),
               ),
             ),
-          const SizedBox(height: 16),
-          Text(
-            'Ask sends your question, any search city and relevant saved recommendations to OpenAI.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: colors.onSurfaceVariant,
+          ),
+        if (latest && reply.results.length >= 2 && reply.comparison == null)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: working
+                  ? null
+                  : () => setState(() {
+                      comparing = !comparing;
+                      selected.clear();
+                    }),
+              icon: const Icon(Icons.compare_arrows_rounded, size: 19),
+              label: Text(comparing ? 'Done comparing' : 'Compare options'),
             ),
           ),
-        ],
-        if (current != null) ...[
-          const SizedBox(height: 14),
-          InkWell(
-            onTap: working
-                ? null
-                : () {
-                    setState(() {
-                      editing = true;
-                      editParent = answer?.turnCount == 1
-                          ? null
-                          : history.lastOrNull?.answer.requestId;
-                      input.text = asked;
-                    });
-                    inputFocus.requestFocus();
-                  },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Semantics(
-                button: true,
-                label: 'Edit question: $asked',
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        asked,
-                        style: LibraryStyle.heading(context, 24),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    const Icon(Icons.edit_outlined, size: 20),
-                  ],
-                ),
-              ),
+        if (reply.comparison != null)
+          AskComparisonView(
+            comparison: reply.comparison!,
+            onOpen: (item) => open(item),
+            onAction: (item) => open(item, action: true),
+            onSelect: latest && !working ? toggleSelection : null,
+            selected: latest ? selected : const [],
+          ),
+        for (final result in reply.results)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: resultCard(context, result, interactive: latest),
+          ),
+        if (reply.clarification.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 8, bottom: 12),
+            child: Text(
+              reply.clarification,
+              style: Theme.of(context).textTheme.bodyLarge,
             ),
           ),
-          if (current.results.length >= 2 && current.comparison == null)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: TextButton.icon(
-                onPressed: working
-                    ? null
-                    : () => setState(() {
-                        comparing = !comparing;
-                        selected.clear();
-                      }),
-                icon: Icon(
-                  comparing
-                      ? Icons.close_rounded
-                      : Icons.compare_arrows_rounded,
-                  size: 19,
-                ),
-                label: Text(comparing ? 'Done comparing' : 'Compare options'),
-              ),
-            ),
-          if (current.mode == 'limited')
-            const Padding(
-              padding: EdgeInsets.only(top: 8),
-              child: Text(
-                'The full answer couldn’t finish. These saved matches may help.',
-              ),
-            ),
-          if (current.searchIncomplete && current.mode != 'limited')
-            const Padding(
-              padding: EdgeInsets.only(top: 8),
-              child: Text(
-                'There may be more matches. Add another detail to narrow your search.',
-              ),
-            ),
-          if (current.changed)
-            const Padding(
-              padding: EdgeInsets.only(top: 8),
-              child: Text(
-                'Some recommendations changed. Ask again for an updated answer.',
-              ),
-            ),
-          if (current.clarification.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Text(current.clarification, style: theme.textTheme.titleMedium),
-            if (current.choices.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: current.choices
-                      .map(
-                        (choice) => ActionChip(
-                          label: Text(choice),
-                          onPressed: () {
+        if (latest && reply.choices.isNotEmpty)
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: reply.choices
+                .map(
+                  (choice) => ActionChip(
+                    label: Text(choice),
+                    onPressed: working
+                        ? null
+                        : () {
                             input.text = choice;
                             submit();
                           },
-                        ),
-                      )
-                      .toList(),
-                ),
+                  ),
+                )
+                .toList(),
+          ),
+        if (reply.results.isEmpty &&
+            reply.views.isEmpty &&
+            reply.comparison == null &&
+            reply.clarification.isEmpty &&
+            reply.reply.isEmpty &&
+            !reply.changed)
+          const Text(
+            'No supported match found for this question. Try another detail or a broader scope.',
+          ),
+        if (latest && reply.nextOffset != null)
+          OutlinedButton(
+            onPressed: working || paging ? null : more,
+            child: Text(paging ? 'Loading…' : 'More recommendations'),
+          ),
+        const SizedBox(height: 12),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final started = answer != null || working || error != null;
+    final conversation = Column(
+      children: [
+        Row(
+          children: [
+            if (explorerCreated)
+              TextButton.icon(
+                onPressed: () => setState(() => showExplorer = true),
+                icon: const Icon(Icons.view_agenda_outlined, size: 18),
+                label: const Text('Collection'),
               ),
+            const Spacer(),
+            PopupMenuButton<String>(
+              tooltip: 'Conversation options',
+              onSelected: (value) {
+                if (value == 'new') {
+                  newQuestion();
+                } else if (value == 'area') {
+                  chooseArea();
+                } else {
+                  explore();
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'new', child: Text('New conversation')),
+                PopupMenuItem(value: 'area', child: Text('Change search area')),
+                PopupMenuItem(
+                  value: 'explore',
+                  child: Text('Explore your saved recommendations'),
+                ),
+              ],
+            ),
           ],
-          if (current.mode != 'limited' &&
-              current.results.isEmpty &&
-              current.comparison == null &&
-              !current.changed &&
-              current.clarification.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(top: 20),
-              child: Text(
-                'There isn’t enough in your Library to answer this yet. Try another detail or a broader question.',
-              ),
-            ),
-        ],
-      ],
-    );
-    final content = CustomScrollView(
-      key: const PageStorageKey('intelligent-ask'),
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      slivers: [
-        if (centerHome)
-          SliverFillRemaining(
-            hasScrollBody: false,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              child: Center(
-                child: SizedBox(width: double.infinity, child: intro),
-              ),
-            ),
-          )
-        else
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-            sliver: SliverToBoxAdapter(child: intro),
-          ),
-        if (current?.comparison != null)
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-            sliver: SliverToBoxAdapter(
-              child: AskComparisonView(
-                comparison: current!.comparison!,
-                onOpen: (item) => open(item),
-                onAction: (item) => open(item, action: true),
-                onSelect: working ? null : toggleSelection,
-                selected: selected,
-              ),
-            ),
-          ),
-        for (final result in supported)
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-            sliver: SliverToBoxAdapter(child: resultCard(context, result)),
-          ),
-        if (uncertain.isNotEmpty)
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-            sliver: SliverToBoxAdapter(
-              child: Text('Worth checking', style: theme.textTheme.titleMedium),
-            ),
-          ),
-        for (final result in uncertain)
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-            sliver: SliverToBoxAdapter(child: resultCard(context, result)),
-          ),
-        if (current?.nextOffset != null)
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-            sliver: SliverToBoxAdapter(
-              child: OutlinedButton(
-                onPressed: paging || working ? null : more,
-                child: Text(paging ? 'Loading…' : 'More recommendations'),
-              ),
-            ),
-          ),
-      ],
-    );
-    return LayoutBuilder(
-      builder: (context, constraints) => Column(
-        children: [
-          Expanded(child: content),
-          if (current != null)
-            ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: constraints.maxHeight * .5,
-              ),
-              child: SingleChildScrollView(
-                reverse: true,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                  child: composer(context),
+        ),
+        Expanded(
+          child: ListView(
+            controller: threadScroll,
+            key: const PageStorageKey('ask-conversation'),
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+            children: [
+              if (!started) ...[
+                const SizedBox(height: 40),
+                Text(
+                  'What do you have in mind?',
+                  style: LibraryStyle.heading(context, 32),
                 ),
+                const SizedBox(height: 12),
+                Text(
+                  'Find something you saved, or discover what fits.',
+                  style: Theme.of(context).textTheme.bodyLarge
+                      ?.copyWith(color: colors.onSurfaceVariant),
+                ),
+                const SizedBox(height: 24),
+                OutlinedButton.icon(
+                  onPressed: () => explore(),
+                  icon: const Icon(Icons.explore_outlined),
+                  label: const Text('Explore your saved recommendations'),
+                ),
+                const SizedBox(height: 20),
+                for (final example in [
+                  'Who was that taxi driver?',
+                  'Something fun to try this weekend',
+                  'A place for a quiet dinner',
+                ])
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(example),
+                    trailing: const Icon(Icons.north_west_rounded, size: 18),
+                    onTap: () {
+                      input.text = example;
+                      submit();
+                    },
+                  ),
+                const SizedBox(height: 20),
+                Text(
+                  'Ask sends your question, any search city and relevant saved recommendations to OpenAI.',
+                  style: Theme.of(context).textTheme.bodySmall
+                      ?.copyWith(color: colors.onSurfaceVariant),
+                ),
+              ],
+              for (final turn in history)
+                replyView(context, turn.answer, turn.question),
+              if (answer != null)
+                replyView(context, answer!, asked, latest: true),
+              if (working || error != null) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Text(
+                    pending,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                if (working)
+                  Row(
+                    children: [
+                      const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Semantics(
+                          liveRegion: true,
+                          child: Text(
+                            checkingCity
+                                ? 'Checking your area…'
+                                : 'Looking through your recommendations…',
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          unawaited(cancelRequest(requestId));
+                          setState(() {
+                            generation++;
+                            working = false;
+                            checkingCity = false;
+                          });
+                        },
+                        child: const Text('Cancel'),
+                      ),
+                    ],
+                  ),
+                if (error != null) ...[
+                  Semantics(
+                    liveRegion: true,
+                    child: Text(error!, style: TextStyle(color: colors.error)),
+                  ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton(
+                      onPressed: working ? null : () => submit(retry: true),
+                      child: const Text('Try again'),
+                    ),
+                  ),
+                ],
+              ],
+            ],
+          ),
+        ),
+        ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * .35,
+          ),
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: composer(context),
+            ),
+          ),
+        ),
+      ],
+    );
+    return PopScope(
+      canPop: !showExplorer,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) setState(() => showExplorer = false);
+      },
+      child: Stack(
+        children: [
+          Offstage(offstage: showExplorer, child: conversation),
+          if (explorerCreated)
+            Offstage(
+              offstage: !showExplorer,
+              child: AskExplorer(
+                key: ValueKey(explorerVersion),
+                api: widget.api,
+                initialView: explorerView,
+                onBack: () => setState(() => showExplorer = false),
+                onOpen: widget.onOpen,
+                onAsk: (view, ids, text) {
+                  setState(() {
+                    activeViewId = view.id;
+                    viewSelectionItems = view.items;
+                    selected
+                      ..clear()
+                      ..addAll(ids);
+                    showExplorer = false;
+                  });
+                  input.text = text;
+                  submit();
+                },
               ),
             ),
         ],
@@ -960,7 +957,11 @@ class _AskExperienceState extends State<AskExperience> {
     }
   }
 
-  Widget resultCard(BuildContext context, AskResult result) {
+  Widget resultCard(
+    BuildContext context,
+    AskResult result, {
+    bool interactive = true,
+  }) {
     final item = result.item;
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
@@ -1023,7 +1024,7 @@ class _AskExperienceState extends State<AskExperience> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  if (comparing)
+                  if (comparing && interactive)
                     Semantics(
                       label: 'Select ${item.subject} for comparison',
                       child: Checkbox(
@@ -1097,7 +1098,7 @@ class _AskExperienceState extends State<AskExperience> {
                   ),
                 PopupMenuButton<String>(
                   tooltip: 'More options for ${item.subject}',
-                  enabled: !working,
+                  enabled: !working && interactive,
                   onSelected: (action) => _resultMenuAction(action, item),
                   itemBuilder: (_) => const [
                     PopupMenuItem(value: 'ask', child: Text('Ask about this')),

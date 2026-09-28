@@ -83,6 +83,19 @@ void main() {
       );
     },
   );
+  test('coarse city indexing retains the saved neighbourhood on screen', () {
+    const location = RecommendationDetail(
+      'venue',
+      'Malviya Nagar, Delhi',
+      locationName: 'Malviya Nagar, Delhi',
+      geography: {
+        'status': 'resolved',
+        'label': 'Delhi',
+        'match_method': 'explicit_coarse_context',
+      },
+    );
+    expect(location.displayText, 'Malviya Nagar, Delhi');
+  });
   testWidgets(
     'learned category uses the same compact card and readable detail',
     (tester) async {

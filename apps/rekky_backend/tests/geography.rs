@@ -68,6 +68,11 @@ fn geographic_identity_aliases_context_and_ambiguity() {
     assert_eq!(resolve("Landor", &areas)["area_id"], "geonames:5");
     assert_eq!(resolve("Landour", &areas)["area_id"], "geonames:4");
     assert_eq!(resolve("Landour, Delhi", &areas)["status"], "unresolved");
+    let coarse = resolve("Malviya Nagar, Delhi", &areas);
+    assert_eq!(coarse["status"], "resolved");
+    assert_eq!(coarse["area_id"], "geonames:1");
+    assert_eq!(coarse["match_method"], "explicit_coarse_context");
+    assert_eq!(coarse["unresolved_parts"], json!(["malviya nagar"]));
     assert_eq!(resolve("near Delhi", &areas)["status"], "unresolved");
     assert_eq!(resolve("Unknown village", &areas)["status"], "unresolved");
     assert_eq!(normalized("Dwārka"), normalized("Dwarka"));

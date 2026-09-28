@@ -1,4 +1,5 @@
 import 'rekky_api.dart';
+import 'ask_view.dart';
 
 class AskEvidence {
   const AskEvidence(this.id, this.kind, this.text);
@@ -90,6 +91,8 @@ class AskComparison {
 
 class AskAnswer {
   const AskAnswer({
+    this.reply = '',
+    this.views = const [],
     required this.requestId,
     required this.title,
     required this.intent,
@@ -107,6 +110,8 @@ class AskAnswer {
     this.selectedItemIds = const [],
     this.excludedItemIds = const [],
   });
+  final String reply;
+  final List<AskView> views;
   final String requestId, title, intent, mode, clarification, location;
   final List<String> choices;
   final List<AskResult> results;
@@ -119,6 +124,10 @@ class AskAnswer {
   final int turnCount;
   final List<String> selectedItemIds, excludedItemIds;
   factory AskAnswer.fromJson(Map<String, dynamic> value) => AskAnswer(
+    reply: value['reply'] as String? ?? '',
+    views: (value['views'] as List? ?? [])
+        .map((v) => AskView.fromJson(v as Map<String, dynamic>))
+        .toList(),
     requestId: value['request_id'] as String,
     title: value['title'] as String,
     intent: value['intent'] as String,
@@ -143,6 +152,8 @@ class AskAnswer {
   AskAnswer append(AskAnswer page) => page.changed
       ? page
       : AskAnswer(
+          reply: reply,
+          views: views,
           requestId: requestId,
           comparison: comparison,
           question: question,

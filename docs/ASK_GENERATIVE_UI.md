@@ -1,6 +1,12 @@
 # Ask: conversation and exploration
 
-Status: **approved direction; implementation pending**, 2026-09-28. This spec expands [the Ask experience plan](ASK_EXPERIENCE_PLAN.md) and [conversation repair](ASK_CONVERSATION_REPAIR.md). The [canonical product plan](REKKY_FLUTTER_PRODUCT_PLAN.md) owns product scope, access and release gates. This update changes no installed app behavior.
+Status: **own-library exploration pilot implemented; network and release gates pending**, 2026-09-28. This spec expands [the Ask experience plan](ASK_EXPERIENCE_PLAN.md) and [conversation repair](ASK_CONVERSATION_REPAIR.md). The [canonical product plan](REKKY_FLUTTER_PRODUCT_PLAN.md) owns product scope, access and release gates.
+
+The pilot now has a continuous Ask conversation, a promptless Explore entry, agent-created collection views, deterministic owner-scoped filters/facets/counts/paging, an active-view handoff for asking about selected items, and stateless Responses tool continuation. It uses an ephemeral 15-minute view/session contract. `ask_ui.v1` has a shared fixture and Rust/Flutter readers. Direct browsing does not require a model call. The visible source label is deliberately **Your Library** because reciprocal friend access is not available yet. The full network explorer, grouped destination views with independent pages, streaming, durable history, held-out eval gate and scaled 1,000-item/device validation remain open checkpoints below; do not treat the pilot as the complete Ask release.
+
+An explicit city in a saved location may supply a coarse city browse scope when the named neighbourhood is absent from the gazetteer; the neighbourhood remains unverified. A user's request *for* that unresolved neighbourhood must not silently become a city-wide collection. Native area facets send stable geographic IDs, while collection headings show readable place names.
+
+Development validation: Rust owner-scope/paging/staleness and agent-view integration tests, geography rule-version and ambiguity tests, Flutter Ask and recommendation widget tests, Flutter analysis, and an Android device journey through promptless Explore → city filter → natural-language restaurant collection → two-item comparison → return to the preserved collection. The device run used the real local backend and existing saved account data. It does not establish the 1,000-item, multilingual, friend-revocation, iOS or latency gates.
 
 ## 1. Product decision
 

@@ -1,4 +1,5 @@
 import 'ask_answer.dart';
+import 'ask_view.dart';
 
 import 'dart:convert';
 import 'dart:io';
@@ -76,7 +77,8 @@ class RecommendationDetail {
   final String kind, text;
   final String? locationName;
   final Map<String, dynamic>? geography;
-  String get displayText => geography?['status'] == 'resolved'
+  String get displayText => geography?['status'] == 'resolved' &&
+          geography?['match_method'] != 'explicit_coarse_context'
       ? (geography?['label'] as String? ?? locationName ?? text)
       : locationName ?? text;
 }
@@ -668,6 +670,7 @@ class RekkyApi {
     String question,
     String requestId, {
     String? scopeCity,
+    String? activeViewId,
     String? previousRequestId,
     List<String> selectedItemIds = const [],
     List<String> excludedItemIds = const [],
@@ -679,6 +682,7 @@ class RekkyApi {
         'question': question,
         'request_id': requestId,
         'scope_city': ?scopeCity,
+        'active_view_id': ?activeViewId,
         'previous_request_id': ?previousRequestId,
         'selected_item_ids': selectedItemIds,
         'excluded_item_ids': excludedItemIds,
@@ -710,6 +714,13 @@ class RekkyApi {
   Future<void> cancelAsk(String id) async {
     await request('DELETE', '/v1/ask/answers/$id');
   }
+
+  Future<AskView> createAskView(AskBrowseSpec spec) async => AskView.fromJson(
+    await request('POST', '/v1/ask-ui/views', body: spec.toJson()),
+  );
+  Future<AskView> askViewPage(String id, int offset) async => AskView.fromJson(
+    await request('GET', '/v1/ask-ui/views/$id?offset=$offset'),
+  );
 
   Future<AskAnswer> askPage(String id, int offset) async => AskAnswer.fromJson(
     await request('GET', '/v1/ask/answers/$id?offset=$offset'),

@@ -3161,6 +3161,28 @@ async fn geography_enrichment_and_filters_preserve_roles_privacy_and_edit_fences
             .await
             .unwrap()
     );
+    // Catalog migration can run while an old worker is alive. Its projection
+    // may carry the latest catalog revision yet still need the new rules.
+    sqlx::query("UPDATE knowledge_items SET recommendation=recommendation - 'geography_rules_version' WHERE id=$1")
+        .bind(ids[0]).execute(&t.pool).await.unwrap();
+    assert!(
+        rekky_backend::geography::process_one(&t.pool, Some(owner))
+            .await
+            .unwrap()
+    );
+    let rules_version: Value = sqlx::query_scalar(
+        "SELECT recommendation->'geography_rules_version' FROM knowledge_items WHERE id=$1",
+    )
+    .bind(ids[0])
+    .fetch_one(&t.pool)
+    .await
+    .unwrap();
+    assert_eq!(rules_version, 2);
+    assert!(
+        !rekky_backend::geography::process_one(&t.pool, Some(owner))
+            .await
+            .unwrap()
+    );
     // An older worker may have written the current catalog revision without
     // the new projection. Repair the missing derived format once, not forever.
     sqlx::query("UPDATE knowledge_items SET recommendation=recommendation #- '{locations,0,geography,browse}' WHERE id=$1").bind(ids[0]).execute(&t.pool).await.unwrap();
@@ -3586,6 +3608,209 @@ async fn withdrawal_during_repair_cannot_commit_late_recommendations() {
 struct ScriptedAsk {
     decisions: std::sync::atomic::AtomicUsize,
 }
+
+#[tokio::test]
+async fn ask_views_are_complete_owner_scoped_and_revision_safe() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    let (owner, token) = t.sign_in("google", "valid-a").await;
+    t.call(
+        Method::POST,
+        "/v1/me/visibility-disclosure",
+        Some(&token),
+        Some(json!({"accept":true})),
+        &[],
+    )
+    .await;
+    let mut expected = Vec::new();
+    for index in 0..23 {
+        let item = categorized_item(
+            &t,
+            &token,
+            &format!("Bar {index:02}"),
+            "place",
+            "place.bar",
+            &[],
+        )
+        .await;
+        expected.push(item["id"].as_str().unwrap().to_owned());
+    }
+    categorized_item(&t, &token, "A restaurant", "place", "place.restaurant", &[]).await;
+    let (_, other) = t.sign_in("google", "valid-b").await;
+    t.call(
+        Method::POST,
+        "/v1/me/visibility-disclosure",
+        Some(&other),
+        Some(json!({"accept":true})),
+        &[],
+    )
+    .await;
+    categorized_item(&t, &other, "Someone else's bar", "place", "place.bar", &[]).await;
+
+    let (status, first) = t
+        .call(
+            Method::POST,
+            "/v1/ask-ui/views",
+            Some(&token),
+            Some(json!({"kind":"place","category_ids":["place.bar"]})),
+            &[],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{first}");
+    assert_eq!(first["total"], 23);
+    assert_eq!(first["items"].as_array().unwrap().len(), 20);
+    assert_eq!(first["next_offset"], 20);
+    let id = first["view_id"].as_str().unwrap();
+    let (status, second) = t
+        .call(
+            Method::GET,
+            &format!("/v1/ask-ui/views/{id}?offset=20"),
+            Some(&token),
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{second}");
+    assert_eq!(second["items"].as_array().unwrap().len(), 3);
+    assert!(second["next_offset"].is_null());
+    let all: std::collections::HashSet<_> = first["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain(second["items"].as_array().unwrap())
+        .map(|v| v["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(all.len(), 23);
+    assert!(expected.iter().all(|id| all.contains(id.as_str())));
+    assert!(!all.contains("Someone else's bar"));
+    assert_eq!(
+        t.call(
+            Method::GET,
+            &format!("/v1/ask-ui/views/{id}"),
+            Some(&other),
+            None,
+            &[]
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+
+    sqlx::query("UPDATE knowledge_items SET subject='Edited bar',revision=revision+1 WHERE id=$1 AND owner_id=$2")
+        .bind(Uuid::parse_str(&expected[0]).unwrap()).bind(owner).execute(&t.pool).await.unwrap();
+    let (status, stale) = t
+        .call(
+            Method::GET,
+            &format!("/v1/ask-ui/views/{id}"),
+            Some(&token),
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{stale}");
+    assert_eq!(stale["error"]["code"], "view_stale");
+    // A native area facet sends its stable ID back to the view API. It must
+    // resolve by identity, not be treated as a human place name.
+    let bar_id = Uuid::parse_str(&expected[0]).unwrap();
+    sqlx::query("UPDATE knowledge_items SET recommendation=jsonb_set(recommendation,'{locations}',$3::jsonb,true),revision=revision+1 WHERE id=$1 AND owner_id=$2")
+        .bind(bar_id).bind(owner).bind(json!([{"role":"venue","text":"Delhi","geography":{
+            "status":"resolved","area_id":"geonames:1273294","filter_ids":["geonames:1273294"],
+            "browse":{"destination":{"id":"geonames:1273294","label":"Delhi"}}
+        }}])).execute(&t.pool).await.unwrap();
+    let (status, delhi) = t
+        .call(
+            Method::POST,
+            "/v1/ask-ui/views",
+            Some(&token),
+            Some(json!({"location":"geonames:1273294","kind":"place"})),
+            &[],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{delhi}");
+    assert_eq!(delhi["title"], "Delhi");
+    assert_eq!(delhi["total"], 1);
+    assert_eq!(delhi["items"][0]["id"], expected[0]);
+    let coarse = rekky_backend::ask_views::resolve_scope(&t.state, "Malviya Nagar, Delhi")
+        .await
+        .unwrap();
+    assert_eq!(coarse["status"], "coarse");
+    t.cleanup().await;
+}
+
+struct CollectionAsk;
+#[async_trait]
+impl rekky_backend::ask::AskModel for CollectionAsk {
+    fn available(&self) -> bool {
+        true
+    }
+    async fn decide(
+        &self,
+        context: Value,
+        _last: bool,
+    ) -> Result<rekky_backend::ask::Decision, rekky_backend::ask::AgentError> {
+        let observations = context["tool_observations"].as_array().unwrap();
+        let (name, arguments) = if observations.is_empty() {
+            (
+                "open_collection",
+                json!({"title":"Bars","location":"","category_ids":["place.bar"],"kind":"place","query":"","source":"mine","location_role":"relevant","sort":"saved_newest"}),
+            )
+        } else {
+            let id = &observations[0]["result"]["view_id"];
+            (
+                "present_answer",
+                json!({"intent":"discovery","new_topic":false,"title":"Bars","reply":"Here are the saved bars.","view_ids":[id],"location":"","clarification":"","choices":[],"comparison":null,"results":[]}),
+            )
+        };
+        Ok(rekky_backend::ask::Decision {
+            output_items: vec![],
+            calls: vec![rekky_backend::ask::ToolCall {
+                call_id: String::new(),
+                name: name.into(),
+                arguments,
+            }],
+            input_tokens: 100,
+            output_tokens: 100,
+        })
+    }
+}
+
+#[tokio::test]
+async fn ask_agent_can_present_a_complete_native_collection() {
+    let Some(mut t) = TestApp::new().await else {
+        return;
+    };
+    t.state.ask_model = Arc::new(CollectionAsk);
+    t.app = router(t.state.clone());
+    let (owner, token) = t.sign_in("google", "valid-a").await;
+    t.call(
+        Method::POST,
+        "/v1/me/visibility-disclosure",
+        Some(&token),
+        Some(json!({"accept":true})),
+        &[],
+    )
+    .await;
+    sqlx::query("INSERT INTO transcript_extraction_permissions(account_id,enabled,generation,disclosure_version) VALUES($1,true,1,1)")
+        .bind(owner).execute(&t.pool).await.unwrap();
+    categorized_item(&t, &token, "Bob's Bar", "place", "place.bar", &[]).await;
+    categorized_item(&t, &token, "Dinner", "place", "place.restaurant", &[]).await;
+    let (status, answer) = t
+        .call(
+            Method::POST,
+            "/v1/ask/agent",
+            Some(&token),
+            Some(json!({"request_id":Uuid::new_v4(),"question":"Which bars have I saved?"})),
+            &[],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{answer}");
+    assert_eq!(answer["reply"], "Here are the saved bars.");
+    assert_eq!(answer["views"].as_array().unwrap().len(), 1);
+    assert_eq!(answer["views"][0]["total"], 1);
+    assert_eq!(answer["views"][0]["items"][0]["subject"], "Bob's Bar");
+    t.cleanup().await;
+}
 #[async_trait]
 impl rekky_backend::ask::AskModel for ScriptedAsk {
     fn available(&self) -> bool {
@@ -3613,7 +3838,9 @@ impl rekky_backend::ask::AskModel for ScriptedAsk {
             )
         };
         Ok(rekky_backend::ask::Decision {
+            output_items: vec![],
             calls: vec![rekky_backend::ask::ToolCall {
+                call_id: String::new(),
                 name: name.into(),
                 arguments,
             }],
@@ -3783,7 +4010,9 @@ impl rekky_backend::ask::AskModel for BlockingAsk {
         self.started.notify_one();
         self.release.notified().await;
         Ok(rekky_backend::ask::Decision {
+            output_items: vec![],
             calls: vec![rekky_backend::ask::ToolCall {
+                call_id: String::new(),
                 name: "search_knowledge".into(),
                 arguments: json!({"terms":[],"page":0}),
             }],
@@ -4117,7 +4346,9 @@ impl rekky_backend::ask::AskModel for ContextAsk {
             )
         };
         Ok(rekky_backend::ask::Decision {
+            output_items: vec![],
             calls: vec![rekky_backend::ask::ToolCall {
+                call_id: String::new(),
                 name: name.into(),
                 arguments,
             }],
@@ -4605,9 +4836,11 @@ impl rekky_backend::ask::AskModel for ComparisonAsk {
             .map(|i| json!({"item_id":i["item_id"],"evidence_ids":[i["evidence"][0]["id"]]}))
             .collect();
         Ok(rekky_backend::ask::Decision {
+            output_items: vec![],
             input_tokens: 10,
             output_tokens: 10,
             calls: vec![rekky_backend::ask::ToolCall {
+                call_id: String::new(),
                 name: "present_answer".into(),
                 arguments: json!({"intent":"comparison","title":"Compare saved details","location":"","clarification":"","choices":[],"results":[],
               "comparison":{"item_ids":participants.iter().map(|i|i["item_id"].clone()).collect::<Vec<_>>(),

@@ -85,6 +85,14 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "021_ask_dictation.sql",
         include_str!("../migrations/021_ask_dictation.sql"),
     ),
+    (
+        "022_ask_views.sql",
+        include_str!("../migrations/022_ask_views.sql"),
+    ),
+    (
+        "023_coarse_city_context.sql",
+        include_str!("../migrations/023_coarse_city_context.sql"),
+    ),
 ];
 
 pub async fn run(pool: &PgPool) -> Result<(), sqlx::Error> {
