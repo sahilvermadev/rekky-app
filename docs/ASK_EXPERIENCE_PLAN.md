@@ -1,6 +1,6 @@
 # Ask: from a loose intention to a useful decision
 
-Status: approved product direction; first integrated ASK-0/1 pilot implemented 2026-09-27. ASK-2 adds spoken questions and bounded follow-up refinement ([checkpoint](ASK_SPEAK_AND_REFINE.md), 2026-09-28). ASK-3 now adds a bounded own-library comparison pilot ([checkpoint](ASK_COMPARE_PILOT.md), 2026-09-28). The observed local-discovery/follow-up failure and its unimplemented repairs are tracked in the [conversation reliability checkpoint](ASK_CONVERSATION_REPAIR.md). Full slice/release gates remain open. See [implementation, evidence and limitations](ASK_AGENT_SLICE.md). This document expands the Ask sections of [the canonical product plan](REKKY_FLUTTER_PRODUCT_PLAN.md); the canonical plan owns access, consent, retention and release gates. ASK-0 through ASK-7 are implementation checkpoints within that plan, not a replacement phase system.
+Status: approved product direction; first integrated ASK-0/1 pilot implemented 2026-09-27. ASK-2 adds spoken questions and bounded follow-up refinement ([checkpoint](ASK_SPEAK_AND_REFINE.md), 2026-09-28). ASK-3 adds a bounded own-library comparison pilot ([checkpoint](ASK_COMPARE_PILOT.md), 2026-09-28). Real-device local discovery and date follow-ups exposed unresolved retrieval, reliability and presentation flaws; the [conversation redesign checkpoint](ASK_CONVERSATION_REPAIR.md) records the evidence and revised implementation sequence. Full slice/release gates remain open. See [implementation, evidence and limitations](ASK_AGENT_SLICE.md). This document expands the Ask sections of [the canonical product plan](REKKY_FLUTTER_PRODUCT_PLAN.md); the canonical plan owns access, consent, retention and release gates. ASK-0 through ASK-7 are implementation checkpoints within that plan, not a replacement phase system.
 
 ## 1. Outcome and principles
 
@@ -43,7 +43,7 @@ Request: “My parents are visiting. Somewhere nice where we can talk.”
 
 Search supported qualities across relevant collections. Explain a fit using specific observations, such as a saved comment about conversation or atmosphere. Do not infer accessibility, cuisine, budget or older people's preferences from “parents.” If the choice between a meal and an activity would materially change the answer, offer that distinction alongside any useful preliminary results.
 
-For “quiet Italian dinner in Delhi,” cuisine and explicit city constrain the answer; atmosphere must be supported, contradicted or unknown. A liked restaurant with a loud-music caveat must not be confidently recommended as quiet. Unknown atmosphere can appear as Worth checking, without pretending to meet the request.
+For “quiet Italian dinner in Delhi,” cuisine and explicit city constrain the answer; atmosphere must be supported, contradicted or unknown. A liked restaurant with a loud-music caveat must not be confidently recommended as quiet. Unknown atmosphere can appear as Worth checking, without pretending to meet the request. For a composed need such as “food plus an activity,” return a useful supported dinner option even if the Library lacks a local activity, and say what is missing without inventing a second half or asking a broad question about unavailable categories.
 
 ### Comparing real options
 
@@ -51,7 +51,7 @@ Request: “Which of these two would work better for six people?”
 
 Resolve “these two” from explicitly selected or unambiguous visible result IDs. Compare supported group suitability, location and relevant caveats in vertically stacked native rows. Missing capacity stays unknown. A conditional suggestion is allowed when supported: explain what makes one option preferable and what still needs checking. Estimated ratings cannot masquerade as explicit scores or automatically decide suitability.
 
-The first release includes these three journeys, typed and spoken input, follow-up refinement and a current-answer history. Broad itinerary composition and durable personalization follow later.
+The first release includes these three journeys, typed and spoken input and follow-up refinement in a continuous conversation. Broad itinerary composition and durable personalization follow later, but a partial supported answer to a composed need is part of basic conversational competence.
 
 ## 4. The interaction
 
@@ -59,11 +59,11 @@ The first release includes these three journeys, typed and spoken input, follow-
 
 Ask remains the home. Keep one prominent voice/text entry, the established navigation capsule and uninterrupted access to Recommend. An Ask microphone is explicitly for a question; it never creates a recommendation. No automatic listening on page entry. Allow dictation correction, stop and cancel. Submit the spoken question after the person finishes, with its transcript available to edit.
 
-The empty state explains what the person can ask through a few short illustrative examples. Once real saved material exists, optional suggestions must be grounded in accessible knowledge. Do not fabricate personal context or produce a daily feed of speculative recommendations. For open-ended local discovery, a foreground-permission-derived approximate city may become a **visible, editable** Ask scope; explicit cities and `All locations` override it. Do not silently use a device city as a hard constraint or as evidence about a saved person's service area. Denied permission retains manual city choice. Recent sessions belong in a secondary entry. See the [tracked implementation and acceptance](ASK_CONVERSATION_REPAIR.md).
+The empty state explains what the person can ask through a few short illustrative examples. Once real saved material exists, optional suggestions must be grounded in accessible knowledge. Do not fabricate personal context or produce a daily feed of speculative recommendations. For open-ended local discovery, a foreground-permission-derived approximate city quietly informs retrieval; **do not show a persistent area chip above every answer**. An explicit city or “actually in …” correction wins, and a secondary control can change the area or choose Everywhere. Do not use a device city as evidence about a saved person's service area. Denied permission retains manual city choice and honest unscoped search. Recent sessions belong in a secondary entry. See the [tracked implementation and acceptance](ASK_CONVERSATION_REPAIR.md).
 
 ### Answer surface
 
-The request stays visible in a compact editable header. Under it, show a concise interpretation only when useful, plus editable constraints such as Delhi, Quiet or Own knowledge. Explicit constraints and suggestions must look distinguishable. A session preference override is removable without changing the person's saved preference.
+Ask is a scrollable conversation. Each user turn remains visible as a compact utterance followed by Rekky's direct response, with relevant recommendation cards embedded in that response. Recent turns remain on screen; older turns are reached by scrolling. Keep the composer reachable above the primary navigation. A fresh conversation and optional area correction live in a quiet header/menu, rather than persistent “Previous answer,” “New question,” edit-pencil and city controls in the message column. Interpretations or editable constraints appear only when they help resolve a real ambiguity. Explicit constraints and suggestions remain distinguishable; a session preference override is removable without changing the person's saved preference.
 
 Use one primary answer composition selected from:
 
@@ -72,7 +72,8 @@ Use one primary answer composition selected from:
 | Recall | Identity, recognition evidence, provenance, relevant Call/Maps/open action |
 | Discovery | Brief orientation; strongest supported fit with a fuller preview; other qualifying results in a compact list |
 | Comparison | Selected options with the same relevant dimensions, explicit unknowns and a conditional conclusion where supported |
-| Clarification | One consequential choice with preliminary useful results where possible |
+| Clarification | One consequential choice only when available evidence supports meaningful branches; include preliminary useful results where possible |
+| Partial plan | A supported first component, explicitly missing components and an optional next step; external/public findings use separate provenance |
 | Collection, later | An editable set for an occasion, with links to underlying recommendations and unresolved gaps |
 
 Display each useful fact once. Avoid headings on every paragraph, generic “great choice” prose, inflated cards and routine confidence percentages. “Why this fits” can be one short sentence tied to evidence, expandable into the relevant saved passage and attribution. The private original transcript remains owner-only; network explanations use authorized recommendation evidence, not a friend's raw note.
@@ -83,13 +84,13 @@ All qualifying results remain reachable through pagination. The richer first pre
 
 An always-reachable follow-up field accepts “closer,” “less expensive,” “keep this one,” or an entirely new question. At most three relevant refinement shortcuts can appear. They must change something meaningful; do not invent unsupported attributes to fill the row.
 
-Refinement edits the current answer in place, with stable item IDs, scroll anchoring and a recoverable prior version. Keep the previous usable answer visible during work. A clearly separate question starts a new answer context. If “this one” is ambiguous, offer a choice rather than guessing. Explain a removed result briefly if a new hard constraint excludes an explicitly retained option; keeping an option does not override reality.
+Refinement appends a new Rekky reply to the same conversation, with stable item IDs and scroll anchoring; earlier turns remain visible and accessible. Keep the previous usable answer visible during work. A clearly unrelated request starts a new topic within the conversation or a fresh conversation when the person chooses one. If “this one” is ambiguous, offer a choice rather than guessing. Explain a removed result briefly if a new hard constraint excludes an explicitly retained option; keeping an option does not override reality.
 
 Do not silently loosen a hard constraint to avoid an empty result. Show the gap and offer an explicit alternative scope. If a user rejects an option, exclude it for this session; never convert that alone into a durable dislike.
 
 ### States and visual language
 
-Use the existing neutral light/black surfaces, Fraunces/Manrope typography, blue Ask interaction accent and collection emblems. Preserve the red Recommend/yellow Library navigation roles. No new palette or chat-bubble template is required.
+Use the existing neutral light/black surfaces, Fraunces/Manrope typography, blue Ask interaction accent and collection emblems. Preserve the red Recommend/yellow Library navigation roles. Make user turns restrained and Rekky replies editorial and readable, with native recommendation objects inside the thread; avoid a generic two-sided chat-bubble template.
 
 Opening Ask is immediate. During work, keep the input and existing answer usable, indicate the actual stage only when helpful, and show already validated results without fabricated reasoning or activity. New explanation text must not move a result being tapped. Provide cancel/retry and visible recoverable errors. For offline use, show cached own knowledge only when the later offline cache exists and mark its scope/age; until then, offer the retained current answer with an honest connectivity state. Do not imply offline search already works.
 
@@ -199,7 +200,7 @@ Public exploration is a later explicit branch for knowledge gaps, with distinct 
 | --- | --- | --- |
 | ASK-0: contracts and measurement | Label development/held-out queries; define result/claim/action/session fixtures; prototype the three answer shapes in Flutter using clearly marked invented fixtures | Shared Rust/Dart agent/tool/answer fixtures, replay cases, accessibility/layout checks and baseline recorded; small foundation for ASK-1, not a long standalone design phase |
 | ASK-1: intelligent recall and discovery | Bounded Ask agent runtime, typed search/evidence/presentation tools, evidence projections, measured hybrid retrieval, adaptive investigation, first-page results, truthful geographic constraints and direct actions | Fuzzy recall and occasion discovery work end to end through the real API; meaningful paraphrase/Hindi gains over current baseline; unauthorized and contradicted results excluded |
-| ASK-2: speak and refine | Dedicated question dictation; editable transcript; session constraints; one useful clarification; in-place refinement; prior-answer restoration; stale-response cancellation | Voice never saves a recommendation; stop/cancel/deletion work; follow-ups preserve explicit context and do not reuse stale results; phone checks with keyboard/large text |
+| ASK-2: speak and refine | Dedicated question dictation; editable transcript; session constraints; one useful clarification; continuous conversation with earlier turns visible; stale-response cancellation | Voice never saves a recommendation; stop/cancel/deletion work; follow-ups preserve explicit context and do not reuse stale results; phone checks with keyboard/large text |
 | ASK-3: compare and decide | Context-aware selection and comparison, useful unknowns, evidence-linked conditional conclusions; bounded pilot implemented [here](ASK_COMPARE_PILOT.md) | All three signature journeys pass the first Ask release gate; no unsupported comparison cells or hidden result cap (gate still open) |
 | ASK-4: reliable history and saved shortlists | Session persistence/expiry/deletion, resumable answer references and saved collections; offline handling when supported | Depends on F-02 ordered sync/outbox for cross-device/offline claims; edit/delete/revocation and conflict cases pass |
 | ASK-5: explicit preferences | Remember/inspect/edit/delete scoped preferences; per-search override and explanation | Sync/revision support from ASK-4/F-02; no unconfirmed preference writes; current request wins |
