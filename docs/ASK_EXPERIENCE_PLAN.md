@@ -1,10 +1,10 @@
 # Ask: from a loose intention to a useful decision
 
-Status: approved product direction; first integrated ASK-0/1 pilot implemented 2026-09-27. ASK-2 adds spoken questions and bounded follow-up refinement ([checkpoint](ASK_SPEAK_AND_REFINE.md), 2026-09-28). ASK-3 adds a bounded own-library comparison pilot ([checkpoint](ASK_COMPARE_PILOT.md), 2026-09-28). Real-device local discovery and date follow-ups exposed unresolved retrieval, reliability and presentation flaws; the [conversation redesign checkpoint](ASK_CONVERSATION_REPAIR.md) records the evidence and revised implementation sequence. Full slice/release gates remain open. See [implementation, evidence and limitations](ASK_AGENT_SLICE.md). This document expands the Ask sections of [the canonical product plan](REKKY_FLUTTER_PRODUCT_PLAN.md); the canonical plan owns access, consent, retention and release gates. ASK-0 through ASK-7 are implementation checkpoints within that plan, not a replacement phase system.
+Status: approved product direction; first integrated ASK-0/1 pilot implemented 2026-09-27. ASK-2 adds spoken questions and bounded follow-up refinement ([checkpoint](ASK_SPEAK_AND_REFINE.md), 2026-09-28). ASK-3 adds a bounded own-library comparison pilot ([checkpoint](ASK_COMPARE_PILOT.md), 2026-09-28). Real-device local discovery and date follow-ups exposed unresolved retrieval, reliability and presentation flaws; the [conversation redesign checkpoint](ASK_CONVERSATION_REPAIR.md) records the evidence and revised implementation sequence. The [conversation and exploration implementation spec](ASK_GENERATIVE_UI.md) adds the approved native generative UI design, exhaustive browsing and network exploration; implementation is pending. Full slice/release gates remain open. See [implementation, evidence and limitations](ASK_AGENT_SLICE.md). This document expands the Ask sections of [the canonical product plan](REKKY_FLUTTER_PRODUCT_PLAN.md); the canonical plan owns access, consent, retention and release gates. ASK-0 through ASK-7 are implementation checkpoints within that plan, not a replacement phase system.
 
 ## 1. Outcome and principles
 
-Ask helps a person recover a memory, discover an appropriate option, compare choices and act using their own and, when authorized, their friends' experiences. The signature moment is: “I hadn’t thought to look for that, but that is exactly why I saved it.”
+Ask helps a person explore accessible knowledge without a perfect prompt, recover a memory, discover an appropriate option, compare choices and act using their own and, when authorized, their friends' experiences. The signature moment is: “I hadn’t thought to look for that, but that is exactly why I saved it.”
 
 The architecture is AI-native and agentic: an Ask agent owns the search strategy, adapts to evidence and chooses how to help the person decide. Application code supplies reliable tools, permission boundaries and native rendering.
 
@@ -25,9 +25,13 @@ The pre-agent baseline uses owner-scoped Postgres lexical search, exact-title pr
 
 The historical text seed is useful regression material, not a current benchmark or held-out evaluation. Its documented failures include Hindi retrieval, city constraints and same-name candidates. No complete delivery phase is declared passed.
 
-## 3. Three signature journeys for the first Ask release
+## 3. Four signature journeys for the first Ask release
 
 The following examples describe desired behavior, not factual claims about existing recommendations.
+
+### Explore, then decide
+
+Open Explore without a prompt, or ask “show me everything in Bangalore.” A complete, server-backed collection opens inside Ask with counts, area/category/source/person filters, sorting and pagination. Refine by tapping or speaking, select options and compare them, then return to the same list position. Library-level detail is available for authorized shared recommendation fields; private transcripts remain private. Own-only pilots use an honest own-data label; the network journey requires ASK-6/F-03 before its release gate can close. See the [native UI and query contracts](ASK_GENERATIVE_UI.md).
 
 ### Fuzzy recall
 
@@ -51,7 +55,7 @@ Request: “Which of these two would work better for six people?”
 
 Resolve “these two” from explicitly selected or unambiguous visible result IDs. Compare supported group suitability, location and relevant caveats in vertically stacked native rows. Missing capacity stays unknown. A conditional suggestion is allowed when supported: explain what makes one option preferable and what still needs checking. Estimated ratings cannot masquerade as explicit scores or automatically decide suitability.
 
-The first release includes these three journeys, typed and spoken input and follow-up refinement in a continuous conversation. Broad itinerary composition and durable personalization follow later, but a partial supported answer to a composed need is part of basic conversational competence.
+The target Ask experience includes these four journeys, typed and spoken input and follow-up refinement in a continuous conversation. Own-data exploration can ship in the internal pilot; the network journey stays gated on ASK-6/F-03. Broad itinerary composition and durable personalization follow later, but a partial supported answer to a composed need is part of basic conversational competence.
 
 ## 4. The interaction
 
@@ -59,7 +63,7 @@ The first release includes these three journeys, typed and spoken input and foll
 
 Ask remains the home. Keep one prominent voice/text entry, the established navigation capsule and uninterrupted access to Recommend. An Ask microphone is explicitly for a question; it never creates a recommendation. No automatic listening on page entry. Allow dictation correction, stop and cancel. Submit the spoken question after the person finishes, with its transcript available to edit.
 
-The empty state explains what the person can ask through a few short illustrative examples. Once real saved material exists, optional suggestions must be grounded in accessible knowledge. Do not fabricate personal context or produce a daily feed of speculative recommendations. For open-ended local discovery, a foreground-permission-derived approximate city quietly informs retrieval; **do not show a persistent area chip above every answer**. An explicit city or “actually in …” correction wins, and a secondary control can change the area or choose Everywhere. Do not use a device city as evidence about a saved person's service area. Denied permission retains manual city choice and honest unscoped search. Recent sessions belong in a secondary entry. See the [tracked implementation and acceptance](ASK_CONVERSATION_REPAIR.md).
+The empty state explains what the person can ask through a few short illustrative examples. Once real saved material exists, optional suggestions must be grounded in accessible knowledge. Do not fabricate personal context or produce a daily feed of speculative recommendations. For open-ended local discovery, a foreground-permission-derived approximate city quietly informs retrieval; **do not show a persistent area chip above every answer**. An explicit city or “actually in …” correction wins, and a secondary control can change the area or choose Everywhere. Do not use a device city as evidence about a saved person's service area. Denied permission retains manual city choice and honest unscoped search. A stable Explore entry opens a collection browser without requiring a prompt. The explorer owns visible source/area/category/person filters; these do not become persistent chips in conversational answers. Recent sessions belong in a secondary entry. See the [tracked implementation and acceptance](ASK_CONVERSATION_REPAIR.md).
 
 ### Answer surface
 
@@ -74,11 +78,12 @@ Use one primary answer composition selected from:
 | Comparison | Selected options with the same relevant dimensions, explicit unknowns and a conditional conclusion where supported |
 | Clarification | One consequential choice only when available evidence supports meaningful branches; include preliminary useful results where possible |
 | Partial plan | A supported first component, explicitly missing components and an optional next step; external/public findings use separate provenance |
-| Collection, later | An editable set for an occasion, with links to underlying recommendations and unresolved gaps |
+| Browsable collection | A preview opens the complete authorized matching set with counts, facets, sorting and pagination inside Ask |
+| Saved occasion collection, later | An explicitly saved editable set for an occasion, with links to underlying recommendations and unresolved gaps |
 
 Display each useful fact once. Avoid headings on every paragraph, generic “great choice” prose, inflated cards and routine confidence percentages. “Why this fits” can be one short sentence tied to evidence, expandable into the relevant saved passage and attribution. The private original transcript remains owner-only; network explanations use authorized recommendation evidence, not a friend's raw note.
 
-All qualifying results remain reachable through pagination. The richer first preview is not a top-three display cap. Use an optional map only when the geographic arrangement helps; no map as default decoration. Provide equivalent accessible list information.
+Requests to browse everything use a deterministic query over the full authorized set, independent of the agent's retrieval window. Curated advice is labelled as a shortlist and links to a full collection when applicable. All qualifying results remain reachable through pagination. The richer first preview is not a top-three display cap. Use an optional map only when the geographic arrangement helps; no map as default decoration. Provide equivalent accessible list information.
 
 ### Refinement
 
@@ -110,9 +115,11 @@ The working state records the current interpretation, unresolved questions, evid
 
 | Capability | Purpose and boundary |
 | --- | --- |
+| Knowledge overview | Compact permission-scoped inventory of categories, supported capabilities and geographic coverage; prevents questions about unavailable branches |
+| Open collection | Create an exhaustive typed query/view resource with server counts, facets and first page; direct native filters/pages reuse this capability without a model |
 | Search knowledge | Query exact names, lexical fields, category/facets, typed locations or multilingual semantic similarity inside the authorized scope; return paginated IDs, snippets, evidence references and matched/unknown constraints |
 | Inspect evidence | Read relevant saved observations, caveats, attribution, confirmed destinations and field freshness for selected candidates; exclude raw friend transcripts and unnecessary contact values |
-| Resolve a place expression | Resolve user-mentioned cities and a permission-derived, visibly scoped approximate city against available geographic identities; return ambiguity explicitly. Explicit place requests win. Device location requires foreground permission; public calls count against the budget |
+| Resolve a place expression | Resolve user-mentioned cities and a permission-derived approximate city with recorded provenance and a secondary correction path against available geographic identities; return ambiguity explicitly. Explicit place requests win. Device location requires foreground permission; public calls count against the budget |
 | Explore related knowledge | Find supported alternatives or complementary items across collections using the request and retrieved evidence; ordinary search projections suffice initially, with no speculative knowledge graph requirement |
 | Propose clarification | Return one consequential question/choice and any already useful results; suspend until the user responds, with no live reasoning loop |
 | Present or revise answer | Submit evidence-linked claims and a composition built from approved native components, result IDs, actions, constraints and stable section IDs; code validates before display |
@@ -141,6 +148,8 @@ Validate answer claims, hard constraints, evidence revisions and permitted desti
 
 ### Agent-directed native presentation
 
+The detailed contract, component registry, conversation/explorer navigation, query semantics, streaming and file-level implementation map are in [ASK_GENERATIVE_UI.md](ASK_GENERATIVE_UI.md). Start with recommendation sets, collection previews, comparisons, choices and gaps. Model proposals become server-validated view manifests; native controls update views without repeated AI calls. No generated executable UI.
+
 The agent chooses the useful composition and can combine a concise answer, a comparison, a contact action and a supporting list when the task needs them. The Flutter renderer uses a versioned vocabulary of polished components with stable interaction contracts; these are expressive building blocks, not a fixed result page per category. Keep one clear primary task, omit empty sections and reject arbitrary executable UI or URLs. Server-validated answer patches may update affected sections without disturbing a result being touched. Accessibility order and action placement stay predictable as content adapts.
 
 ### Search projections and scale
@@ -160,6 +169,7 @@ Define shared JSON fixtures before wiring the new Flutter result components. Kee
 | Ask request | Request ID, optional session ID/version, text or accepted question transcript, own/network scope, explicit context, selected item IDs, page cursor |
 | Agent turn/checkpoint | Objective, interpretation, constraints with provenance, evidence references, unresolved questions, selected IDs, tool outcomes, budget/deadline, session/turn version; no hidden chain-of-thought |
 | Tool invocation | Turn/invocation IDs, allowlisted capability, validated typed arguments, status, bounded observations, evidence revisions, reservation/usage and retry identity |
+| Collection view | Typed predicates, source/author scope, canonical area and role, facets/counts, query/access/data versions and bound pagination; local scroll/selection state stays distinct |
 | Answer snapshot | Session/turn/version, approved layout, short orientation, ordered result IDs, result sections, comparison dimensions, next cursor, active constraints |
 | Result and claim | Item/evidence IDs and revisions, author/source type, supporting statement, contradictory evidence, uncertainty, action references |
 | Action | Allowlisted action type and authorized destination/item reference; argument validation occurs server-side and again before execution |
@@ -186,7 +196,7 @@ Candidate behavioral learning is a later product decision requiring evidence and
 
 ## 8. Keepable outcomes and broader composition
 
-After the three core journeys work, add a saved shortlist and editable occasion collection. Keep the distinction between saving a collection of references and creating a new personal endorsement.
+After the core conversation and exploration journeys work, add a saved shortlist and editable occasion collection. Keep the distinction between saving a collection of references and creating a new personal endorsement.
 
 For a weekend request, retrieve useful components and organize them around the expressed need. Route sequence, travel time, opening hours, capacity, pricing and availability require appropriate evidence and freshness. Without it, produce an unordered shortlist or tentative arrangement with the missing fact stated, never a falsely scheduled itinerary.
 
@@ -198,16 +208,16 @@ Public exploration is a later explicit branch for knowledge gaps, with distinct 
 
 | Slice | Work and user-visible outcome | Gate and dependency |
 | --- | --- | --- |
-| ASK-0: contracts and measurement | Label development/held-out queries; define result/claim/action/session fixtures; prototype the three answer shapes in Flutter using clearly marked invented fixtures | Shared Rust/Dart agent/tool/answer fixtures, replay cases, accessibility/layout checks and baseline recorded; small foundation for ASK-1, not a long standalone design phase |
-| ASK-1: intelligent recall and discovery | Bounded Ask agent runtime, typed search/evidence/presentation tools, evidence projections, measured hybrid retrieval, adaptive investigation, first-page results, truthful geographic constraints and direct actions | Fuzzy recall and occasion discovery work end to end through the real API; meaningful paraphrase/Hindi gains over current baseline; unauthorized and contradicted results excluded |
+| ASK-0: contracts and measurement | Label development/held-out queries; define result/claim/action/session fixtures; prototype conversation, exploration and comparison components in Flutter using clearly marked invented fixtures | Shared Rust/Dart agent/tool/answer fixtures, replay cases, accessibility/layout checks and baseline recorded; small foundation for ASK-1, not a long standalone design phase |
+| ASK-1: recall, discovery and exploration | Bounded Ask agent runtime, typed search/evidence/presentation tools, evidence projections, measured hybrid retrieval, adaptive investigation, exhaustive native collections/counts/facets, first-page results, truthful geographic constraints and direct actions | Own-data exploration, fuzzy recall and occasion discovery work end to end through the real API; meaningful paraphrase/Hindi gains over current baseline; unauthorized and contradicted results excluded |
 | ASK-2: speak and refine | Dedicated question dictation; editable transcript; session constraints; one useful clarification; continuous conversation with earlier turns visible; stale-response cancellation | Voice never saves a recommendation; stop/cancel/deletion work; follow-ups preserve explicit context and do not reuse stale results; phone checks with keyboard/large text |
-| ASK-3: compare and decide | Context-aware selection and comparison, useful unknowns, evidence-linked conditional conclusions; bounded pilot implemented [here](ASK_COMPARE_PILOT.md) | All three signature journeys pass the first Ask release gate; no unsupported comparison cells or hidden result cap (gate still open) |
+| ASK-3: compare and decide | Context-aware selection and comparison, useful unknowns, evidence-linked conditional conclusions; bounded pilot implemented [here](ASK_COMPARE_PILOT.md) | Recall, discovery and comparison pass their internal journey gates; exploration adds the fourth journey, with network access separately gated; no unsupported comparison cells or hidden result cap (gate still open) |
 | ASK-4: reliable history and saved shortlists | Session persistence/expiry/deletion, resumable answer references and saved collections; offline handling when supported | Depends on F-02 ordered sync/outbox for cross-device/offline claims; edit/delete/revocation and conflict cases pass |
 | ASK-5: explicit preferences | Remember/inspect/edit/delete scoped preferences; per-search override and explanation | Sync/revision support from ASK-4/F-02; no unconfirmed preference writes; current request wins |
-| ASK-6: network knowledge | Own/shared/both scope, author-specific evidence, relationship-aware search/history/collections, first-friend disclosure | Depends on F-03 internal friendship; external use waits for report/block/account-deletion and pilot gates; concurrent revocation tests pass |
+| ASK-6: network knowledge | Promptless Explore your network within Ask, Mine/Friends/Both and author filters, exhaustive shared collections, rich authorized detail and relationship-aware search/history/collections, first-friend disclosure | Depends on F-03 internal friendship; external use waits for report/block/account-deletion and pilot gates; concurrent revocation tests pass |
 | ASK-7: composed occasions and public exploration | Editable multi-part collections, optional geographic views and distinct public discovery | Depends on ASK-3/4 and applicable factual-completion tools/provider gates; bounded decomposition and evidence freshness checks |
 
-Recommended immediate work: ASK-0 and ASK-1 as one integrated development effort. Deliver a real question → useful contextual answer on the phone before proceeding to more elaborate personalization or planning.
+Recommended immediate work: follow [the revised implementation order](ASK_GENERATIVE_UI.md#9-implementation-map-and-delivery-order): shared contracts and geographic/reliability repairs, own-data exploration, continuous conversation with generated views, progressive rendering, then real network exploration under F-03. Keep each step integrated through Rust and Flutter. Durable preferences and elaborate occasion planning follow these core journeys.
 
 ### Relationship to existing phases
 
@@ -248,8 +258,10 @@ Roll out behind an owner-only Ask flag with a fallback to the existing lexical e
 
 ## 12. Decisions and first implementation handoff
 
-Decided: an AI-native agent that adaptively chooses tools and revises its investigation, agent-directed native answer composition, situational input, three initial signature journeys, adaptive native answer shapes, evidence-led explanations, in-place refinement, explicit preference confirmation, own-first implementation, all qualifying results reachable and no silent public fallback.
+Decided: an AI-native agent that adaptively chooses tools and revises its investigation, agent-directed native answer composition, situational input, four signature journeys including promptless exploration, adaptive native answer shapes, evidence-led explanations, in-place refinement, explicit preference confirmation, own-first implementation, all qualifying results reachable and no silent public fallback.
 
 Resolve by engineering measurement during ASK-0/1: model/embedding adapter, whether a separate reranker earns its latency/cost, streaming transport, exact projection schema and thresholds for supported matches versus useful unknowns. No user-facing category taxonomy expansion is required to start.
 
-First concrete demonstration: a fresh standalone account with varied seeded recommendations can ask a paraphrased recall question, ask for an occasion with a location/caveat constraint, inspect why the results fit and open a useful action. Results come through the real Rust API, the first page appears promptly and the existing recommendation content is unchanged. Then add spoken questions/refinement and comparison to complete the first Ask release.
+Original pilot demonstration: a fresh standalone account with varied seeded recommendations can ask a paraphrased recall question, ask for an occasion with a location/caveat constraint, inspect why the results fit and open a useful action. Results come through the real Rust API, the first page appears promptly and the existing recommendation content is unchanged. Spoken refinement and comparison pilots followed; the new exploration and conversation repair gates remain open.
+
+The next demonstration is the complete collection → direct refinement → selected comparison → return-to-position flow in [ASK_GENERATIVE_UI.md](ASK_GENERATIVE_UI.md), followed by the same flow with accepted friends and mid-session permission removal. Synthetic previews and owner-only operation do not close the network release gate.
