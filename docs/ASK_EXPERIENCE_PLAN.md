@@ -33,6 +33,8 @@ The following examples describe desired behavior, not factual claims about exist
 
 Open Explore without a prompt, or ask “show me everything in Bangalore.” A complete, server-backed collection opens inside Ask with counts, area/category/source/person filters, sorting and pagination. Refine by tapping or speaking, select options and compare them, then return to the same list position. Library-level detail is available for authorized shared recommendation fields; private transcripts remain private. Own-only pilots use an honest own-data label; the network journey requires ASK-6/F-03 before its release gate can close. See the [native UI and query contracts](ASK_GENERATIVE_UI.md).
 
+Collection access is intent-driven, never gated on saying “all” or “everything.” A request for a bar in Greater Kailash or carpenters in Delhi can produce the full relevant browsable set; a Goa trip query can compose populated groups across stays, food, activities and other relevant saved knowledge. The agent chooses breadth, grouping and useful presentation from context and evidence, with the same tools across unfamiliar categories. See [intent-driven scope and presentation](ASK_GENERATIVE_UI.md#intent-drives-scope-and-presentation).
+
 ### Fuzzy recall
 
 Request: “Who was that driver I used around Landour?”

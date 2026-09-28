@@ -10,6 +10,21 @@ Ask is one destination with two connected surfaces: a continuous conversation an
 
 The memorable moment should be continuity: “Everything in Bangalore” becomes a browsable collection; “only restaurants” refines it; selecting two and asking “which for a date?” produces a comparison using those exact items. Nothing disappears, and returning to the collection restores the person's place.
 
+### Intent drives scope and presentation
+
+Collection views are available whenever they help the person's task. They are not activated by the literal words “all,” “everything,” a city name or any other keyword. Examples in this spec are evaluation scenarios, never category-specific routing rules. The agent infers the objective, useful breadth, source scope, geographic role, relevant categories and presentation from the utterance, conversation, active view and available evidence. It can combine a brief recommendation with an explorable matching set in the same reply.
+
+| Natural request | Agent-directed response |
+| --- | --- |
+| “I'm looking for a bar to go to in Greater Kailash” | Resolve the neighbourhood and retrieve accessible bars there. Present a browsable matching collection, optionally highlighting supported fits; make every matching bar reachable without requiring “show all.” Do not silently include distant bars. |
+| “I'm going to Goa—what information do we have?” | Explore destination-relevant saved knowledge across categories. Compose a Goa collection with populated groups such as stays, food, nightlife, activities and useful services/tips, derived from actual available evidence. Keep independent group counts/pages so restaurants cannot crowd out hotels or advice. Do not fabricate empty itinerary sections or narrow the trip to restaurants because they ranked highest. |
+| “I'm looking for carpenters in Delhi” | Retrieve relevant service recommendations and supported Delhi coverage. Present comparable provider cards with attributed experience and authorized contacts. Keep uncertain coverage separate; a past job in Delhi does not establish present service coverage. |
+| “Pick one of these bars for tonight” | Use the current collection/selections, inspect relevant evidence and offer a supported choice or concise comparison. Keep alternatives reachable; live opening/availability claims require current evidence. |
+
+The model chooses useful group labels and maps each group to validated category/facet/location predicates or cited items through the existing view tool. Grouped exploration is a configuration of the collection component, not a bespoke Goa or travel screen. Groups share the active source/area scope and have independently accessible pages; counts state whether groups overlap. For a broad trip, include supported destination-related advice using its appropriate geographic role without presenting it as a physical venue or verified service coverage.
+
+After a lookup, a single clear match may need only a card; multiple options may warrant a browsable list; a broad destination may warrant grouped collections; a decision may warrant comparison. These are contextual choices, not mandatory screen-per-intent mappings. Ordinary option-seeking exposes the full relevant structured matching set alongside any highlights. A subjective shortlist describes its selection criteria and coverage honestly. The user never needs special phrasing to unlock information.
+
 ## 2. Four demonstration journeys
 
 These are acceptance scenarios, not claims about existing saved facts or counts.
@@ -37,7 +52,7 @@ The conversation is a single scrollable timeline of restrained user utterances a
 
 ### The collection surface
 
-A collection is a full-height route within Ask, not an enormous bottom sheet or a nested scrolling list in a chat message. It shares the main navigation and existing recommendation detail sheet. A turn contains a compact collection preview with server count and an **Explore** action. A direct request to see everything opens the collection after it is validated; ordinary advice offers the preview without taking over the screen. An explicit tap on Explore opens it immediately. Do not navigate automatically after the user has left the requesting turn or begun another action.
+A collection is a full-height route within Ask, not an enormous bottom sheet or a nested scrolling list in a chat message. It shares the main navigation and existing recommendation detail sheet. A turn contains a compact collection preview with server count and an **Explore** action. When the interpreted task is to explore options, the agent can open a validated collection even without “all” or “everything”; when a direct answer is more useful, it can embed results and a collection preview. Choose this presentation from intent and context, not keyword matching. An explicit tap on Explore opens it immediately. Do not navigate automatically after the user has left the requesting turn or begun another action.
 
 Layout, top to bottom:
 
@@ -225,6 +240,7 @@ First convincing demonstration: on one phone, open a complete Bengaluru collecti
 Extend the existing 120-query, English/Hindi/Hinglish evaluation rather than replacing it with a handful of attractive demos. Separate deterministic browse correctness from subjective recommendation quality.
 
 - **Completeness:** 100% of authorized fixture items satisfying deterministic predicates are reachable; counts/facets reconcile with database truth. No candidate-budget/top-k truncation. Unknown-location policy is explicit.
+- **Intent generalization:** bars in Greater Kailash, trip information for Goa and carpenters in Delhi work without “all/everything.” Test unseen categories/destinations and English/Hindi/Hinglish paraphrases, including the same wording in different conversation contexts. Verify appropriate geographic roles, group coverage and no category-specific routing tables.
 - **Conversation:** every scripted refinement preserves or deliberately updates objective, source and explicit location; selected references remain stable. Broad unavailable-category questions and stale-turn replacement fail the gate.
 - **Privacy:** zero unauthorized results, counts, facets, detail fields, contact actions or derived prose in the adversarial suite. Include friend removal/block, audience changes during pagination, stale history, crafted IDs and source prompt injection.
 - **Resilience:** malformed/unsupported blocks preserve usable alternatives; refusal, timeout, quota, disconnect and empty data produce different recoverable states. No valid empty Library claim from a provider failure.
