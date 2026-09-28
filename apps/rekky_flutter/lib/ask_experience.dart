@@ -71,7 +71,6 @@ class _AskExperienceState extends State<AskExperience> {
   final input = TextEditingController();
   final homeInput = TextEditingController();
   final threadScroll = ScrollController();
-  final homeScroll = ScrollController();
   bool onHome = true, explorerFromHome = true;
   _PausedAskThread? pausedThread;
   DateTime? lastAnswerAt;
@@ -136,7 +135,6 @@ class _AskExperienceState extends State<AskExperience> {
     input.dispose();
     homeInput.dispose();
     threadScroll.dispose();
-    homeScroll.dispose();
     inputFocus.removeListener(_focusChanged);
     inputFocus.dispose();
     homeFocus.removeListener(_focusChanged);
@@ -567,7 +565,9 @@ class _AskExperienceState extends State<AskExperience> {
               errorBorder: InputBorder.none,
               focusedErrorBorder: InputBorder.none,
               contentPadding: const EdgeInsets.symmetric(vertical: 17),
-              hintText: current == null
+              hintText: fromHome
+                  ? 'Ask Rekky…'
+                  : current == null
                   ? 'Ask what you have saved…'
                   : editing
                   ? 'Edit your question…'
@@ -841,84 +841,38 @@ class _AskExperienceState extends State<AskExperience> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final home = Column(
-      children: [
-        Expanded(
-          child: ListView(
-            controller: homeScroll,
-            key: const PageStorageKey('ask-home'),
-            padding: const EdgeInsets.fromLTRB(20, 40, 20, 20),
+    final home = Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                'What do you have in mind?',
-                style: LibraryStyle.heading(context, 32),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Find something you saved, or discover what fits.',
-                style: Theme.of(context).textTheme.bodyLarge
-                    ?.copyWith(color: colors.onSurfaceVariant),
-              ),
-              if (_canResumeCurrent) ...[
-                const SizedBox(height: 24),
-                OutlinedButton.icon(
-                  onPressed: () => setState(() => onHome = false),
-                  icon: const Icon(Icons.chat_bubble_outline_rounded),
-                  label: const Text('Continue conversation'),
+              if (_canResumeCurrent)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () => setState(() => onHome = false),
+                    icon: const Icon(Icons.chat_bubble_outline_rounded),
+                    label: const Text('Continue conversation'),
+                  ),
                 ),
-              ],
-              if (_canResumePaused) ...[
-                const SizedBox(height: 8),
-                TextButton.icon(
-                  onPressed: working ? null : _resumePausedThread,
-                  icon: const Icon(Icons.history_rounded),
-                  label: const Text('Continue previous conversation'),
+              if (_canResumePaused)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: working ? null : _resumePausedThread,
+                    icon: const Icon(Icons.history_rounded),
+                    label: const Text('Continue previous conversation'),
+                  ),
                 ),
-              ],
-              if ((_hasCurrentThread && !_canResumeCurrent) ||
-                  (pausedThread != null && !_canResumePaused)) ...[
-                const SizedBox(height: 16),
-                Text(
-                  'Your earlier conversation expired. Start a new question.',
-                  style: Theme.of(context).textTheme.bodySmall
-                      ?.copyWith(color: colors.onSurfaceVariant),
-                ),
-              ],
-              const SizedBox(height: 24),
-              OutlinedButton.icon(
-                onPressed: () => explore(),
-                icon: const Icon(Icons.explore_outlined),
-                label: const Text('Explore your saved recommendations'),
-              ),
-              const SizedBox(height: 20),
-              for (final example in [
-                'Who was that taxi driver?',
-                'Something fun to try this weekend',
-                'A place for a quiet dinner',
-              ])
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(example),
-                  trailing: const Icon(Icons.north_west_rounded, size: 18),
-                  onTap: () {
-                    homeInput.text = example;
-                    _askFromHome();
-                  },
-                ),
-              const SizedBox(height: 20),
-              Text(
-                'Ask sends your question, any search city and relevant saved recommendations to OpenAI.',
-                style: Theme.of(context).textTheme.bodySmall
-                    ?.copyWith(color: colors.onSurfaceVariant),
-              ),
+              composer(context, fromHome: true),
             ],
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-          child: composer(context, fromHome: true),
-        ),
-      ],
+      ),
     );
     final conversation = Column(
       children: [

@@ -129,6 +129,11 @@ void main() {
         ),
       ),
     );
+    await submit(t, 'Show me what is saved');
+    api.pending.single.complete(fixture());
+    await t.pumpAndSettle();
+    await t.tap(find.byTooltip('Conversation options'));
+    await t.pumpAndSettle();
     await t.tap(find.text('Explore your saved recommendations'));
     await t.pumpAndSettle();
     expect(find.text('Saved services'), findsOneWidget);
@@ -153,7 +158,7 @@ void main() {
     await t.pumpAndSettle();
     expect(find.text('Would this suit a gift repair?'), findsOneWidget);
   });
-  testWidgets('an example starts Ask in one tap', (t) async {
+  testWidgets('fresh Ask home contains only the question entry', (t) async {
     final api = FakeAsk();
     await t.pumpWidget(
       MaterialApp(
@@ -162,14 +167,13 @@ void main() {
         ),
       ),
     );
-    expect(find.text('What do you have in mind?'), findsOneWidget);
-    expect(
-      find.text(
-        'Ask sends your question, any search city and relevant saved recommendations to OpenAI.',
-      ),
-      findsOneWidget,
-    );
-    await t.tap(find.text('Who was that taxi driver?'));
+    expect(find.text('Ask Rekky…'), findsOneWidget);
+    expect(find.byType(TextField), findsOneWidget);
+    expect(find.text('What do you have in mind?'), findsNothing);
+    expect(find.text('Explore your saved recommendations'), findsNothing);
+    expect(find.text('Who was that taxi driver?'), findsNothing);
+    expect(find.textContaining('Ask sends your question'), findsNothing);
+    await submit(t, 'Who was that taxi driver?');
     await t.pump();
     expect(api.contexts.single['question'], 'Who was that taxi driver?');
     api.pending.single.complete(fixture());
@@ -177,7 +181,7 @@ void main() {
   });
 
   for (final width in [320.0, 375.0, 414.0, 768.0]) {
-    testWidgets('centred Ask home at $width with 200% text scrolls', (t) async {
+    testWidgets('centred Ask entry at $width with 200% text fits', (t) async {
       t.view.physicalSize = Size(width, 800);
       t.view.devicePixelRatio = 1;
       addTearDown(t.view.resetPhysicalSize);
@@ -454,7 +458,7 @@ void main() {
       expect(api.pending.length, 2);
       await t.tap(find.text('New question'));
       await t.pumpAndSettle();
-      expect(find.text('What do you have in mind?'), findsOneWidget);
+      expect(find.text('Ask Rekky…'), findsOneWidget);
       expect(find.text('Continue previous conversation'), findsOneWidget);
       await submit(t, 'A doctor');
       expect(api.contexts.last['parent'], isNull);
@@ -491,16 +495,16 @@ void main() {
       api.pending.single.complete(fixture());
       await t.pumpAndSettle();
       await t.enterText(find.byType(TextField), 'Something with a garden');
-    await t.tap(find.widgetWithText(TextButton, 'Back to Ask'));
+      await t.tap(find.widgetWithText(TextButton, 'Back to Ask'));
       await t.pumpAndSettle();
-      expect(find.text('What do you have in mind?'), findsOneWidget);
+      expect(find.text('Ask Rekky…'), findsOneWidget);
       await t.tap(find.text('Continue conversation'));
       await t.pumpAndSettle();
       expect(find.text('dinner in Delhi'), findsOneWidget);
       expect(find.text('Something with a garden'), findsOneWidget);
       await t.pumpWidget(screen(1));
       await t.pumpAndSettle();
-      expect(find.text('What do you have in mind?'), findsOneWidget);
+      expect(find.text('Ask Rekky…'), findsOneWidget);
       expect(find.text('Continue conversation'), findsOneWidget);
     },
   );
