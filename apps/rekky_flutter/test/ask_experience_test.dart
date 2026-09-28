@@ -58,6 +58,7 @@ class FakeAsk extends RekkyApi {
   Future<AskAnswer> askAgent(
     String question,
     String requestId, {
+    String? scopeCity,
     String? previousRequestId,
     List<String> selectedItemIds = const [],
     List<String> excludedItemIds = const [],
@@ -67,6 +68,7 @@ class FakeAsk extends RekkyApi {
       'selected': List.of(selectedItemIds),
       'excluded': List.of(excludedItemIds),
       'question': question,
+      'scopeCity': scopeCity,
     });
     requestIds.add(requestId);
     final c = Completer<AskAnswer>();
@@ -111,7 +113,7 @@ void main() {
     expect(find.text('What do you have in mind?'), findsOneWidget);
     expect(
       find.text(
-        'Ask sends your question and relevant saved recommendations to OpenAI.',
+        'Ask sends your question, any search city and relevant saved recommendations to OpenAI.',
       ),
       findsOneWidget,
     );
@@ -472,6 +474,78 @@ void main() {
     await t.pump();
     expect(api.requestIds[1], api.requestIds[2]);
     api.pending[2].complete(fixture());
+    await t.pumpAndSettle();
+  });
+  testWidgets(
+    'failed synthesis keeps prior answer and retries with a new run',
+    (t) async {
+      final api = FakeAsk();
+      await t.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AskExperience(
+              api: api,
+              onOpen: (_) async {},
+              resolveCity: () async => 'Delhi',
+            ),
+          ),
+        ),
+      );
+      await submit(t, 'something fun this weekend');
+      expect(api.contexts[0]['scopeCity'], 'Delhi');
+      api.pending[0].complete(fixture());
+      await t.pumpAndSettle();
+      await submit(t, 'in Delhi');
+      api.pending[1].completeError(
+        const ApiFailure(
+          'ask_failed',
+          'Couldn’t finish checking your saved recommendations. Try again.',
+          503,
+        ),
+      );
+      await t.pumpAndSettle();
+      expect(find.text('Lantern Kitchen'), findsOneWidget);
+      expect(
+        find.textContaining('There isn’t enough in your Library'),
+        findsNothing,
+      );
+      await t.tap(find.text('Try again'));
+      await t.pump();
+      expect(api.requestIds[1], isNot(api.requestIds[2]));
+      expect(api.contexts[1]['parent'], api.contexts[2]['parent']);
+      expect(api.contexts[2]['question'], 'in Delhi');
+      expect(api.contexts[2]['scopeCity'], 'Delhi');
+      api.pending[2].complete(fixture(turn: 2));
+      await t.pumpAndSettle();
+    },
+  );
+  testWidgets('denied location can be replaced with a manual city', (t) async {
+    final api = FakeAsk();
+    await t.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AskExperience(
+            api: api,
+            onOpen: (_) async {},
+            resolveCity: () async => null,
+          ),
+        ),
+      ),
+    );
+    await submit(t, 'dinner nearby');
+    expect(api.contexts.single['scopeCity'], isNull);
+    api.pending.single.complete(fixture());
+    await t.pumpAndSettle();
+    expect(find.text('All locations'), findsOneWidget);
+    await t.tap(find.text('All locations'));
+    await t.pumpAndSettle();
+    await t.enterText(find.byType(TextField).last, 'Delhi');
+    await t.tap(find.text('Use city'));
+    await t.pumpAndSettle();
+    expect(find.text('Near Delhi'), findsOneWidget);
+    await submit(t, 'a quiet place');
+    expect(api.contexts.last['scopeCity'], 'Delhi');
+    api.pending.last.complete(fixture(turn: 2));
     await t.pumpAndSettle();
   });
 }

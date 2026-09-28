@@ -1,6 +1,6 @@
 # Ask conversation reliability and local discovery
 
-Status: **planned repair, not implemented** (2026-09-28). This is the tracked follow-up to the observed local Ask flow. It refines the [Ask experience plan](ASK_EXPERIENCE_PLAN.md) under the [canonical product plan](REKKY_FLUTTER_PRODUCT_PLAN.md). Do not count a passing synthetic test or a prettier loading state as completion of the real-device journey.
+Status: **repair in progress** (2026-09-28). The first implementation removes the false empty-Library fallback, trims model geography payloads, adds a foreground city/manual area scope and applies role-aware area filtering during retrieval and answer display. These changes still need real-device outcome validation; passing synthetic tests alone does not complete the journey. This refines the [Ask experience plan](ASK_EXPERIENCE_PLAN.md) under the [canonical product plan](REKKY_FLUTTER_PRODUCT_PLAN.md).
 
 ## What the observed run established
 
@@ -29,12 +29,12 @@ This design follows current [official OpenAI documentation on agent/runtime choi
 
 ## Implementation sequence and acceptance
 
-- [ ] Add content-free adapter failure receipts and a regression demonstrating that an interrupted second decision cannot return a false empty-Library claim. Verify cancel, timeout and retry semantics.
-- [ ] Thin Ask's candidate/location projection; stop duplicating alias/hierarchy blobs in model requests. Add a payload-budget test with a larger library and multiple follow-ups. Keep role-aware geographic checks server-side.
-- [ ] Replace the latest-fragment subject-name fallback with a conservative result from the effective request and *validated* candidate evidence, or a retryable failure when no fit has been validated. Never silently broaden a hard city constraint or call a failed synthesis “no match.”
-- [ ] Add device-city acquisition, explicit/manual/All-locations override and a visible scope. Test denied permission, stale/ambiguous city, travel, explicit other city, recall without city, and no inferred provider coverage on Android and iOS.
-- [ ] Apply typed geographic constraints before candidate ranking and pagination. A local-city discovery must not rank known other-city venues as supported. Unknown areas remain separate; an explicit other city wins. Follow-up refinements must search again for newly relevant candidates.
-- [ ] Replace the blank work/limited states with the conversational presentation above; test keyboard, screen reader, 200% text, portrait safe area, cancellation and restoration of the previous answer.
+- [ ] Add content-free adapter failure receipts. A widget regression now demonstrates that an interrupted second decision keeps the earlier answer and retries with a new run; cancellation and timeout still need device validation.
+- [x] Thin Ask's candidate/location projection so alias/hierarchy blobs no longer enter model requests; a unit regression checks this. Keep role-aware geographic checks server-side.
+- [x] Replace the latest-fragment subject-name fallback with a retryable failure. An interrupted synthesis no longer claims an empty Library.
+- [ ] Foreground city acquisition, manual/All-locations override and visible scope are implemented. Widget tests cover denied permission and manual replacement. Validate stale/ambiguous city, travel, explicit other city and recall on Android and iOS.
+- [ ] A typed city field now filters known wrong-area results before pagination, with final role-aware validation. Add broad retrieval and real-device refinements, including unknown geography and explicit-other-city cases.
+- [ ] The work state shows the submitted request and retains the prior answer; the limited-state false empty message is suppressed. Finish the conversational presentation and accessibility/device checks.
 - [ ] Run a private-data-free regression with the synthetic shape “something fun this weekend” → “in [different city]”: the second answer inherits the occasion, finds available city candidates, excludes known wrong-city candidates and preserves unknowns. Add provider rejection/timeout, large alias metadata, overlapping names, ambiguous city, changed/deleted items and long multi-turn cases. Record shortlist recall, top-result suitability, supported-claim accuracy, false abstention, latency, model/tool calls and cost. Validate on a real phone with permission granted and denied. The existing labelled/held-out Ask gates still apply; one anecdotal success is not a release gate.
 
-No location permission, new provider call, migration, UI repair or backend repair is implied by this document alone. This checkpoint records the work and its testable outcome.
+The implementation does not make a provider call or alter existing recommendations. Do not mark the Ask journey complete until the device and outcome checks above pass.

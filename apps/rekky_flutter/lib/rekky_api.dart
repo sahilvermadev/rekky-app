@@ -667,6 +667,7 @@ class RekkyApi {
   Future<AskAnswer> askAgent(
     String question,
     String requestId, {
+    String? scopeCity,
     String? previousRequestId,
     List<String> selectedItemIds = const [],
     List<String> excludedItemIds = const [],
@@ -677,6 +678,7 @@ class RekkyApi {
       body: {
         'question': question,
         'request_id': requestId,
+        'scope_city': ?scopeCity,
         'previous_request_id': ?previousRequestId,
         'selected_item_ids': selectedItemIds,
         'excluded_item_ids': excludedItemIds,

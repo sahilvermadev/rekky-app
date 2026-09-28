@@ -75,8 +75,10 @@ fn tools() -> Vec<Value> {
     vec![
         tool(
             "search_knowledge",
-            "Search saved evidence using tokenized OR alternatives; phrases are split into words. An empty terms list browses. Up to 8 terms, page 0..20.",
-            object(json!({"terms":strings(),"page":{"type":"integer"}})),
+            "Search saved evidence using tokenized OR alternatives. For local discovery set location to the explicit requested city, otherwise the device city if supplied. Leave location empty for personal recall or worldwide search. An empty terms list browses. Up to 8 terms, page 0..20.",
+            object(
+                json!({"terms":strings(),"location":{"type":"string"},"page":{"type":"integer"}}),
+            ),
         ),
         tool(
             "inspect_evidence",
@@ -176,6 +178,8 @@ pub struct Candidate {
 struct Input {
     request_id: Uuid,
     question: String,
+    #[serde(default)]
+    scope_city: Option<String>,
     #[serde(default)]
     previous_request_id: Option<Uuid>,
     #[serde(default)]
@@ -386,6 +390,8 @@ async fn turn_context(
 #[serde(deny_unknown_fields)]
 struct Search {
     terms: Vec<String>,
+    #[serde(default)]
+    location: String,
     page: usize,
 }
 #[derive(Deserialize)]
@@ -445,11 +451,24 @@ async fn search(
     state: &AppState,
     owner_id: Uuid,
     terms: &[String],
+    location: &str,
     page: usize,
 ) -> Result<(Vec<Candidate>, bool), ApiError> {
-    if terms.len() > 8 || terms.iter().any(|s| s.chars().count() > 80) || page > 20 {
+    if terms.len() > 8
+        || terms.iter().any(|s| s.chars().count() > 80)
+        || location.chars().count() > 100
+        || page > 20
+    {
         return Err(ApiError::bad("Invalid search tool arguments"));
     }
+    let area_id = if location.trim().is_empty() {
+        None
+    } else {
+        let mut connection = state.pool.acquire().await?;
+        let mut query = vec![json!({"text":location,"role":"context"})];
+        crate::geography::enrich(&mut connection, &mut query).await?;
+        query[0]["geography"]["area_id"].as_str().map(str::to_owned)
+    };
     // Model-proposed phrases are recall clues, not mandatory exact substrings.
     // Retrieve broad token alternatives; the agent checks the complete evidence.
     let mut terms: Vec<_> = terms
@@ -464,8 +483,49 @@ async fn search(
         .collect();
     terms.sort();
     terms.dedup();
-    let rows=sqlx::query("SELECT id,revision,subject,body,recommendation FROM knowledge_items WHERE owner_id=$1 AND deleted_at IS NULL AND (cardinality($2::text[])=0 OR EXISTS(SELECT 1 FROM unnest($2::text[]) t WHERE strpos(lower(subject||' '||body||' '||category_search),t)>0)) ORDER BY (SELECT coalesce(sum(CASE WHEN strpos(lower(subject),t)>0 THEN 4 ELSE 0 END + CASE WHEN strpos(lower(body||' '||category_search),t)>0 THEN 1 ELSE 0 END),0) FROM unnest($2::text[]) t) DESC,created_at DESC,id DESC LIMIT 9 OFFSET $3")
-        .bind(owner_id).bind(&terms).bind((page*PAGE) as i64).fetch_all(&state.pool).await?;
+    let rows = sqlx::query(
+        r#"
+        SELECT id,revision,subject,body,recommendation FROM knowledge_items
+        WHERE owner_id=$1 AND deleted_at IS NULL
+          AND (cardinality($2::text[])=0 OR EXISTS(
+            SELECT 1 FROM unnest($2::text[]) t
+            WHERE strpos(lower(subject||' '||body||' '||category_search),t)>0))
+          AND ($4::text IS NULL OR NOT EXISTS(
+            SELECT 1 FROM item_location_index l
+            WHERE l.item_id=knowledge_items.id
+              AND l.locations_snapshot=knowledge_items.recommendation->'locations'
+              AND ((recommendation->>'entity_kind'='place' AND l.role='venue')
+                OR (coalesce(recommendation->>'entity_kind','note')<>'place'
+                  AND l.role IN ('service_area','practice'))))
+            OR EXISTS(
+            SELECT 1 FROM item_location_index l
+            WHERE l.item_id=knowledge_items.id
+              AND l.locations_snapshot=knowledge_items.recommendation->'locations'
+              AND l.area_ids @> ARRAY[$4]
+              AND ((recommendation->>'entity_kind'='place' AND l.role='venue')
+                OR (coalesce(recommendation->>'entity_kind','note')<>'place'
+                  AND l.role IN ('service_area','practice')))))
+        ORDER BY CASE WHEN $4::text IS NOT NULL AND EXISTS(
+            SELECT 1 FROM item_location_index l
+            WHERE l.item_id=knowledge_items.id
+              AND l.locations_snapshot=knowledge_items.recommendation->'locations'
+              AND l.area_ids @> ARRAY[$4]
+              AND ((recommendation->>'entity_kind'='place' AND l.role='venue')
+                OR (coalesce(recommendation->>'entity_kind','note')<>'place'
+                  AND l.role IN ('service_area','practice')))) THEN 1 ELSE 0 END DESC,
+          (SELECT coalesce(sum(
+            CASE WHEN strpos(lower(subject),t)>0 THEN 4 ELSE 0 END +
+            CASE WHEN strpos(lower(body||' '||category_search),t)>0 THEN 1 ELSE 0 END),0)
+            FROM unnest($2::text[]) t) DESC,
+          created_at DESC,id DESC LIMIT 9 OFFSET $3
+    "#,
+    )
+    .bind(owner_id)
+    .bind(&terms)
+    .bind((page * PAGE) as i64)
+    .bind(area_id)
+    .fetch_all(&state.pool)
+    .await?;
     let more = rows.len() > PAGE;
     let candidates = rows
         .iter()
@@ -490,37 +550,28 @@ async fn permitted(state: &AppState, owner_id: Uuid) -> Result<Option<i64>, ApiE
     Ok(sqlx::query_scalar("SELECT generation FROM transcript_extraction_permissions p WHERE account_id=$1 AND enabled AND NOT EXISTS(SELECT 1 FROM processing_permissions g WHERE g.account_id=p.account_id AND NOT g.enabled)")
         .bind(owner_id).fetch_optional(&state.pool).await?)
 }
-fn fallback(question: &str, candidates: &HashMap<Uuid, Candidate>) -> Answer {
-    let mut values: Vec<_> = candidates.values().collect();
-    values.sort_by_key(|c| c.item_id);
-    Answer {
-        intent: "recall".into(),
-        comparison: None,
-        new_topic: false,
-        title: "Saved matches".into(),
-        location: String::new(),
-        clarification: if values.is_empty() {
-            "Try a name or a detail you remember.".into()
-        } else {
-            String::new()
-        },
-        choices: vec![],
-        results: values
-            .iter()
-            .filter(|c| {
-                question
-                    .split_whitespace()
-                    .any(|w| w.len() > 3 && c.subject.to_lowercase().contains(&w.to_lowercase()))
+// The complete location object contains browse aliases and hierarchy for the
+// Library. Ask needs only the canonical identity and the relation to the item.
+fn model_candidate(candidate: &Candidate) -> Value {
+    let locations: Vec<_> = candidate
+        .locations
+        .as_array()
+        .into_iter()
+        .flatten()
+        .take(8)
+        .map(|location| {
+            json!({
+                "role":location["role"],
+                "name":location["name"],
+                "status":location["geography"]["status"],
+                "label":location["geography"]["label"],
+                "area_id":location["geography"]["area_id"]
             })
-            .map(|c| ProposedResult {
-                item_id: c.item_id,
-                section: "worth_checking".into(),
-                reason: String::new(),
-                caveat: "Relevance hasn’t been checked. Open the saved recommendation.".into(),
-                evidence_ids: c.evidence.iter().take(1).map(|e| e.id.clone()).collect(),
-            })
-            .collect(),
-    }
+        })
+        .collect();
+    json!({"item_id":candidate.item_id,"revision":candidate.revision,
+        "subject":candidate.subject,"entity_kind":candidate.entity_kind,
+        "evidence":candidate.evidence,"locations":locations})
 }
 
 pub fn validate_answer(
@@ -639,6 +690,13 @@ pub async fn run(State(state): State<AppState>, headers: HeaderMap, body: Bytes)
     if input.selected_item_ids.len() > 4 || input.excluded_item_ids.len() > 8 {
         return Err(ApiError::bad("Too many selected recommendations"));
     }
+    if input
+        .scope_city
+        .as_ref()
+        .is_some_and(|v| v.chars().count() > 100 || v.trim().is_empty())
+    {
+        return Err(ApiError::bad("Invalid city"));
+    }
     input.selected_item_ids.sort();
     input.selected_item_ids.dedup();
     input.excluded_item_ids.sort();
@@ -703,6 +761,7 @@ pub async fn run(State(state): State<AppState>, headers: HeaderMap, body: Bytes)
             generation,
             input.request_id,
             &input.question,
+            input.scope_city.as_deref(),
             context,
         ),
     )
@@ -740,6 +799,7 @@ async fn execute(
     generation: i64,
     run: Uuid,
     question: &str,
+    scope_city: Option<&str>,
     turn: TurnContext,
 ) -> Result<Snapshot, ApiError> {
     let mut conversation = turn.conversation;
@@ -778,7 +838,8 @@ async fn execute(
                 return Err(ApiError::conflict("A recommendation changed. Ask again."));
             }
         }
-        let context = json!({"question":question,"conversation":conversation,"previous_results":turn.previous_items,"previous_clarification":turn.clarification,"tool_observations":observations,"decisions_left":MAX_DECISIONS-step,"read_tools_left":4-reads});
+        let previous_results: Vec<_> = turn.previous_items.iter().map(model_candidate).collect();
+        let context = json!({"question":question,"conversation":conversation,"scope_city":scope_city,"previous_results":previous_results,"previous_clarification":turn.clarification,"tool_observations":observations,"decisions_left":MAX_DECISIONS-step,"read_tools_left":4-reads});
         let decision = match state
             .ask_model
             .decide(context, step == MAX_DECISIONS - 1)
@@ -820,9 +881,13 @@ async fn execute(
                     if !a.location.is_empty()
                         && !crate::geography::normalized(&conversation.turns.join(" "))
                             .contains(&crate::geography::normalized(&a.location))
+                        && scope_city != Some(a.location.as_str())
                     {
-                        observations.push(json!({"error":"Location must be an explicit phrase from the original question; otherwise leave it empty."}));
+                        observations.push(json!({"error":"Location must come from the user question or supplied device city."}));
                         continue;
+                    }
+                    if a.intent == "discovery" && a.location.is_empty() {
+                        a.location = scope_city.unwrap_or_default().to_owned();
                     }
                     let mut locations = vec![json!({"text":a.location,"role":"context"})];
                     let mut connection = state.pool.acquire().await?;
@@ -858,19 +923,20 @@ async fn execute(
             let output = match call.name.as_str() {
                 "search_knowledge" => {
                     if let Ok(s) = serde_json::from_value::<Search>(call.arguments.clone()) {
-                        let (found, more) = search(state, owner_id, &s.terms, s.page).await?;
+                        let (found, more) =
+                            search(state, owner_id, &s.terms, &s.location, s.page).await?;
                         search_incomplete |= more;
                         for c in &found {
                             seen.insert(c.item_id, c.clone());
                         }
-                        json!({"items":found,"next_page":if more {Some(s.page+1)}else{None}})
+                        json!({"items":found.iter().map(model_candidate).collect::<Vec<_>>(),"next_page":if more {Some(s.page+1)}else{None}})
                     } else {
                         json!({"error":"Use terms and page"})
                     }
                 }
                 "inspect_evidence" => {
                     if let Ok(i) = serde_json::from_value::<Inspect>(call.arguments.clone()) {
-                        json!({"items":i.item_ids.iter().take(8).filter_map(|id|seen.get(id)).collect::<Vec<_>>()})
+                        json!({"items":i.item_ids.iter().take(8).filter_map(|id|seen.get(id)).map(model_candidate).collect::<Vec<_>>()})
                     } else {
                         json!({"error":"Use seen item_ids"})
                     }
@@ -880,15 +946,14 @@ async fn execute(
             observations.push(json!({"tool":call.name,"arguments":call.arguments,"result":output}));
         }
     }
-    seen.retain(|id, _| !conversation.excluded_item_ids.contains(id));
-    Ok(Snapshot {
-        conversation,
-        answer: fallback(question, &seen),
-        candidates: seen.into_values().collect(),
-        mode: "limited".into(),
-        location_geo: Value::Null,
-        search_incomplete: true,
-    })
+    // A failed agent decision is an interrupted request, not evidence that the
+    // owner's Library has no suitable recommendations. The client retains the
+    // previous answer and can retry with a fresh request ID.
+    Err(ApiError::new(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "ask_failed",
+        "Couldn’t finish checking your saved recommendations. Try again.",
+    ))
 }
 
 pub async fn page(
@@ -1192,5 +1257,19 @@ mod tests {
         let text = serde_json::to_string(&evidence(&r, "unused")).unwrap();
         assert!(!text.contains("9876543210"));
         assert!(!text.contains("private transcript"));
+    }
+    #[test]
+    fn ask_projection_omits_browse_aliases_and_hierarchy() {
+        let mut c = candidate();
+        c.locations = json!([{"role":"venue","name":"Bengaluru",
+            "geography":{"status":"resolved","area_id":"city-1","label":"Bengaluru",
+                "browse":{"aliases":["Bangalore","Bangalore East"]},
+                "hierarchy":{"private":"bulky catalog"}}}]);
+        let projection = model_candidate(&c);
+        let encoded = projection.to_string();
+        assert!(encoded.contains("Bengaluru"));
+        assert!(encoded.contains("city-1"));
+        assert!(!encoded.contains("Bangalore East"));
+        assert!(!encoded.contains("bulky catalog"));
     }
 }

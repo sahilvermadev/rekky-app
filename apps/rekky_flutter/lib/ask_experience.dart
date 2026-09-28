@@ -18,9 +18,15 @@ import 'contact_matching.dart';
 // Hallmark · Ask: evidence-led answers · existing personal-field-guide tokens.
 // Pre-emit critique: P5 H4 E4 S5 R5 V4. Native, accessible, stable answer layout.
 class AskExperience extends StatefulWidget {
-  const AskExperience({super.key, required this.api, required this.onOpen});
+  const AskExperience({
+    super.key,
+    required this.api,
+    required this.onOpen,
+    this.resolveCity,
+  });
   final RekkyApi api;
   final Future<void> Function(RekkyItem) onOpen;
+  final Future<String?> Function()? resolveCity;
   @override
   State<AskExperience> createState() => _AskExperienceState();
 }
@@ -37,6 +43,8 @@ class _AskExperienceState extends State<AskExperience> {
 
   AskAnswer? answer;
   String asked = '', pending = '', requestId = '', openingId = '';
+  String? deviceCity, chosenCity, pendingCity;
+  bool cityChecked = false, allLocations = false, checkingCity = false;
   String? error;
   bool working = false, paging = false;
   int generation = 0;
@@ -100,14 +108,35 @@ class _AskExperienceState extends State<AskExperience> {
     try {
       if (previousRequest != null) await cancelRequest(previousRequest);
       if (!mounted || turn != generation) return;
+      if (!retry &&
+          !allLocations &&
+          chosenCity == null &&
+          !cityChecked &&
+          widget.resolveCity != null) {
+        setState(() => checkingCity = true);
+        final city = await widget.resolveCity!();
+        if (!mounted || turn != generation) return;
+        setState(() {
+          deviceCity = city;
+          cityChecked = true;
+          checkingCity = false;
+        });
+      }
+      if (!retry) pendingCity = allLocations ? null : chosenCity ?? deviceCity;
       final result = await widget.api.askAgent(
         question,
         requestId,
+        scopeCity: pendingCity,
         previousRequestId: pendingParent,
         selectedItemIds: pendingSelected,
         excludedItemIds: pendingExcluded,
       );
       if (!mounted || turn != generation) return;
+      if (result.mode == 'limited') {
+        throw StateError(
+          'Ask could not finish checking your saved recommendations. Try again.',
+        );
+      }
       setState(() {
         if (answer != null) history.add((answer: answer!, question: asked));
         if (history.length > 8) history.removeAt(0);
@@ -125,8 +154,11 @@ class _AskExperienceState extends State<AskExperience> {
       RekkyHaptics.warning();
       setState(() {
         working = false;
+        checkingCity = false;
         if (e is ApiFailure && e.code != 'ask_running') requestId = newId();
         error = e is ApiFailure
+            ? e.message
+            : e is StateError
             ? e.message
             : 'Couldn’t connect. Your previous answer is still here.';
       });
@@ -148,11 +180,62 @@ class _AskExperienceState extends State<AskExperience> {
       editing = false;
       comparing = false;
       history.clear();
+      if (chosenCity == null && !allLocations) cityChecked = false;
       selected.clear();
       excluded.clear();
       input.clear();
     });
     inputFocus.requestFocus();
+  }
+
+  Future<void> chooseArea() async {
+    var enteredCity = chosenCity ?? '';
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Where should Ask look?'),
+        content: TextFormField(
+          initialValue: enteredCity,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: 'City',
+            hintText: 'Delhi',
+          ),
+          onChanged: (value) => enteredCity = value,
+          onFieldSubmitted: (value) => Navigator.pop(dialogContext, value.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, '__all__'),
+            child: const Text('All locations'),
+          ),
+          if (widget.resolveCity != null)
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, '__device__'),
+              child: const Text('Use my city'),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, enteredCity.trim()),
+            child: const Text('Use city'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null) return;
+    setState(() {
+      if (choice == '__all__') {
+        allLocations = true;
+        chosenCity = null;
+      } else if (choice == '__device__') {
+        allLocations = false;
+        chosenCity = null;
+        cityChecked = false;
+      } else if (choice.isNotEmpty && choice.length <= 100) {
+        allLocations = false;
+        chosenCity = choice;
+      }
+    });
   }
 
   Future<void> previousAnswer() async {
@@ -439,6 +522,29 @@ class _AskExperienceState extends State<AskExperience> {
           const SizedBox(height: 26),
           composer(context),
         ],
+        const SizedBox(height: 10),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: ActionChip(
+            avatar: const Icon(Icons.location_on_outlined, size: 17),
+            label: Text(
+              checkingCity
+                  ? 'Checking your city…'
+                  : current != null && current.location.isNotEmpty
+                  ? 'Near ${current.location}'
+                  : allLocations ||
+                        (cityChecked &&
+                            chosenCity == null &&
+                            deviceCity == null)
+                  ? 'All locations'
+                  : chosenCity != null || deviceCity != null
+                  ? 'Near ${chosenCity ?? deviceCity}'
+                  : 'Use your city',
+            ),
+            onPressed: working ? null : chooseArea,
+            tooltip: 'Change search area',
+          ),
+        ),
         if (current != null)
           Wrap(
             spacing: 8,
@@ -460,29 +566,44 @@ class _AskExperienceState extends State<AskExperience> {
         if (working)
           Padding(
             padding: const EdgeInsets.only(top: 14),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Semantics(
-                    liveRegion: true,
-                    child: Text('Finding useful connections…'),
+                if (current == null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Text(pending, style: theme.textTheme.titleLarge),
                   ),
-                ),
-                TextButton(
-                  onPressed: () {
-                    unawaited(cancelRequest(requestId));
-                    setState(() {
-                      generation++;
-                      working = false;
-                    });
-                  },
-                  child: const Text('Cancel'),
+                Row(
+                  children: [
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Semantics(
+                        liveRegion: true,
+                        child: Text(
+                          checkingCity
+                              ? 'Checking your area…'
+                              : 'Checking your saved recommendations…',
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        unawaited(cancelRequest(requestId));
+                        setState(() {
+                          generation++;
+                          working = false;
+                          checkingCity = false;
+                        });
+                      },
+                      child: const Text('Cancel'),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -542,7 +663,7 @@ class _AskExperienceState extends State<AskExperience> {
             ),
           const SizedBox(height: 16),
           Text(
-            'Ask sends your question and relevant saved recommendations to OpenAI.',
+            'Ask sends your question, any search city and relevant saved recommendations to OpenAI.',
             style: theme.textTheme.bodySmall?.copyWith(
               color: colors.onSurfaceVariant,
             ),
@@ -646,7 +767,8 @@ class _AskExperienceState extends State<AskExperience> {
                 ),
               ),
           ],
-          if (current.results.isEmpty &&
+          if (current.mode != 'limited' &&
+              current.results.isEmpty &&
               current.comparison == null &&
               !current.changed &&
               current.clarification.isEmpty)

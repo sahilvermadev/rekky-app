@@ -3602,7 +3602,7 @@ impl rekky_backend::ask::AskModel for ScriptedAsk {
         let (name, arguments) = if history.is_empty() {
             (
                 "search_knowledge",
-                json!({"terms":["Lantern restaurant"],"page":0}),
+                json!({"terms":["Lantern restaurant"],"location":"Delhi","page":0}),
             )
         } else {
             let items = history[0]["result"]["items"].as_array().unwrap();
@@ -4201,12 +4201,13 @@ async fn ask_followups_refresh_evidence_scope_references_and_preserve_constraint
     .await
     .unwrap();
     let second = Uuid::new_v4();
-    let (code,a)=t.call(Method::POST,"/v1/ask/agent",Some(&token),Some(json!({"request_id":second,"question":"What about this one for six people?","previous_request_id":first,"selected_item_ids":[ids[0]],"excluded_item_ids":[ids[1]]})),&[]).await;
+    let (code,a)=t.call(Method::POST,"/v1/ask/agent",Some(&token),Some(json!({"request_id":second,"question":"What about this one for six people?","scope_city":"Delhi","previous_request_id":first,"selected_item_ids":[ids[0]],"excluded_item_ids":[ids[1]]})),&[]).await;
     assert_eq!(code, StatusCode::OK, "{a}");
     assert_eq!(a["turn_count"], 2);
     assert_eq!(a["results"].as_array().unwrap().len(), 1);
     assert_eq!(a["results"][0]["item"]["id"], ids[0]);
     let context = model.seen.lock().unwrap().last().unwrap().clone();
+    assert_eq!(context["scope_city"], "Delhi");
     assert_eq!(
         context["conversation"]["turns"],
         json!([

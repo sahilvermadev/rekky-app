@@ -12,6 +12,7 @@ import 'contact_sheet.dart';
 import 'recommendation_editor.dart';
 import 'library_screen.dart';
 import 'ask_experience.dart';
+import 'ask_city.dart';
 import 'rekky_theme.dart';
 import 'rekky_navigation.dart';
 import 'recommendation_detail.dart';
@@ -912,6 +913,7 @@ class _RekkyHomeState extends State<RekkyHome> with WidgetsBindingObserver {
   Widget _askPage() => AskExperience(
     key: ValueKey('ask-$accountId'),
     api: api,
+    resolveCity: askDeviceCity,
     onOpen: (item) async {
       if (!library.any((old) => old.id == item.id)) {
         setState(() => library = [...library, item]);

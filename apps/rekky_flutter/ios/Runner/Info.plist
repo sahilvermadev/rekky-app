@@ -30,6 +30,8 @@
 	<string>Find saved numbers for people you recommend. Attached numbers follow the recommendation’s audience.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Record thoughts you choose to keep in Rekky.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Use your approximate city to find relevant saved recommendations nearby.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
